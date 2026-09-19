@@ -177,7 +177,7 @@ function AddTaskModal({
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 morning-btn-accent"
+              className="flex-1 morning-btn-accent clay-button cursor-pointer"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4 stroke-[2.2]" />}
               Create Task
@@ -363,7 +363,7 @@ export default function CalendarPage() {
             {tab === "tasks" && (
               <button
                 onClick={() => setShowTaskModal(true)}
-                className="morning-btn-accent"
+                className="morning-btn-accent clay-button cursor-pointer"
               >
                 <Plus className="w-4 h-4 stroke-[2.2]" />
                 Add Task

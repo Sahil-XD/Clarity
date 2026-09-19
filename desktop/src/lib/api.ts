@@ -14,29 +14,80 @@ import type {
 } from "./types";
 
 class ApiClient {
+  private isTauri(): boolean {
+    return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  }
+
   private getUserId(): number {
     const state = useAuth.getState();
-    if (!state.userId) throw new Error("Not authenticated");
+    if (!state.userId) {
+      if (!this.isTauri()) return 1;
+      throw new Error("Not authenticated");
+    }
     return state.userId;
   }
 
-  // ─── Auth ────────────────────────────────────────────────────────────────
+  // ─── Browser Mock Storage Helpers ──────────────────────────────────────────
+
+  private getMock<T>(key: string, fallback: T): T {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private setMock<T>(key: string, value: T): void {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      // ignore
+    }
+  }
+
+  // ─── Auth ──────────────────────────────────────────────────────────────────
 
   async register(data: RegisterRequest): Promise<AuthResponse> {
+    if (!this.isTauri()) {
+      return { userId: 1, username: data.username || "sahil", token: "dev-token" };
+    }
     return invoke("register", { ...data });
   }
 
   async login(data: LoginRequest): Promise<AuthResponse> {
+    if (!this.isTauri()) {
+      return { userId: 1, username: data.username || "sahil", token: "dev-token" };
+    }
     return invoke("login", { ...data });
   }
 
-  // ─── Tasks ───────────────────────────────────────────────────────────────
+  // ─── Tasks ─────────────────────────────────────────────────────────────────
 
   async getTasks(pendingOnly = false): Promise<Task[]> {
+    if (!this.isTauri()) {
+      const list = this.getMock<Task[]>("clarity_mock_tasks", []);
+      return pendingOnly ? list.filter((t) => !t.completed) : list;
+    }
     return invoke("get_tasks", { userId: this.getUserId(), pendingOnly });
   }
 
   async createTask(task: Partial<Task>): Promise<Task> {
+    if (!this.isTauri()) {
+      const list = this.getMock<Task[]>("clarity_mock_tasks", []);
+      const newTask: Task = {
+        id: Date.now(),
+        userId: this.getUserId(),
+        title: task.title || "",
+        description: task.description || null,
+        completed: false,
+        dueAt: task.dueAt || null,
+        createdAt: new Date().toISOString(),
+      };
+      list.unshift(newTask);
+      this.setMock("clarity_mock_tasks", list);
+      return newTask;
+    }
     return invoke("create_task", {
       userId: this.getUserId(),
       title: task.title,
@@ -46,6 +97,16 @@ class ApiClient {
   }
 
   async updateTask(id: number, patch: Partial<Task>): Promise<Task> {
+    if (!this.isTauri()) {
+      const list = this.getMock<Task[]>("clarity_mock_tasks", []);
+      const idx = list.findIndex((t) => t.id === id);
+      if (idx !== -1) {
+        list[idx] = { ...list[idx], ...patch };
+        this.setMock("clarity_mock_tasks", list);
+        return list[idx];
+      }
+      throw new Error("Task not found");
+    }
     return invoke("update_task", {
       id,
       title: patch.title,
@@ -56,32 +117,71 @@ class ApiClient {
   }
 
   async deleteTask(id: number): Promise<void> {
+    if (!this.isTauri()) {
+      const list = this.getMock<Task[]>("clarity_mock_tasks", []);
+      this.setMock("clarity_mock_tasks", list.filter((t) => t.id !== id));
+      return;
+    }
     return invoke("delete_task", { id });
   }
 
-  // ─── Diary ───────────────────────────────────────────────────────────────
+  // ─── Diary ─────────────────────────────────────────────────────────────────
 
   async checkDiaryPin(): Promise<boolean> {
+    if (!this.isTauri()) {
+      return !!this.getMock<string | null>("clarity_mock_pin", null);
+    }
     return invoke("check_diary_pin", { userId: this.getUserId() });
   }
 
   async verifyDiaryPin(pin: string): Promise<boolean> {
+    if (!this.isTauri()) {
+      const saved = this.getMock<string | null>("clarity_mock_pin", null);
+      return !saved || saved === pin;
+    }
     return invoke("verify_diary_pin", { userId: this.getUserId(), pin });
   }
 
   async setDiaryPin(pin: string): Promise<void> {
+    if (!this.isTauri()) {
+      this.setMock("clarity_mock_pin", pin);
+      return;
+    }
     return invoke("set_diary_pin", { userId: this.getUserId(), pin });
   }
 
   async getDiaryEntries(pin: string): Promise<DiaryEntry[]> {
     const ok = await this.verifyDiaryPin(pin);
     if (!ok) throw new Error("Invalid PIN");
+    if (!this.isTauri()) {
+      return this.getMock<DiaryEntry[]>("clarity_mock_diary", []);
+    }
     return invoke("get_diary_entries", { userId: this.getUserId() });
   }
 
   async saveDiaryEntry(date: string, pin: string, body: Partial<DiaryEntry>): Promise<DiaryEntry> {
     const ok = await this.verifyDiaryPin(pin);
     if (!ok) throw new Error("Invalid PIN");
+    if (!this.isTauri()) {
+      const list = this.getMock<DiaryEntry[]>("clarity_mock_diary", []);
+      const existing = list.findIndex((e) => e.date === date);
+      const entry: DiaryEntry = {
+        id: existing !== -1 ? list[existing].id : Date.now(),
+        userId: this.getUserId(),
+        date,
+        body: body.body || "",
+        mood: body.mood || null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      if (existing !== -1) {
+        list[existing] = entry;
+      } else {
+        list.push(entry);
+      }
+      this.setMock("clarity_mock_diary", list);
+      return entry;
+    }
     return invoke("save_diary_entry", {
       userId: this.getUserId(),
       date,
@@ -90,21 +190,49 @@ class ApiClient {
     });
   }
 
-  // ─── Calendar ────────────────────────────────────────────────────────────
+  // ─── Calendar ──────────────────────────────────────────────────────────────
 
   async getYearHeatmap(year: number): Promise<Record<number, number>> {
+    if (!this.isTauri()) {
+      return {};
+    }
     return invoke("get_year_heatmap", { userId: this.getUserId(), year });
   }
 
   async getCalendarDay(date: string): Promise<CalendarEvent[]> {
+    if (!this.isTauri()) {
+      const list = this.getMock<CalendarEvent[]>("clarity_mock_calendar", []);
+      return list.filter((e) => e.eventDate === date);
+    }
     return invoke("get_calendar_day", { userId: this.getUserId(), date });
   }
 
   async getCalendarRange(from: string, to: string): Promise<CalendarEvent[]> {
+    if (!this.isTauri()) {
+      const list = this.getMock<CalendarEvent[]>("clarity_mock_calendar", []);
+      return list.filter((e) => e.eventDate >= from && e.eventDate <= to);
+    }
     return invoke("get_calendar_range", { userId: this.getUserId(), from, to });
   }
 
   async createCalendarEvent(event: Partial<CalendarEvent>): Promise<CalendarEvent> {
+    if (!this.isTauri()) {
+      const list = this.getMock<CalendarEvent[]>("clarity_mock_calendar", []);
+      const newEvent: CalendarEvent = {
+        id: Date.now(),
+        userId: this.getUserId(),
+        title: event.title || "",
+        description: event.description || null,
+        eventDate: event.eventDate || new Date().toISOString().split("T")[0],
+        startAt: event.startAt || null,
+        endAt: event.endAt || null,
+        type: event.type || "TASK",
+        createdAt: new Date().toISOString(),
+      };
+      list.push(newEvent);
+      this.setMock("clarity_mock_calendar", list);
+      return newEvent;
+    }
     return invoke("create_calendar_event", {
       userId: this.getUserId(),
       title: event.title,
@@ -117,20 +245,53 @@ class ApiClient {
   }
 
   async updateCalendarEvent(id: number, title: string): Promise<void> {
+    if (!this.isTauri()) {
+      const list = this.getMock<CalendarEvent[]>("clarity_mock_calendar", []);
+      const idx = list.findIndex((e) => e.id === id);
+      if (idx !== -1) {
+        list[idx].title = title;
+        this.setMock("clarity_mock_calendar", list);
+      }
+      return;
+    }
     return invoke("update_calendar_event", { id, title });
   }
 
   async deleteCalendarEvent(id: number): Promise<void> {
+    if (!this.isTauri()) {
+      const list = this.getMock<CalendarEvent[]>("clarity_mock_calendar", []);
+      this.setMock("clarity_mock_calendar", list.filter((e) => e.id !== id));
+      return;
+    }
     return invoke("delete_calendar_event", { id });
   }
 
-  // ─── Expenses ────────────────────────────────────────────────────────────
+  // ─── Expenses ──────────────────────────────────────────────────────────────
 
   async getExpenses(): Promise<Expense[]> {
+    if (!this.isTauri()) {
+      return this.getMock<Expense[]>("clarity_mock_expenses", []);
+    }
     return invoke("get_expenses", { userId: this.getUserId() });
   }
 
   async createExpense(expense: Omit<Expense, "id" | "createdAt">): Promise<Expense> {
+    if (!this.isTauri()) {
+      const list = this.getMock<Expense[]>("clarity_mock_expenses", []);
+      const newExpense: Expense = {
+        id: Date.now(),
+        userId: this.getUserId(),
+        amount: expense.amount,
+        category: expense.category,
+        description: expense.description || null,
+        date: expense.date,
+        expenseType: expense.expenseType,
+        createdAt: new Date().toISOString(),
+      };
+      list.unshift(newExpense);
+      this.setMock("clarity_mock_expenses", list);
+      return newExpense;
+    }
     return invoke("create_expense", {
       userId: this.getUserId(),
       amount: expense.amount,
@@ -142,16 +303,37 @@ class ApiClient {
   }
 
   async deleteExpense(id: number): Promise<void> {
+    if (!this.isTauri()) {
+      const list = this.getMock<Expense[]>("clarity_mock_expenses", []);
+      this.setMock("clarity_mock_expenses", list.filter((e) => e.id !== id));
+      return;
+    }
     return invoke("delete_expense", { id });
   }
 
-  // ─── Projects ────────────────────────────────────────────────────────────
+  // ─── Projects ──────────────────────────────────────────────────────────────
 
   async getProjects(): Promise<Project[]> {
+    if (!this.isTauri()) {
+      return this.getMock<Project[]>("clarity_mock_projects", []);
+    }
     return invoke("get_projects", { userId: this.getUserId() });
   }
 
   async createProject(project: Pick<Project, "title"> & { description?: string }): Promise<Project> {
+    if (!this.isTauri()) {
+      const list = this.getMock<Project[]>("clarity_mock_projects", []);
+      const newProj: Project = {
+        id: Date.now(),
+        userId: this.getUserId(),
+        title: project.title,
+        description: project.description || null,
+        createdAt: new Date().toISOString(),
+      };
+      list.push(newProj);
+      this.setMock("clarity_mock_projects", list);
+      return newProj;
+    }
     return invoke("create_project", {
       userId: this.getUserId(),
       title: project.title,
@@ -160,16 +342,39 @@ class ApiClient {
   }
 
   async deleteProject(id: number): Promise<void> {
+    if (!this.isTauri()) {
+      const list = this.getMock<Project[]>("clarity_mock_projects", []);
+      this.setMock("clarity_mock_projects", list.filter((p) => p.id !== id));
+      return;
+    }
     return invoke("delete_project", { id });
   }
 
   async getProjectTasks(projectId: number): Promise<ProjectTask[]> {
+    if (!this.isTauri()) {
+      const list = this.getMock<ProjectTask[]>("clarity_mock_project_tasks", []);
+      return list.filter((t) => t.projectId === projectId);
+    }
     return invoke("get_project_tasks", { projectId });
   }
 
   async createProjectTask(
     task: Pick<ProjectTask, "title" | "projectId"> & { description?: string; status?: ProjectTaskStatus }
   ): Promise<ProjectTask> {
+    if (!this.isTauri()) {
+      const list = this.getMock<ProjectTask[]>("clarity_mock_project_tasks", []);
+      const newTask: ProjectTask = {
+        id: Date.now(),
+        projectId: task.projectId,
+        title: task.title,
+        description: task.description || null,
+        status: task.status ?? "TODO",
+        createdAt: new Date().toISOString(),
+      };
+      list.push(newTask);
+      this.setMock("clarity_mock_project_tasks", list);
+      return newTask;
+    }
     return invoke("create_project_task", {
       projectId: task.projectId,
       title: task.title,
@@ -179,10 +384,24 @@ class ApiClient {
   }
 
   async updateProjectTaskStatus(id: number, status: ProjectTaskStatus): Promise<void> {
+    if (!this.isTauri()) {
+      const list = this.getMock<ProjectTask[]>("clarity_mock_project_tasks", []);
+      const idx = list.findIndex((t) => t.id === id);
+      if (idx !== -1) {
+        list[idx].status = status;
+        this.setMock("clarity_mock_project_tasks", list);
+      }
+      return;
+    }
     return invoke("update_project_task_status", { id, status });
   }
 
   async deleteProjectTask(id: number): Promise<void> {
+    if (!this.isTauri()) {
+      const list = this.getMock<ProjectTask[]>("clarity_mock_project_tasks", []);
+      this.setMock("clarity_mock_project_tasks", list.filter((t) => t.id !== id));
+      return;
+    }
     return invoke("delete_project_task", { id });
   }
 }

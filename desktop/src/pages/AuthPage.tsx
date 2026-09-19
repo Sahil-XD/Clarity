@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAuth } from "@/lib/store";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, User, Mail, Lock, ArrowRight, Loader2, AlertCircle } from "lucide-react";
+import { ClarityLogo } from "@/components/ClarityLogo";
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -43,17 +44,14 @@ export default function AuthPage() {
         transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
         className="w-full max-w-sm relative z-10"
       >
-        <div className="relative overflow-hidden rounded-3xl morning-card-elevated border border-black/[0.08]">
+        <div className="relative overflow-hidden rounded-3xl clay-card border border-black/[0.08] shadow-lg">
           {/* Header */}
           <div className="relative px-8 pt-8 pb-7 text-center overflow-hidden">
-            {/* Logo icon */}
-            <div className="relative w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#F2EFE9] border border-black/[0.08] flex items-center justify-center shadow-sm">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#D98A7E] to-[#C87467] flex items-center justify-center shadow-sm">
-                <Sparkles className="w-5 h-5 text-white stroke-[2.2]" />
-              </div>
+            <div className="flex justify-center mb-3">
+              <ClarityLogo size="lg" showText={false} theme="terracotta" shape="squircle" />
             </div>
             <h1 className="relative text-2xl font-bold tracking-tight text-[#24211E] font-serif">Clarity</h1>
-            <p className="relative text-[#827A72] text-xs mt-0.5 font-medium">
+            <p className="relative text-[#827A72] text-xs mt-1 font-medium">
               {isLogin ? "Welcome back to your personal workspace" : "Create your offline-first account"}
             </p>
           </div>
@@ -144,7 +142,7 @@ export default function AuthPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full morning-btn-accent justify-center py-2.5 mt-2"
+                className="w-full morning-btn-accent clay-button justify-center py-2.5 mt-2 cursor-pointer font-sans"
               >
                 {loading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

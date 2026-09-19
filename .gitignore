@@ -32,11 +32,13 @@ clarity_data.mv.db
 # IDE & Editor
 .idea/
 .vscode/
+.vs/
 *.iml
 *.iws
 *.swp
 *.swo
 
-# Logs
+# Logs & Temporary Outputs
 *.log
 logs/
+*_out.txt

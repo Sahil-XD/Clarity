@@ -2,12 +2,14 @@ import { useState, useRef } from "react";
 import dayjs from "dayjs";
 import {
   Lock, Unlock, Key, BookOpen, AlertCircle, Loader2,
-  Plus, ChevronRight, Pencil, CalendarDays, Check
+  Plus, ChevronRight, Pencil, CalendarDays, Check,
+  Bold, Italic, List, Bookmark, Sparkles
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import type { DiaryEntry } from "@/lib/types";
 import { clsx } from "clsx";
+import { ClarityLogo } from "@/components/ClarityLogo";
 
 // ─── PIN / Lock screen ──────────────────────────────────────────────────────
 function LockScreen({
@@ -56,23 +58,28 @@ function LockScreen({
   };
 
   return (
-    <div className="h-full flex items-center justify-center p-6 morning-bg">
+    <div className="h-full flex items-center justify-center p-6 morning-bg relative">
+      {/* Warm atmospheric glows */}
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-gradient-to-tr from-[#D98A7E]/15 to-[#C87467]/10 rounded-full blur-3xl pointer-events-none" />
+
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 16 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-sm"
+        className="w-full max-w-sm relative z-10"
       >
-        <div className="relative overflow-hidden rounded-3xl morning-card-elevated border border-black/[0.08]">
+        <div className="relative overflow-hidden rounded-3xl clay-card border border-black/[0.08] shadow-lg">
           {/* Header */}
-          <div className="relative px-8 pt-8 pb-7 text-center overflow-hidden">
-            <div className="relative w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#F2EFE9] border border-black/[0.08] flex items-center justify-center shadow-sm">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#D98A7E] to-[#C87467] flex items-center justify-center shadow-sm">
-                <BookOpen className="w-5 h-5 text-white stroke-[2.2]" />
-              </div>
+          <div className="relative px-8 pt-8 pb-6 text-center overflow-hidden">
+            <div className="flex justify-center mb-3">
+              <ClarityLogo size="lg" showText={false} theme="terracotta" shape="squircle" />
             </div>
-            <h2 className="relative text-2xl font-bold tracking-tight text-[#24211E] font-serif">Personal Diary</h2>
-            <p className="relative text-[#827A72] text-xs mt-0.5 font-medium">Encrypted & password-protected</p>
+            <h2 className="relative text-2xl font-bold tracking-tight text-[#24211E] font-serif">
+              Personal Diary
+            </h2>
+            <p className="relative text-[#827A72] text-xs mt-1 font-medium">
+              Encrypted &amp; private journal archives
+            </p>
           </div>
 
           {/* Divider accent line */}
@@ -96,7 +103,7 @@ function LockScreen({
 
               <div>
                 <label className="block text-xs font-bold text-[#524B45] uppercase tracking-wider mb-2">
-                  {isSettingPin ? "Create PIN" : "Enter PIN"}
+                  {isSettingPin ? "Create Passcode" : "Enter Passcode"}
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#827A72]" />
@@ -105,7 +112,7 @@ function LockScreen({
                     value={pin}
                     onChange={(e) => setPin(e.target.value)}
                     placeholder={isSettingPin ? "Min. 4 characters" : "••••••"}
-                    className="morning-input pl-10 tracking-widest font-semibold"
+                    className="morning-input pl-10 tracking-widest font-mono text-center text-lg font-bold"
                     autoFocus
                   />
                 </div>
@@ -114,14 +121,14 @@ function LockScreen({
               <button
                 type="submit"
                 disabled={loading || !pin}
-                className="w-full morning-btn-accent justify-center py-2.5"
+                className="w-full morning-btn-accent clay-button justify-center py-2.5 cursor-pointer font-sans"
               >
                 {loading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : isSettingPin ? (
-                  <><Key className="w-4 h-4 stroke-[2.2]" /> Set PIN</>
+                  <><Key className="w-4 h-4 stroke-[2.2]" /> Set Passcode</>
                 ) : (
-                  <><Unlock className="w-4 h-4 stroke-[2.2]" /> Unlock Diary</>
+                  <><Unlock className="w-4 h-4 stroke-[2.2]" /> Unlock Journal</>
                 )}
               </button>
 
@@ -131,7 +138,7 @@ function LockScreen({
                   onClick={() => { setIsSettingPin(!isSettingPin); setError(""); setPin(""); }}
                   className="text-xs font-semibold text-[#827A72] hover:text-[#C87467] transition cursor-pointer"
                 >
-                  {isSettingPin ? "Already have a PIN? Unlock" : "First time? Set your PIN"}
+                  {isSettingPin ? "Already set up? Unlock with passcode" : "First time? Set your diary passcode"}
                 </button>
               </div>
             </form>
@@ -202,6 +209,9 @@ export default function DiaryPage() {
   if (isLocked) return <LockScreen onUnlocked={handleUnlocked} />;
 
   const entry = entries[selectedDate];
+  const currentText = entry?.body || "";
+  const wordCount = currentText.trim() ? currentText.trim().split(/\s+/).length : 0;
+  const readTime = Math.max(1, Math.ceil(wordCount / 200));
 
   return (
     <div className="h-full flex overflow-hidden bg-transparent">
@@ -325,49 +335,60 @@ export default function DiaryPage() {
             className="flex-1 flex flex-col overflow-hidden"
           >
             {/* date header */}
-            <div className="px-10 pt-8 pb-5 border-b border-[#DDD7CE] flex items-start justify-between bg-[#F5F2EC]/85 backdrop-blur-md">
+            <div className="px-10 pt-6 pb-4 border-b border-[#DDD7CE] flex items-center justify-between bg-[#F5F2EC]/90 backdrop-blur-md">
               <div>
-                <p className="text-xs font-bold text-[#827A72] uppercase tracking-wider">
+                <p className="text-xs font-bold text-[#827A72] uppercase tracking-wider font-mono">
                   {dayjs(selectedDate).format("dddd")}
                 </p>
-                <h2 className="text-3xl font-bold text-[#24211E] mt-1 font-serif tracking-tight">
+                <h2 className="text-2xl sm:text-3xl font-bold text-[#24211E] font-serif tracking-tight mt-0.5">
                   {dayjs(selectedDate).format("MMMM D, YYYY")}
                 </h2>
               </div>
 
-              {/* save indicator */}
-              <div className="h-8 flex items-center">
-                <AnimatePresence mode="wait">
-                  {savingIds[selectedDate] ? (
-                    <motion.span key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                      className="flex items-center gap-1.5 text-xs text-[#827A72] font-medium">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C87467]" /> Saving…
-                    </motion.span>
-                  ) : savedIds[selectedDate] ? (
-                    <motion.span key="saved" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-                      className="flex items-center gap-1.5 text-xs text-[#6B8065] font-semibold bg-[#6B8065]/10 px-2.5 py-1 rounded-lg border border-[#6B8065]/20">
-                      <Check className="w-3.5 h-3.5 stroke-[2.5]" /> Saved
-                    </motion.span>
-                  ) : (
-                    <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                      className="flex items-center gap-1.5 text-xs text-[#A39B92]">
-                      <Pencil className="w-3.5 h-3.5 stroke-[1.8]" /> Auto-saves on blur
-                    </motion.span>
-                  )}
-                </AnimatePresence>
+              {/* stats & save indicator */}
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-xs text-[#827A72] px-2.5 py-1 rounded-lg bg-[#FAF8F5] border border-black/[0.06]">
+                  {wordCount} words · ~{readTime}m read
+                </span>
+
+                <div className="h-8 flex items-center">
+                  <AnimatePresence mode="wait">
+                    {savingIds[selectedDate] ? (
+                      <motion.span key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="flex items-center gap-1.5 text-xs text-[#827A72] font-medium">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C87467]" /> Saving…
+                      </motion.span>
+                    ) : savedIds[selectedDate] ? (
+                      <motion.span key="saved" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+                        className="flex items-center gap-1.5 text-xs text-[#6B8065] font-semibold bg-[#6B8065]/10 px-2.5 py-1 rounded-lg border border-[#6B8065]/20">
+                        <Check className="w-3.5 h-3.5 stroke-[2.5]" /> Saved
+                      </motion.span>
+                    ) : (
+                      <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="flex items-center gap-1.5 text-xs text-[#A39B92]">
+                        <Pencil className="w-3.5 h-3.5 stroke-[1.8]" /> Auto-saves
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
             </div>
 
-            {/* textarea encased in Morning Dusk chassis with subtle notebook lines */}
-            <div className="flex-1 overflow-auto relative p-6">
-              <div className="morning-chassis morning-chassis-dusk h-full overflow-hidden">
-                <div className="morning-core h-full overflow-auto p-8 notebook-ruled bg-[#FAF8F5]">
+            {/* Notebook canvas with authentic ruled lines, coral margin rule, and brass rivets */}
+            <div className="flex-1 overflow-hidden p-6 flex flex-col">
+              <div className="clay-card flex-1 flex flex-col overflow-hidden border border-black/[0.08] shadow-sm relative">
+                {/* Brass Rivet Accents */}
+                <div className="absolute left-6 top-7 w-2.5 h-2.5 rounded-full brass-pin shadow-xs z-10 pointer-events-none" />
+                <div className="absolute left-6 bottom-16 w-2.5 h-2.5 rounded-full brass-pin shadow-xs z-10 pointer-events-none" />
+
+                {/* Notebook ruled body */}
+                <div className="flex-1 overflow-auto ruled-paper pl-16 pr-8 py-6">
                   <textarea
                     ref={textareaRef}
                     key={selectedDate}
                     defaultValue={entry?.body || ""}
-                    placeholder="What's on your mind today? Write freely..."
-                    className="w-full h-full bg-transparent resize-none outline-none leading-[32px] text-[#24211E] placeholder-[#A39B92] text-lg font-serif"
+                    placeholder="What is on your mind today? Let thoughts unspool on the page..."
+                    className="w-full h-full min-h-[300px] bg-transparent resize-none outline-none leading-[32px] text-[#24211E] placeholder-[#A39B92] text-lg font-serif"
                     onBlur={(e) => {
                       const val = e.target.value.trim();
                       if (val !== (entry?.body || "").trim()) {
@@ -375,6 +396,64 @@ export default function DiaryPage() {
                       }
                     }}
                   />
+                </div>
+
+                {/* Bottom Notebook Formatting & Stamp Toolbar */}
+                <div className="bg-[#F2EFE9] px-6 py-2.5 border-t border-black/[0.06] flex items-center justify-between z-10">
+                  <div className="flex items-center gap-1 text-[#827A72]">
+                    <button
+                      type="button"
+                      title="Bold"
+                      onClick={() => {
+                        if (textareaRef.current) {
+                          textareaRef.current.value += "**bold**";
+                          textareaRef.current.focus();
+                        }
+                      }}
+                      className="p-1.5 hover:text-[#24211E] hover:bg-black/[0.04] rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Bold className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Italic"
+                      onClick={() => {
+                        if (textareaRef.current) {
+                          textareaRef.current.value += "*italic*";
+                          textareaRef.current.focus();
+                        }
+                      }}
+                      className="p-1.5 hover:text-[#24211E] hover:bg-black/[0.04] rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Italic className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Bullet list"
+                      onClick={() => {
+                        if (textareaRef.current) {
+                          textareaRef.current.value += "\n- ";
+                          textareaRef.current.focus();
+                        }
+                      }}
+                      className="p-1.5 hover:text-[#24211E] hover:bg-black/[0.04] rounded-lg transition-colors cursor-pointer"
+                    >
+                      <List className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (textareaRef.current) {
+                        handleSave(selectedDate, textareaRef.current.value.trim());
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FAF8F5] hover:bg-white text-[#C87467] font-semibold text-xs border border-black/[0.08] shadow-xs active:scale-95 transition-all cursor-pointer"
+                  >
+                    <Bookmark className="w-3.5 h-3.5" />
+                    <span>Seal to Ledger</span>
+                  </button>
                 </div>
               </div>
             </div>

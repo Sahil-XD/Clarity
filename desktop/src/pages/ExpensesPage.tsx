@@ -3,7 +3,7 @@ import {
   Plus, Trash2, X, TrendingDown,
   Loader2, Popcorn, Key, ShoppingBag,
   Utensils, Coffee, ShoppingCart, Car, Zap, Film, Pill, Tag,
-  CalendarDays, Calculator, Receipt
+  CalendarDays, Calculator, Receipt, Check, Wallet
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
@@ -287,7 +287,7 @@ function AddExpenseModal({
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 morning-btn-accent"
+              className="flex-1 morning-btn-accent clay-button"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4 stroke-[2.2]" />}
               Save Expense
@@ -379,6 +379,9 @@ export default function ExpensesPage() {
     dayjs().subtract(i, "month").format("YYYY-MM")
   );
 
+  const monthlyBudget = 20000;
+  const budgetUtilization = Math.min(100, Math.round((totalSpentThisMonth / monthlyBudget) * 100));
+
   return (
     <div className="h-full flex flex-col bg-transparent">
       <AnimatePresence>
@@ -390,11 +393,20 @@ export default function ExpensesPage() {
         )}
       </AnimatePresence>
 
-      {/* Header */}
-      <div className="shrink-0 bg-[#F5F2EC]/85 backdrop-blur-md border-b border-[#DDD7CE] px-8 py-5 flex items-center justify-between">
+      {/* Desk Top Bar */}
+      <div className="shrink-0 bg-[#F5F2EC]/90 backdrop-blur-md border-b border-[#DDD7CE] px-8 py-4 flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold text-[#24211E] tracking-tight font-serif">Expenses Log</h2>
-          <p className="text-[#827A72] text-xs font-semibold mt-0.5">Daily spending tracker & budget breakdown</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-[#24211E] tracking-tight font-serif">
+              Expenses &amp; Ledger
+            </h1>
+            <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-full bg-[#FAF8F5] border border-black/[0.08] text-[#827A72]">
+              {monthFiltered.length} entries
+            </span>
+          </div>
+          <p className="text-[#827A72] text-xs font-medium mt-0.5">
+            {dayjs(filterMonth).format("MMMM YYYY")} · Spending tracking, budget allocation &amp; receipts
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <select
@@ -410,7 +422,7 @@ export default function ExpensesPage() {
           </select>
           <button
             onClick={() => setShowModal(true)}
-            className="morning-btn-accent"
+            className="morning-btn-accent clay-button cursor-pointer"
           >
             <Plus className="w-4 h-4 stroke-[2.2]" /> Log Expense
           </button>
@@ -419,27 +431,79 @@ export default function ExpensesPage() {
 
       <div className="flex-1 overflow-auto p-8">
         <div className="max-w-4xl mx-auto space-y-6">
+          {/* Studio & Personal Budget Allocation Master Card */}
+          <div className="clay-card rounded-2xl p-6 border border-black/[0.08] shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <span className="text-[11px] font-bold text-[#827A72] uppercase tracking-wider flex items-center gap-1.5">
+                  <Wallet className="w-3.5 h-3.5 text-[#C87467]" />
+                  Monthly Budget Allocation
+                </span>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span className="font-mono text-2xl sm:text-3xl font-bold text-[#24211E]">
+                    ₹{totalSpentThisMonth.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="font-mono text-xs text-[#827A72]">
+                    / ₹{monthlyBudget.toLocaleString("en-IN")} Target
+                  </span>
+                </div>
+              </div>
+              <span className="font-mono text-xs font-bold px-3 py-1.5 rounded-xl bg-[#6B8065]/15 text-[#6B8065] border border-[#6B8065]/25 w-max">
+                {budgetUtilization}% Utilized
+              </span>
+            </div>
+
+            {/* Segmented multi-category progress bar */}
+            <div className="space-y-1.5">
+              <div className="w-full bg-[#EAE5DE] rounded-full h-2.5 flex overflow-hidden p-0.5 border border-black/[0.06]">
+                {topCategories.map(([cat, val], idx) => {
+                  const pct = totalSpentThisMonth > 0 ? (val / totalSpentThisMonth) * 100 : 0;
+                  const barColors = [
+                    "bg-[#C87467]",
+                    "bg-[#6B8065]",
+                    "bg-[#D9A441]",
+                    "bg-[#7A889B]",
+                    "bg-[#8E7BAE]",
+                  ];
+                  return (
+                    <div
+                      key={cat}
+                      className={clsx("h-full transition-all duration-500", barColors[idx % barColors.length])}
+                      style={{ width: `${pct}%` }}
+                      title={`${cat}: ${pct.toFixed(0)}%`}
+                    />
+                  );
+                })}
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-[#827A72] font-mono">
+                <span>₹0</span>
+                <span>₹{totalSpentThisMonth.toFixed(0)} logged</span>
+                <span>₹{monthlyBudget.toLocaleString("en-IN")} cap</span>
+              </div>
+            </div>
+          </div>
+
           {/* 3 Metric Cards: Total Spent, Today's Spending, Daily Average */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {/* Card 1: Total Spent */}
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="morning-card morning-gradient-rose p-5 shadow-xs"
+              className="clay-card morning-gradient-rose p-5 shadow-xs border border-black/[0.07]"
             >
               <div className="flex items-center justify-between mb-3.5">
                 <span className="text-xs font-bold text-[#827A72] uppercase tracking-wider">
-                  Total Spent This Month
+                  Month Total
                 </span>
-                <div className="w-8 h-8 rounded-xl bg-[#D98A7E]/15 flex items-center justify-center text-[#C87467] shadow-xs">
+                <div className="w-8 h-8 rounded-xl bg-[#D98A7E]/15 flex items-center justify-center text-[#C87467] shadow-2xs">
                   <TrendingDown className="w-4 h-4 stroke-[2.2]" />
                 </div>
               </div>
               <div className="text-2xl font-black tracking-tight text-[#C87467] font-mono">
                 ₹{totalSpentThisMonth.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
-              <p className="text-[11px] text-[#827A72] font-medium mt-1">
-                {monthFiltered.length} transactions in {dayjs(filterMonth).format("MMM YYYY")}
+              <p className="text-[11px] text-[#827A72] font-medium mt-1 font-mono">
+                {monthFiltered.length} entries in {dayjs(filterMonth).format("MMM YYYY")}
               </p>
             </motion.div>
 
@@ -448,20 +512,20 @@ export default function ExpensesPage() {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.05 }}
-              className="morning-card morning-gradient-honey p-5 shadow-xs"
+              className="clay-card morning-gradient-honey p-5 shadow-xs border border-black/[0.07]"
             >
               <div className="flex items-center justify-between mb-3.5">
                 <span className="text-xs font-bold text-[#827A72] uppercase tracking-wider">
                   Today's Spending
                 </span>
-                <div className="w-8 h-8 rounded-xl bg-[#A86F1F]/15 flex items-center justify-center text-[#A86F1F] shadow-xs">
+                <div className="w-8 h-8 rounded-xl bg-[#A86F1F]/15 flex items-center justify-center text-[#A86F1F] shadow-2xs">
                   <CalendarDays className="w-4 h-4 stroke-[2.2]" />
                 </div>
               </div>
               <div className="text-2xl font-black tracking-tight text-[#A86F1F] font-mono">
                 ₹{todaySpending.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
-              <p className="text-[11px] text-[#827A72] font-medium mt-1">
+              <p className="text-[11px] text-[#827A72] font-medium mt-1 font-mono">
                 {todayCount > 0 ? `${todayCount} item${todayCount > 1 ? "s" : ""} logged today` : "No expenses yet today"}
               </p>
             </motion.div>
@@ -471,33 +535,33 @@ export default function ExpensesPage() {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="morning-card morning-gradient-sage p-5 shadow-xs"
+              className="clay-card morning-gradient-sage p-5 shadow-xs border border-black/[0.07]"
             >
               <div className="flex items-center justify-between mb-3.5">
                 <span className="text-xs font-bold text-[#827A72] uppercase tracking-wider">
                   Daily Average
                 </span>
-                <div className="w-8 h-8 rounded-xl bg-[#EAE5DE] flex items-center justify-center text-[#24211E] shadow-xs">
+                <div className="w-8 h-8 rounded-xl bg-[#EAE5DE] flex items-center justify-center text-[#24211E] shadow-2xs">
                   <Calculator className="w-4 h-4 stroke-[2.2]" />
                 </div>
               </div>
               <div className="text-2xl font-black tracking-tight text-[#24211E] font-mono">
                 ₹{dailyAverage.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
-              <p className="text-[11px] text-[#827A72] font-medium mt-1">
-                Calculated across {daysInCalc} days
+              <p className="text-[11px] text-[#827A72] font-medium mt-1 font-mono">
+                Paced across {daysInCalc} days
               </p>
             </motion.div>
           </div>
 
           {/* Top Spending Categories Breakdown */}
           {topCategories.length > 0 && (
-            <div className="morning-card p-6">
+            <div className="clay-card p-6 border border-black/[0.07]">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base font-bold text-[#24211E] font-serif">
                   Top Spending Categories
                 </h3>
-                <span className="text-[11px] font-bold text-[#827A72]">
+                <span className="text-[11px] font-bold text-[#827A72] font-mono">
                   {dayjs(filterMonth).format("MMMM YYYY")}
                 </span>
               </div>
@@ -552,7 +616,7 @@ export default function ExpensesPage() {
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="text-center py-16 morning-card p-6"
+                className="text-center py-16 clay-card p-6 border border-black/[0.07]"
               >
                 <div className="w-12 h-12 bg-[#F2EFE9] rounded-2xl flex items-center justify-center mx-auto mb-3 text-[#827A72] border border-black/[0.06]">
                   <Receipt className="w-6 h-6 stroke-[1.8]" />
@@ -565,7 +629,7 @@ export default function ExpensesPage() {
                 </p>
               </motion.div>
             ) : (
-              <div className="space-y-5">
+              <div className="space-y-4">
                 <AnimatePresence initial={false}>
                   {sortedDates.map((dateKey) => {
                     const dayItems = groupedByDate[dateKey];
@@ -579,7 +643,7 @@ export default function ExpensesPage() {
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.98 }}
-                        className="morning-card overflow-hidden"
+                        className="clay-card overflow-hidden border border-black/[0.07]"
                       >
                         {/* Day Group Header */}
                         <div className="flex items-center justify-between px-5 py-3.5 bg-[#FAF8F5] border-b border-black/[0.05]">
@@ -592,7 +656,7 @@ export default function ExpensesPage() {
                                 <span className="text-sm font-bold text-[#24211E] font-serif">
                                   {label}
                                 </span>
-                                <span className="text-[11px] font-semibold text-[#827A72]">
+                                <span className="text-[11px] font-semibold text-[#827A72] font-mono">
                                   • {formattedDate}
                                 </span>
                               </div>
@@ -600,7 +664,7 @@ export default function ExpensesPage() {
                           </div>
 
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#FBF4F0] text-[#C87467] border border-[#C87467]/30 font-mono shadow-xs">
+                            <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#FBF4F0] text-[#C87467] border border-[#C87467]/30 font-mono shadow-2xs">
                               ₹{dayTotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} spent
                             </span>
                           </div>
@@ -616,13 +680,13 @@ export default function ExpensesPage() {
                                 key={expense.id}
                                 className="group flex items-center gap-3.5 px-5 py-3.5 hover:bg-black/[0.015] transition-colors"
                               >
-                                <div className={clsx("w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 border shadow-xs", meta.color)}>
+                                <div className={clsx("w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 border shadow-2xs", meta.color)}>
                                   <Icon className="w-4 h-4 stroke-[2]" />
                                 </div>
 
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-[13px] font-bold text-[#24211E] truncate">
+                                    <span className="text-[13.5px] font-bold text-[#24211E] truncate">
                                       {expense.description || expense.category}
                                     </span>
                                     <span className={clsx("text-[10px] font-bold px-2 py-0.5 rounded-md border", meta.badgeColor)}>
@@ -631,17 +695,25 @@ export default function ExpensesPage() {
                                   </div>
                                 </div>
 
-                                <div className="text-sm font-black font-mono text-[#C87467]">
-                                  -₹{expense.amount.toFixed(2)}
-                                </div>
+                                <div className="flex items-center gap-3">
+                                  <div className="text-right">
+                                    <div className="text-sm font-black font-mono text-[#C87467]">
+                                      -₹{expense.amount.toFixed(2)}
+                                    </div>
+                                    <div className="text-[10px] font-mono text-[#6B8065] flex items-center justify-end gap-0.5">
+                                      <Check className="w-3 h-3 stroke-[2.5]" />
+                                      Settled
+                                    </div>
+                                  </div>
 
-                                <button
-                                  onClick={() => deleteExpense(expense.id)}
-                                  className="opacity-0 group-hover:opacity-100 p-1.5 text-[#827A72] hover:text-[#C87467] hover:bg-[#C87467]/10 rounded-lg transition cursor-pointer"
-                                  title="Delete expense"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5 stroke-[1.8]" />
-                                </button>
+                                  <button
+                                    onClick={() => deleteExpense(expense.id)}
+                                    className="opacity-0 group-hover:opacity-100 p-1.5 text-[#827A72] hover:text-[#C87467] hover:bg-[#C87467]/10 rounded-lg transition cursor-pointer"
+                                    title="Delete expense"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5 stroke-[1.8]" />
+                                  </button>
+                                </div>
                               </div>
                             );
                           })}

@@ -227,7 +227,7 @@ function InlineAddTask({
         <button
           onClick={handleSave}
           disabled={saving || !title.trim()}
-          className="flex-1 morning-btn-accent py-1.5 text-xs"
+          className="flex-1 morning-btn-accent clay-button py-1.5 text-xs cursor-pointer"
         >
           {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save"}
         </button>
@@ -330,7 +330,7 @@ export default function ProjectsPage() {
         </div>
         <button
           onClick={() => setShowNewProject(true)}
-          className="morning-btn-accent"
+          className="morning-btn-accent clay-button cursor-pointer"
         >
           <Plus className="w-4 h-4 stroke-[2.2]" /> New Board
         </button>
@@ -413,7 +413,7 @@ export default function ProjectsPage() {
             {activeProject && (
               <>
                 {/* Project Title Bar */}
-                <div className="flex items-center gap-3.5 mb-6 morning-card p-4 shadow-xs">
+                <div className="flex items-center gap-3.5 mb-6 clay-card p-4 shadow-sm border border-black/[0.08]">
                   <div
                     className="w-3.5 h-3.5 rounded-full flex-shrink-0"
                     style={{ backgroundColor: color.hex, boxShadow: `0 0 8px ${color.hex}60` }}
@@ -456,17 +456,17 @@ export default function ProjectsPage() {
                     return (
                       <div
                         key={column.id}
-                        className={clsx("flex flex-col min-h-0 morning-card p-4 shadow-xs", column.gradientClass)}
+                        className={clsx("flex flex-col min-h-0 clay-card p-4.5 shadow-sm border border-black/[0.08]", column.gradientClass)}
                       >
                         {/* Column Header */}
                         <div className="flex items-center justify-between mb-3.5">
                           <div className="flex items-center gap-2">
                             <div className={clsx("w-2 h-2 rounded-full", column.dotColor, column.dotGlow)} />
-                            <span className="text-xs font-bold text-[#24211E] uppercase tracking-wider">
+                            <span className="text-xs font-bold text-[#24211E] uppercase tracking-wider font-mono">
                               {column.label}
                             </span>
                           </div>
-                          <span className="text-xs font-bold text-[#524B45] bg-[#F2EFE9] px-2 py-0.5 rounded-lg border border-black/[0.06] tabular-nums">
+                          <span className="text-xs font-bold text-[#524B45] bg-[#F2EFE9] px-2 py-0.5 rounded-lg border border-black/[0.06] font-mono">
                             {colTasks.length}
                           </span>
                         </div>
@@ -482,7 +482,7 @@ export default function ProjectsPage() {
                                   initial={{ opacity: 0, y: 6 }}
                                   animate={{ opacity: 1, y: 0 }}
                                   exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.12 } }}
-                                  className="group bg-[#FAF8F5] border border-black/[0.07] rounded-xl p-3.5 shadow-xs hover:shadow-md hover:border-black/[0.12] hover:-translate-y-0.5 transition-all cursor-default"
+                                  className="group clay-card border border-black/[0.07] rounded-xl p-3.5 shadow-2xs hover:shadow-md hover:border-black/[0.12] hover:-translate-y-0.5 transition-all cursor-default"
                                 >
                                   <div className="flex items-start justify-between gap-2">
                                     <p className="text-xs font-bold text-[#24211E] leading-snug flex-1">
