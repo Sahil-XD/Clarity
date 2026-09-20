@@ -1,11 +1,16 @@
-import { Outlet, NavLink } from "react-router-dom";
-import { Calendar, BookOpen, CheckSquare, DollarSign, FolderKanban, LogOut, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { Outlet, NavLink, useLocation } from "react-router-dom";
+import { Calendar, BookOpen, CheckSquare, DollarSign, FolderKanban, LogOut, Volume2, VolumeX } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/lib/store";
+import { sound } from "@/lib/sound";
 import { clsx } from "clsx";
 import { ClarityLogo } from "./ClarityLogo";
 
 export default function Layout() {
   const { username, logout } = useAuth();
+  const location = useLocation();
+  const [muted, setMuted] = useState(sound.isMuted());
 
   const greeting = () => {
     const hour = new Date().getHours();
@@ -22,16 +27,31 @@ export default function Layout() {
     { to: "/projects", icon: FolderKanban, label: "Projects" },
   ];
 
+  const handleToggleMute = () => {
+    const next = sound.toggleMute();
+    setMuted(next);
+    if (!next) sound.pop();
+  };
+
   const userInitial = (username || "U").charAt(0).toUpperCase();
 
   return (
     <div className="flex h-screen overflow-hidden morning-bg text-[#3A3530] select-none">
-      {/* ── Matte Clay Stationery Sidebar ─────────────────────── */}
+      {/* ── Matte Clay Stationery Sidebar ───────────────────────────── */}
       <aside className="w-64 flex-shrink-0 bg-[#ECE8E1]/92 backdrop-blur-xl border-r border-[#DCD6CC] flex flex-col justify-between z-20 relative shadow-[2px_0_12px_rgba(84,67,64,0.03)]">
         <div>
           {/* Brand Monogram Header */}
           <div className="px-5 pt-6 pb-4">
-            <ClarityLogo size="md" theme="terracotta" shape="squircle" className="mb-5" />
+            <div className="flex items-center justify-between mb-5">
+              <ClarityLogo size="md" theme="terracotta" shape="squircle" />
+              <button
+                onClick={handleToggleMute}
+                title={muted ? "Unmute tactile audio" : "Mute tactile audio"}
+                className="p-1.5 rounded-lg text-[#8C857E] hover:text-[#24211E] hover:bg-black/[0.04] transition-colors cursor-pointer"
+              >
+                {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-[#C87467]" />}
+              </button>
+            </div>
 
             {/* User Profile Stationery Chip */}
             <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-2xl bg-[#FAF8F5] border border-black/[0.06] shadow-[0_2px_8px_rgba(60,50,40,0.04),inset_0_1px_0_rgba(255,255,255,0.85)]">
@@ -49,34 +69,48 @@ export default function Layout() {
             </div>
           </div>
 
-          {/* Navigation Links */}
-          <nav className="px-3 py-2 space-y-1 overflow-y-auto">
+          {/* Navigation Links with Framer Motion Magnetic Glider */}
+          <nav className="px-3 py-2 space-y-1.5 overflow-y-auto relative">
             {links.map((link) => (
               <NavLink
                 key={link.to}
                 to={link.to}
+                onClick={() => sound.pageTurn()}
                 className={({ isActive }) =>
                   clsx(
-                    "flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-150 group text-[13.5px] font-semibold cursor-pointer",
+                    "relative flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-colors duration-150 group text-[13.5px] font-semibold cursor-pointer z-10",
                     isActive
-                      ? "bg-[#FAF8F5] text-[#24211E] shadow-[0_2px_8px_rgba(60,50,40,0.06),inset_0_1px_0_rgba(255,255,255,0.9)] border border-black/[0.06]"
-                      : "text-[#6E6862] hover:bg-black/[0.04] hover:text-[#24211E] border border-transparent"
+                      ? "text-[#24211E]"
+                      : "text-[#6E6862] hover:text-[#24211E]"
                   )
                 }
               >
                 {({ isActive }) => (
                   <>
+                    {/* Magnetic Gliding Active Pill */}
+                    {isActive && (
+                      <motion.div
+                        layoutId="activeNavPill"
+                        transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                        className="absolute inset-0 bg-[#FAF8F5] rounded-xl shadow-[0_2px_8px_rgba(60,50,40,0.06),inset_0_1px_0_rgba(255,255,255,0.95)] border border-black/[0.06] -z-10"
+                      />
+                    )}
+
                     <link.icon
                       className={clsx(
-                        "w-4.5 h-4.5 flex-shrink-0 transition-colors",
+                        "w-4.5 h-4.5 flex-shrink-0 transition-colors duration-200",
                         isActive
                           ? "text-[#C87467] stroke-[2.4]"
                           : "text-[#8C857E] group-hover:text-[#24211E] stroke-[1.8]"
                       )}
                     />
-                    <span>{link.label}</span>
+                    <span className="relative z-10">{link.label}</span>
                     {isActive && (
-                      <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[#C87467] shadow-[0_0_6px_rgba(200,116,103,0.6)]" />
+                      <motion.span
+                        layoutId="activeNavDot"
+                        transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                        className="ml-auto w-1.5 h-1.5 rounded-full bg-[#C87467] shadow-[0_0_6px_rgba(200,116,103,0.6)] z-10"
+                      />
                     )}
                   </>
                 )}
@@ -120,9 +154,20 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* ── Main Workspace ────────────────────────────────────── */}
-      <main className="flex-1 relative overflow-auto page-transition">
-        <Outlet />
+      {/* ── Main Workspace with Smooth Page Deck Transitions ────────── */}
+      <main className="flex-1 relative overflow-auto">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={location.pathname}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+            className="h-full"
+          >
+            <Outlet />
+          </motion.div>
+        </AnimatePresence>
       </main>
     </div>
   );

@@ -1,53 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Plus, Trash2, X, CalendarDays, AlignLeft,
-  Loader2, CheckCircle2, Circle, CheckSquare, Clock,
-  CornerDownLeft, Tag, Sparkles
+  Loader2, CheckCircle2, Circle, CheckSquare, Sparkles, Check
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
+import { sound } from "@/lib/sound";
 import type { Task } from "@/lib/types";
 import { clsx } from "clsx";
 import dayjs from "dayjs";
-
-// ─── Priority & Tag Helper ───────────────────────────────────────────────────
-function getTaskMeta(task: Task) {
-  const isOverdue = task.dueAt && new Date(task.dueAt).getTime() < Date.now() && !task.completed;
-  const isToday = task.dueAt && dayjs(task.dueAt).isSame(dayjs(), "day");
-  
-  // Extract tags like #Studio, #Finance from title or description
-  const combined = `${task.title} ${task.description || ""}`;
-  const tagMatches = combined.match(/#[a-zA-Z0-9_-]+/g);
-  const tags = tagMatches ? Array.from(new Set(tagMatches)) : [];
-
-  let priority: { label: string; colorClass: string; dotClass: string } = {
-    label: "Standard",
-    colorClass: "bg-[#F2EFE9] text-[#524B45] border-black/[0.06]",
-    dotClass: "bg-[#827A72]",
-  };
-
-  if (isOverdue) {
-    priority = {
-      label: "Overdue",
-      colorClass: "bg-[#FDF2F4] text-[#BE1239] border-[#FECDD3]",
-      dotClass: "bg-[#BE1239]",
-    };
-  } else if (isToday || task.title.toLowerCase().includes("urgent") || task.title.includes("!")) {
-    priority = {
-      label: "High Priority",
-      colorClass: "bg-[#D98A7E]/15 text-[#C87467] border-[#C87467]/25",
-      dotClass: "bg-[#C87467]",
-    };
-  } else if (task.dueAt) {
-    priority = {
-      label: "Scheduled",
-      colorClass: "bg-[#F8F3E8] text-[#D97706] border-[#D97706]/20",
-      dotClass: "bg-[#D97706]",
-    };
-  }
-
-  return { isOverdue, isToday, tags, priority };
-}
 
 // ─── New Task Modal ──────────────────────────────────────────────────────────
 function NewTaskModal({
@@ -83,7 +44,6 @@ function NewTaskModal({
         dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
       });
 
-      // SYNC to Calendar: if the task has a due date, create a matching Calendar Event
       if (dueAt) {
         try {
           const datePart = dueAt.split("T")[0];
@@ -100,6 +60,7 @@ function NewTaskModal({
         }
       }
 
+      sound.pop();
       onCreated(task);
       onClose();
     } catch (err: any) {
@@ -131,7 +92,7 @@ function NewTaskModal({
               <p className="text-xs text-[#827A72]">Add an action item with optional deadline</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-[#827A72] hover:text-[#24211E] hover:bg-black/[0.04] transition-colors">
+          <button onClick={onClose} className="p-1.5 rounded-lg text-[#827A72] hover:text-[#24211E] hover:bg-black/[0.04] transition-colors cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -146,7 +107,7 @@ function NewTaskModal({
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="What needs to be done? (e.g. Draft proposal #Studio)"
+              placeholder="What needs to be done? (e.g. 5km run, buy groceries)"
               className="morning-input"
             />
           </div>
@@ -158,7 +119,7 @@ function NewTaskModal({
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Add details, references, or notes..."
+              placeholder="Add details or notes..."
               rows={3}
               className="morning-input resize-none"
             />
@@ -205,10 +166,10 @@ function NewTaskModal({
   );
 }
 
-// ─── Main Page ───────────────────────────────────────────────────────────────
+// ─── Main Tasks Page ─────────────────────────────────────────────────────────
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [pendingOnly, setPendingOnly] = useState(true);
+  const [pendingOnly, setPendingOnly] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [quickTitle, setQuickTitle] = useState("");
@@ -227,22 +188,37 @@ export default function TasksPage() {
   };
 
   const toggleComplete = async (task: Task) => {
+    sound.pop();
+    const willBeCompleted = !task.completed;
+
     // Optimistic update
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, completed: !t.completed } : t)));
+    setTasks((prev) =>
+      prev.map((t) => (t.id === task.id ? { ...t, completed: willBeCompleted } : t))
+    );
+
     try {
-      await api.updateTask(task.id, { completed: !task.completed });
-      if (pendingOnly) {
+      await api.updateTask(task.id, { completed: willBeCompleted });
+
+      // Check if all tasks are completed now
+      const updatedTotal = tasks.length;
+      const updatedDone = tasks.filter((t) => (t.id === task.id ? willBeCompleted : t.completed)).length;
+      if (willBeCompleted && updatedDone === updatedTotal && updatedTotal > 0) {
+        sound.chime();
+      }
+
+      if (pendingOnly && willBeCompleted) {
         setTimeout(() => {
           setTasks((prev) => prev.filter((t) => t.id !== task.id));
         }, 300);
       }
     } catch {
-      // Revert
+      // Revert on failure
       setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, completed: task.completed } : t)));
     }
   };
 
   const deleteTask = async (id: number) => {
+    sound.pop();
     try {
       await api.deleteTask(id);
       setTasks((prev) => prev.filter((t) => t.id !== id));
@@ -259,6 +235,7 @@ export default function TasksPage() {
       const created = await api.createTask({
         title: quickTitle.trim(),
       });
+      sound.pop();
       setTasks((prev) => [created, ...prev]);
       setQuickTitle("");
     } catch (err) {
@@ -268,7 +245,10 @@ export default function TasksPage() {
     }
   };
 
-  const pendingCount = tasks.filter((t) => !t.completed).length;
+  const totalCount = tasks.length;
+  const completedCount = tasks.filter((t) => t.completed).length;
+  const pendingCount = totalCount - completedCount;
+  const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   return (
     <div className="h-full flex flex-col bg-transparent">
@@ -281,29 +261,61 @@ export default function TasksPage() {
       {/* Desk Top Bar */}
       <div className="shrink-0 bg-[#F5F2EC]/90 backdrop-blur-md border-b border-[#DDD7CE] px-8 py-4 flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <h1 className="text-2xl font-bold text-[#24211E] tracking-tight font-serif">
-              Task Ledger
+              Personal To-Dos
             </h1>
-            <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-full bg-[#FAF8F5] border border-black/[0.08] text-[#827A72]">
-              {pendingCount} active
+            <span className="font-mono text-xs font-semibold px-2.5 py-0.5 rounded-full bg-[#FAF8F5] border border-black/[0.08] text-[#827A72]">
+              {pendingCount} remaining
             </span>
           </div>
           <p className="text-[#827A72] text-xs font-medium mt-0.5">
-            {dayjs().format("dddd, MMMM D")} · Structured action items and ledger commitments
+            {dayjs().format("dddd, MMMM D")} · Daily intentions and habits
           </p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="morning-btn-accent clay-button cursor-pointer"
-        >
-          <Plus className="w-4 h-4 stroke-[2.2]" /> New Task
-        </button>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => { sound.pop(); setShowModal(true); }}
+            className="morning-btn-accent clay-button cursor-pointer"
+          >
+            <Plus className="w-4 h-4 stroke-[2.2]" /> New Task
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto p-8 relative">
         <div className="max-w-3xl mx-auto space-y-5">
-          {/* Quick Task Inline Ledger Input */}
+
+          {/* Daily Progress Completion Bar */}
+          {totalCount > 0 && (
+            <div className="clay-card rounded-2xl p-4 px-5 border border-black/[0.06] shadow-xs flex items-center justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex justify-between items-center text-xs mb-1.5 font-medium">
+                  <span className="text-[#524B45]">
+                    {progressPercent === 100 ? (
+                      <span className="text-[#6B8065] font-bold flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5" /> All clear for today! Great momentum.
+                      </span>
+                    ) : (
+                      <span>{completedCount} of {totalCount} completed</span>
+                    )}
+                  </span>
+                  <span className="font-mono font-bold text-[#24211E]">{progressPercent}%</span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-[#EAE5DE] overflow-hidden">
+                  <motion.div
+                    className="h-full rounded-full bg-gradient-to-r from-[#D98A7E] to-[#C87467]"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${progressPercent}%` }}
+                    transition={{ type: "spring", stiffness: 200, damping: 25 }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Quick Task Inline Input */}
           <form
             onSubmit={handleQuickAdd}
             className="clay-card rounded-2xl p-2.5 px-4 flex items-center gap-3 shadow-sm border border-black/[0.07]"
@@ -313,174 +325,142 @@ export default function TasksPage() {
               type="text"
               value={quickTitle}
               onChange={(e) => setQuickTitle(e.target.value)}
-              placeholder="Quick capture to ledger... (e.g. Reconcile invoices #Finance, press Enter)"
+              placeholder="Add a task... (e.g. 5km run, buy groceries, press Enter)"
               className="flex-1 bg-transparent text-sm text-[#24211E] placeholder:text-[#A39B92] outline-none font-medium"
             />
             <button
               type="submit"
-              disabled={!quickTitle.trim() || quickSaving}
-              className="font-mono text-xs text-white bg-[#C87467] hover:bg-[#B86356] disabled:opacity-40 disabled:cursor-not-allowed px-3 py-1.5 rounded-xl clay-button flex items-center gap-1 cursor-pointer"
+              disabled={quickSaving || !quickTitle.trim()}
+              className="p-1 px-3 rounded-lg bg-[#FAF8F5] hover:bg-white text-xs font-bold text-[#C87467] border border-black/[0.06] transition-all disabled:opacity-40 cursor-pointer"
             >
-              {quickSaving ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <>
-                  <span>Add</span>
-                  <CornerDownLeft className="w-3.5 h-3.5" />
-                </>
-              )}
+              Add
             </button>
           </form>
 
-          {/* Filter Switcher & Counter */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1 bg-[#EAE5DE] p-1 rounded-xl border border-black/[0.06] shadow-2xs">
-              {(["Pending", "All"] as const).map((lbl) => {
-                const active = lbl === "Pending" ? pendingOnly : !pendingOnly;
-                return (
-                  <button
-                    key={lbl}
-                    onClick={() => setPendingOnly(lbl === "Pending")}
-                    className={clsx(
-                      "relative z-10 px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all duration-150 select-none cursor-pointer",
-                      active
-                        ? "bg-[#FAF8F5] text-[#24211E] shadow-xs border border-black/[0.04]"
-                        : "text-[#6E6862] hover:text-[#24211E]"
-                    )}
-                  >
-                    {lbl}
-                  </button>
-                );
-              })}
+          {/* Filter Pills */}
+          <div className="flex items-center justify-between pt-1">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { sound.pop(); setPendingOnly(false); }}
+                className={clsx(
+                  "px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer",
+                  !pendingOnly
+                    ? "bg-[#24211E] text-white shadow-xs"
+                    : "bg-[#FAF8F5] text-[#827A72] hover:text-[#24211E] border border-black/[0.06]"
+                )}
+              >
+                All Tasks ({totalCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => { sound.pop(); setPendingOnly(true); }}
+                className={clsx(
+                  "px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer",
+                  pendingOnly
+                    ? "bg-[#24211E] text-white shadow-xs"
+                    : "bg-[#FAF8F5] text-[#827A72] hover:text-[#24211E] border border-black/[0.06]"
+                )}
+              >
+                Pending Only ({pendingCount})
+              </button>
             </div>
-
-            <span className="text-xs text-[#827A72] font-medium font-mono">
-              {tasks.length} total entries
-            </span>
           </div>
 
-          {loading ? (
-            <div className="flex items-center justify-center py-20 text-[#827A72] gap-2">
-              <Loader2 className="w-5 h-5 animate-spin text-[#C87467]" />
-              <span className="text-xs font-medium">Loading ledger entries...</span>
-            </div>
-          ) : tasks.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-center py-20 clay-card p-8 border border-black/[0.07]"
-            >
-              <div className="w-12 h-12 bg-[#F2EFE9] rounded-2xl flex items-center justify-center mx-auto mb-3 text-[#6B8065] border border-black/[0.06]">
-                <CheckSquare className="w-6 h-6 stroke-[1.8]" />
-              </div>
-              <h3 className="text-base font-bold text-[#24211E] font-serif">All caught up!</h3>
-              <p className="text-[#827A72] text-xs mt-1">
-                {pendingOnly ? "No pending tasks remaining. Your desk is clear!" : "No tasks found in your workspace."}
-              </p>
-            </motion.div>
-          ) : (
-            <div className="space-y-3">
-              <AnimatePresence initial={false}>
-                {tasks.map((task) => {
-                  const { isOverdue, tags, priority } = getTaskMeta(task);
-                  return (
-                    <motion.article
-                      key={task.id}
-                      layout
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.12 } }}
-                      className={clsx(
-                        "group clay-card rounded-2xl p-4.5 transition-all duration-150 hover:shadow-md border border-black/[0.07]",
-                        task.completed && "opacity-75 bg-[#FAF8F5]/60"
-                      )}
+          {/* Task List Items */}
+          <div className="space-y-2.5">
+            <AnimatePresence mode="popLayout">
+              {tasks.map((task) => (
+                <motion.div
+                  key={task.id}
+                  layout
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.18 }}
+                  className={clsx(
+                    "clay-card rounded-2xl p-4 flex items-center justify-between gap-4 border transition-all duration-150 group",
+                    task.completed
+                      ? "bg-[#FAF8F5]/60 border-black/[0.04]"
+                      : "hover:border-[#C87467]/30 border-black/[0.07]"
+                  )}
+                >
+                  <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                    {/* Animated Checkbox with Ink-Pop */}
+                    <button
+                      type="button"
+                      onClick={() => toggleComplete(task)}
+                      className="cursor-pointer flex-shrink-0"
                     >
-                      <div className="flex items-start gap-3.5">
-                        <button
-                          onClick={() => toggleComplete(task)}
-                          className="mt-0.5 flex-shrink-0 transition-colors cursor-pointer text-[#827A72] hover:text-[#6B8065]"
-                        >
-                          {task.completed ? (
-                            <CheckCircle2 className="w-5 h-5 text-[#6B8065] stroke-[2.2]" />
-                          ) : (
-                            <Circle className="w-5 h-5 text-[#A39B92] hover:text-[#6B8065] stroke-[1.8] transition-colors" />
-                          )}
-                        </button>
+                      <motion.div
+                        whileTap={{ scale: 0.85 }}
+                        className={clsx(
+                          "w-5 h-5 rounded-lg flex items-center justify-center transition-colors duration-200 border",
+                          task.completed
+                            ? "bg-[#C87467] border-[#C87467] text-white shadow-xs"
+                            : "border-stone-300 bg-white hover:border-[#C87467]"
+                        )}
+                      >
+                        {task.completed && (
+                          <motion.div
+                            initial={{ scale: 0, rotate: -45 }}
+                            animate={{ scale: 1, rotate: 0 }}
+                            transition={{ type: "spring", stiffness: 500, damping: 28 }}
+                          >
+                            <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          </motion.div>
+                        )}
+                      </motion.div>
+                    </button>
 
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2">
-                            <h3
-                              className={clsx(
-                                "text-[14.5px] font-bold transition-colors leading-snug",
-                                task.completed ? "text-[#A39B92] line-through" : "text-[#24211E]"
-                              )}
-                            >
-                              {task.title}
-                            </h3>
-                            <button
-                              onClick={() => deleteTask(task.id)}
-                              className="opacity-0 group-hover:opacity-100 p-1.5 text-[#827A72] hover:text-[#C87467] hover:bg-[#C87467]/10 rounded-lg transition cursor-pointer"
-                              title="Delete task"
-                            >
-                              <Trash2 className="w-4 h-4 stroke-[1.8]" />
-                            </button>
-                          </div>
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className={clsx(
+                          "text-sm font-medium transition-all duration-200 truncate",
+                          task.completed
+                            ? "line-through text-[#A39B92]"
+                            : "text-[#24211E]"
+                        )}
+                      >
+                        {task.title}
+                      </p>
+                      {task.description && (
+                        <p className="text-xs text-[#827A72] truncate mt-0.5">
+                          {task.description}
+                        </p>
+                      )}
+                    </div>
+                  </div>
 
-                          {task.description && (
-                            <p className="text-xs text-[#6E6862] mt-1.5 leading-relaxed">
-                              {task.description}
-                            </p>
-                          )}
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    {task.dueAt && (
+                      <span className="text-[11px] font-mono text-[#827A72] flex items-center gap-1 bg-[#FAF8F5] px-2 py-0.5 rounded-md border border-black/[0.05]">
+                        <CalendarDays className="w-3 h-3 text-[#C87467]" />
+                        {dayjs(task.dueAt).format("MMM D")}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => deleteTask(task.id)}
+                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-[#C87467]/10 text-[#827A72] hover:text-[#C87467] transition-all cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
 
-                          <div className="flex flex-wrap items-center gap-2 pt-2.5">
-                            {/* Priority badge */}
-                            <span
-                              className={clsx(
-                                "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold border",
-                                priority.colorClass
-                              )}
-                            >
-                              <span className={clsx("w-1.5 h-1.5 rounded-full", priority.dotClass)} />
-                              {priority.label}
-                            </span>
+            {tasks.length === 0 && !loading && (
+              <div className="text-center py-12 text-[#827A72] font-serif">
+                <p className="text-base italic">No tasks in your ledger yet.</p>
+                <p className="text-xs mt-1 text-[#A39B92]">Add a task above to plan your day.</p>
+              </div>
+            )}
+          </div>
 
-                            {/* Due date badge */}
-                            {task.dueAt && (
-                              <span
-                                className={clsx(
-                                  "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-bold font-mono border",
-                                  isOverdue
-                                    ? "bg-[#FDF2F4] text-[#BE1239] border-[#FECDD3]"
-                                    : "bg-[#F2EFE9] text-[#524B45] border-black/[0.06]"
-                                )}
-                              >
-                                <Clock className="w-3 h-3 stroke-[2]" />
-                                {dayjs(task.dueAt).format("MMM D, h:mm A")}
-                              </span>
-                            )}
-
-                            {/* Tags */}
-                            {tags.map((tg) => (
-                              <span
-                                key={tg}
-                                className="inline-flex items-center gap-1 text-[11px] font-mono text-[#827A72] bg-[#FAF8F5] border border-black/[0.06] px-2 py-0.5 rounded-md"
-                              >
-                                <Tag className="w-2.5 h-2.5" />
-                                {tg}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </motion.article>
-                  );
-                })}
-              </AnimatePresence>
-            </div>
-          )}
         </div>
       </div>
     </div>
   );
 }
-

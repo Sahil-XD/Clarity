@@ -1,17 +1,39 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import dayjs from "dayjs";
 import {
   Lock, Unlock, Key, BookOpen, AlertCircle, Loader2,
   Plus, ChevronRight, Pencil, CalendarDays, Check,
-  Bold, Italic, List, Bookmark, Sparkles
+  Bold, Italic, List, Sparkles, Shuffle, Smile
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
+import { sound } from "@/lib/sound";
 import type { DiaryEntry } from "@/lib/types";
 import { clsx } from "clsx";
 import { ClarityLogo } from "@/components/ClarityLogo";
 
-// ─── PIN / Lock screen ──────────────────────────────────────────────────────
+// Curated daily reflection prompts for personal mindfulness
+const DAILY_PROMPTS = [
+  "What is one small thing that made you smile today?",
+  "What gave you the most energy or satisfaction today?",
+  "What is a thought or feeling you want to let go of tonight?",
+  "Who did you appreciate talking to or spending time with today?",
+  "What is one personal lesson or insight from this week?",
+  "Describe today in three words and explain why.",
+  "What is something simple you are genuinely looking forward to tomorrow?",
+  "What did you do today that future-you will be thankful for?",
+];
+
+const MOODS = [
+  { label: "Energized", emoji: "⚡" },
+  { label: "Peaceful", emoji: "🌿" },
+  { label: "Productive", emoji: "🔥" },
+  { label: "Chilled", emoji: "☕" },
+  { label: "Tired", emoji: "😴" },
+  { label: "Thoughtful", emoji: "🧠" },
+];
+
+// ─── PIN / Lock screen ───────────────────────────────────────────────────────
 function LockScreen({
   onUnlocked,
 }: {
@@ -28,8 +50,10 @@ function LockScreen({
     setLoading(true);
     try {
       const data = await api.getDiaryEntries(pin);
+      sound.chime();
       onUnlocked(pin, data);
     } catch (err: any) {
+      sound.pop();
       if (err.message?.includes("Diary PIN not set") || err.message?.includes("Conflict")) {
         setIsSettingPin(true);
         setError("No PIN set yet — create one to protect your diary.");
@@ -48,6 +72,7 @@ function LockScreen({
     setLoading(true);
     try {
       await api.setDiaryPin(pin);
+      sound.chime();
       await handleUnlock(e);
       setIsSettingPin(false);
     } catch {
@@ -59,7 +84,6 @@ function LockScreen({
 
   return (
     <div className="h-full flex items-center justify-center p-6 morning-bg relative">
-      {/* Warm atmospheric glows */}
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-gradient-to-tr from-[#D98A7E]/15 to-[#C87467]/10 rounded-full blur-3xl pointer-events-none" />
 
       <motion.div
@@ -69,7 +93,6 @@ function LockScreen({
         className="w-full max-w-sm relative z-10"
       >
         <div className="relative overflow-hidden rounded-3xl clay-card border border-black/[0.08] shadow-lg">
-          {/* Header */}
           <div className="relative px-8 pt-8 pb-6 text-center overflow-hidden">
             <div className="flex justify-center mb-3">
               <ClarityLogo size="lg" showText={false} theme="terracotta" shape="squircle" />
@@ -82,7 +105,6 @@ function LockScreen({
             </p>
           </div>
 
-          {/* Divider accent line */}
           <div className="h-px w-full bg-gradient-to-r from-transparent via-[#C87467]/25 to-transparent" />
 
           <div className="p-7">
@@ -111,7 +133,7 @@ function LockScreen({
                     type="password"
                     value={pin}
                     onChange={(e) => setPin(e.target.value)}
-                    placeholder={isSettingPin ? "Min. 4 characters" : "••••••"}
+                    placeholder={isSettingPin ? "Min. 4 characters" : "••••••••"}
                     className="morning-input pl-10 tracking-widest font-mono text-center text-lg font-bold"
                     autoFocus
                   />
@@ -158,9 +180,14 @@ export default function DiaryPage() {
   const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
   const [savingIds, setSavingIds] = useState<Record<string, boolean>>({});
   const [savedIds, setSavedIds] = useState<Record<string, boolean>>({});
+  const [isTyping, setIsTyping] = useState(false);
   const [addingDate, setAddingDate] = useState(false);
   const [newDate, setNewDate] = useState(dayjs().format("YYYY-MM-DD"));
+  const [promptIdx, setPromptIdx] = useState(0);
+  const [selectedMood, setSelectedMood] = useState<string | null>(null);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const typingTimerRef = useRef<any>(null);
 
   // Build the default date list: last 14 days
   const buildDefaultDates = () =>
@@ -172,7 +199,6 @@ export default function DiaryPage() {
     fetchedEntries.forEach((e) => { map[e.date] = e; });
     setEntries(map);
 
-    // Build date list: default 14 days + any extra dates from entries
     const defaults = buildDefaultDates();
     const extraDates = fetchedEntries
       .map((e) => e.date)
@@ -189,6 +215,7 @@ export default function DiaryPage() {
     }
     setSelectedDate(newDate);
     setAddingDate(false);
+    sound.pageTurn();
     setTimeout(() => textareaRef.current?.focus(), 100);
   };
 
@@ -198,12 +225,44 @@ export default function DiaryPage() {
       const saved = await api.saveDiaryEntry(date, pin, { body });
       setEntries((p) => ({ ...p, [date]: saved }));
       setSavedIds((p) => ({ ...p, [date]: true }));
+      sound.pop();
       setTimeout(() => setSavedIds((p) => ({ ...p, [date]: false })), 2000);
     } catch {
       alert(`Failed to save entry for ${date}`);
     } finally {
       setSavingIds((p) => ({ ...p, [date]: false }));
     }
+  };
+
+  const cyclePrompt = () => {
+    sound.pop();
+    setPromptIdx((prev) => (prev + 1) % DAILY_PROMPTS.length);
+  };
+
+  const insertPrompt = () => {
+    sound.pop();
+    if (!textareaRef.current) return;
+    const p = DAILY_PROMPTS[promptIdx];
+    const current = textareaRef.current.value.trim();
+    textareaRef.current.value = current ? `${current}\n\n✍️ *${p}*\n` : `✍️ *${p}*\n`;
+    textareaRef.current.focus();
+    handleSave(selectedDate, textareaRef.current.value.trim());
+  };
+
+  const selectMoodPill = (mood: string) => {
+    sound.pop();
+    setSelectedMood(mood === selectedMood ? null : mood);
+  };
+
+  const handleTextChange = () => {
+    setIsTyping(true);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => {
+      setIsTyping(false);
+      if (textareaRef.current) {
+        handleSave(selectedDate, textareaRef.current.value.trim());
+      }
+    }, 1500);
   };
 
   if (isLocked) return <LockScreen onUnlocked={handleUnlocked} />;
@@ -215,9 +274,8 @@ export default function DiaryPage() {
 
   return (
     <div className="h-full flex overflow-hidden bg-transparent">
-      {/* ── Left Sidebar: date list ─────────────────────────── */}
+      {/* ── Left Sidebar: Date List ─────────────────────────────────── */}
       <aside className="w-68 flex-shrink-0 border-r border-[#DCD6CC] flex flex-col bg-[#ECE8E1]/90">
-        {/* header */}
         <div className="px-5 py-4 border-b border-black/[0.06] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-[#D98A7E]/15 flex items-center justify-center text-[#C87467]">
@@ -228,14 +286,14 @@ export default function DiaryPage() {
           <div className="flex items-center gap-1">
             <button
               title="Add date"
-              onClick={() => setAddingDate((v) => !v)}
+              onClick={() => { sound.pop(); setAddingDate((v) => !v); }}
               className="p-1.5 rounded-lg hover:bg-black/[0.04] text-[#827A72] hover:text-[#24211E] transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4 stroke-[2.2]" />
             </button>
             <button
               title="Lock diary"
-              onClick={() => { setIsLocked(true); setPin(""); setEntries({}); }}
+              onClick={() => { sound.pageTurn(); setIsLocked(true); setPin(""); setEntries({}); }}
               className="p-1.5 rounded-lg hover:bg-[#C87467]/10 text-[#827A72] hover:text-[#C87467] transition-colors cursor-pointer"
             >
               <Lock className="w-4 h-4 stroke-[1.8]" />
@@ -243,7 +301,7 @@ export default function DiaryPage() {
           </div>
         </div>
 
-        {/* add-date picker */}
+        {/* Add date picker */}
         <AnimatePresence>
           {addingDate && (
             <motion.div
@@ -272,7 +330,7 @@ export default function DiaryPage() {
           )}
         </AnimatePresence>
 
-        {/* date list */}
+        {/* Date List */}
         <nav className="flex-1 overflow-y-auto py-2 px-2.5 space-y-1">
           {dates.map((date) => {
             const d = dayjs(date);
@@ -283,7 +341,7 @@ export default function DiaryPage() {
             return (
               <button
                 key={date}
-                onClick={() => setSelectedDate(date)}
+                onClick={() => { sound.pageTurn(); setSelectedDate(date); }}
                 className={clsx(
                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-left group cursor-pointer",
                   isSelected
@@ -291,7 +349,6 @@ export default function DiaryPage() {
                     : "hover:bg-black/[0.03] border border-transparent text-[#6E6862]"
                 )}
               >
-                {/* date badge */}
                 <div className={clsx(
                   "w-9 h-9 rounded-xl flex flex-col items-center justify-center flex-shrink-0 text-xs font-bold leading-tight font-serif",
                   isToday
@@ -312,7 +369,7 @@ export default function DiaryPage() {
                     {isToday ? "Today" : d.format("dddd")}
                   </div>
                   <div className="text-[11px] text-[#827A72] truncate mt-0.5">
-                    {hasEntry ? entries[date].body!.slice(0, 30) + (entries[date].body!.length > 30 ? "…" : "") : "No entry yet"}
+                    {hasEntry ? entries[date].body!.slice(0, 30) + (entries[date].body!.length > 30 ? "..." : "") : "No entry yet"}
                   </div>
                 </div>
 
@@ -323,7 +380,7 @@ export default function DiaryPage() {
         </nav>
       </aside>
 
-      {/* ── Right: editor ───────────────────────────────────── */}
+      {/* ── Right: Editor Canvas ────────────────────────────────────── */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <AnimatePresence mode="wait">
           <motion.div
@@ -334,7 +391,7 @@ export default function DiaryPage() {
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className="flex-1 flex flex-col overflow-hidden"
           >
-            {/* date header */}
+            {/* Header with Date, Word count & Save Pulse */}
             <div className="px-10 pt-6 pb-4 border-b border-[#DDD7CE] flex items-center justify-between bg-[#F5F2EC]/90 backdrop-blur-md">
               <div>
                 <p className="text-xs font-bold text-[#827A72] uppercase tracking-wider font-mono">
@@ -345,7 +402,7 @@ export default function DiaryPage() {
                 </h2>
               </div>
 
-              {/* stats & save indicator */}
+              {/* Stats & Tactile Save Indicator */}
               <div className="flex items-center gap-3">
                 <span className="font-mono text-xs text-[#827A72] px-2.5 py-1 rounded-lg bg-[#FAF8F5] border border-black/[0.06]">
                   {wordCount} words · ~{readTime}m read
@@ -353,10 +410,11 @@ export default function DiaryPage() {
 
                 <div className="h-8 flex items-center">
                   <AnimatePresence mode="wait">
-                    {savingIds[selectedDate] ? (
+                    {savingIds[selectedDate] || isTyping ? (
                       <motion.span key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="flex items-center gap-1.5 text-xs text-[#827A72] font-medium">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#C87467]" /> Saving…
+                        className="flex items-center gap-1.5 text-xs text-[#C87467] font-medium bg-[#C87467]/10 px-2.5 py-1 rounded-lg border border-[#C87467]/20">
+                        <span className="w-2 h-2 rounded-full bg-[#C87467] animate-ping" />
+                        <span>Autosaving...</span>
                       </motion.span>
                     ) : savedIds[selectedDate] ? (
                       <motion.span key="saved" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
@@ -365,8 +423,8 @@ export default function DiaryPage() {
                       </motion.span>
                     ) : (
                       <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="flex items-center gap-1.5 text-xs text-[#A39B92]">
-                        <Pencil className="w-3.5 h-3.5 stroke-[1.8]" /> Auto-saves
+                        className="flex items-center gap-1.5 text-xs text-[#827A72] px-2 py-1">
+                        <Pencil className="w-3.5 h-3.5 stroke-[1.8]" /> Ready
                       </motion.span>
                     )}
                   </AnimatePresence>
@@ -374,20 +432,77 @@ export default function DiaryPage() {
               </div>
             </div>
 
-            {/* Notebook canvas with authentic ruled lines, coral margin rule, and brass rivets */}
-            <div className="flex-1 overflow-hidden p-6 flex flex-col">
+            {/* Notebook canvas wrapper */}
+            <div className="flex-1 overflow-hidden p-6 flex flex-col space-y-4">
+
+              {/* Daily Reflection Prompt Carousel (Beats the blank page block!) */}
+              <div className="p-3.5 px-4.5 rounded-2xl bg-[#FAF8F5] border border-black/[0.06] shadow-xs flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <div className="w-7 h-7 rounded-lg bg-[#D98A7E]/20 text-[#C87467] flex items-center justify-center flex-shrink-0">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <p className="font-serif italic text-sm text-[#524B45] truncate">
+                    &ldquo;{DAILY_PROMPTS[promptIdx]}&rdquo;
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={cyclePrompt}
+                    title="Cycle to next prompt"
+                    className="p-1.5 rounded-lg text-[#827A72] hover:text-[#24211E] hover:bg-black/[0.04] transition-colors cursor-pointer"
+                  >
+                    <Shuffle className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={insertPrompt}
+                    className="px-2.5 py-1 rounded-lg bg-[#FAF8F5] hover:bg-white text-xs font-semibold text-[#C87467] border border-[#C87467]/30 hover:border-[#C87467] transition-all cursor-pointer shadow-2xs"
+                  >
+                    Use Prompt
+                  </button>
+                </div>
+              </div>
+
+              {/* Mood / Vibe Chips Bar */}
+              <div className="flex items-center justify-between px-2">
+                <div className="flex items-center gap-1.5 overflow-x-auto py-1">
+                  <span className="text-[11px] font-semibold text-[#827A72] mr-1">Mood:</span>
+                  {MOODS.map((m) => {
+                    const isSelected = selectedMood === m.label;
+                    return (
+                      <button
+                        key={m.label}
+                        type="button"
+                        onClick={() => selectMoodPill(m.label)}
+                        className={clsx(
+                          "px-2.5 py-1 rounded-full text-xs font-medium transition-all duration-150 flex items-center gap-1 cursor-pointer",
+                          isSelected
+                            ? "bg-[#C87467] text-white shadow-xs scale-105"
+                            : "bg-[#FAF8F5] hover:bg-white text-[#524B45] border border-black/[0.06]"
+                        )}
+                      >
+                        <span>{m.emoji}</span>
+                        <span>{m.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Notebook Ruled Body */}
               <div className="clay-card flex-1 flex flex-col overflow-hidden border border-black/[0.08] shadow-sm relative">
-                {/* Brass Rivet Accents */}
                 <div className="absolute left-6 top-7 w-2.5 h-2.5 rounded-full brass-pin shadow-xs z-10 pointer-events-none" />
                 <div className="absolute left-6 bottom-16 w-2.5 h-2.5 rounded-full brass-pin shadow-xs z-10 pointer-events-none" />
 
-                {/* Notebook ruled body */}
                 <div className="flex-1 overflow-auto ruled-paper pl-16 pr-8 py-6">
                   <textarea
                     ref={textareaRef}
                     key={selectedDate}
                     defaultValue={entry?.body || ""}
-                    placeholder="What is on your mind today? Let thoughts unspool on the page..."
+                    onChange={handleTextChange}
+                    placeholder="What is on your mind today? Write down a moment, thought, or feeling..."
                     className="w-full h-full min-h-[300px] bg-transparent resize-none outline-none leading-[32px] text-[#24211E] placeholder-[#A39B92] text-lg font-serif"
                     onBlur={(e) => {
                       const val = e.target.value.trim();
@@ -398,13 +513,14 @@ export default function DiaryPage() {
                   />
                 </div>
 
-                {/* Bottom Notebook Formatting & Stamp Toolbar */}
+                {/* Bottom Notebook Toolbar */}
                 <div className="bg-[#F2EFE9] px-6 py-2.5 border-t border-black/[0.06] flex items-center justify-between z-10">
                   <div className="flex items-center gap-1 text-[#827A72]">
                     <button
                       type="button"
                       title="Bold"
                       onClick={() => {
+                        sound.pop();
                         if (textareaRef.current) {
                           textareaRef.current.value += "**bold**";
                           textareaRef.current.focus();
@@ -418,6 +534,7 @@ export default function DiaryPage() {
                       type="button"
                       title="Italic"
                       onClick={() => {
+                        sound.pop();
                         if (textareaRef.current) {
                           textareaRef.current.value += "*italic*";
                           textareaRef.current.focus();
@@ -431,6 +548,7 @@ export default function DiaryPage() {
                       type="button"
                       title="Bullet list"
                       onClick={() => {
+                        sound.pop();
                         if (textareaRef.current) {
                           textareaRef.current.value += "\n- ";
                           textareaRef.current.focus();
@@ -449,10 +567,9 @@ export default function DiaryPage() {
                         handleSave(selectedDate, textareaRef.current.value.trim());
                       }
                     }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FAF8F5] hover:bg-white text-[#C87467] font-semibold text-xs border border-black/[0.08] shadow-xs active:scale-95 transition-all cursor-pointer"
+                    className="morning-btn-accent clay-button text-xs py-1.5 px-3.5 cursor-pointer"
                   >
-                    <Bookmark className="w-3.5 h-3.5" />
-                    <span>Seal to Ledger</span>
+                    Save Entry
                   </button>
                 </div>
               </div>
