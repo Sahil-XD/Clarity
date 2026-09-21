@@ -214,13 +214,13 @@ export const ClarityLogo: React.FC<ClarityLogoProps> = ({
       {showText && (
         <div className="flex flex-col min-w-0">
           <span
-            className={`font-serif font-bold tracking-tight text-[#24211E] ${dimensions.text} leading-tight truncate select-none`}
+            className={`font-serif font-bold tracking-tight text-ink ${dimensions.text} leading-tight truncate select-none`}
           >
             Clarity
           </span>
           {subtitle && (
             <span
-              className={`font-mono ${dimensions.subText} uppercase tracking-[0.16em] text-[#827A72] font-semibold truncate mt-0.5 select-none`}
+              className={`font-mono ${dimensions.subText} uppercase tracking-[0.16em] text-ink-faint font-semibold truncate mt-0.5 select-none`}
             >
               {subtitle}
             </span>

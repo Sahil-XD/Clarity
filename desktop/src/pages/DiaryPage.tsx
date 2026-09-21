@@ -1,11 +1,13 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import dayjs from "dayjs";
 import {
   Lock, Unlock, Key, BookOpen, AlertCircle, Loader2,
   Plus, ChevronRight, Pencil, CalendarDays, Check,
-  Bold, Italic, List, Sparkles, Shuffle, Smile
+  Bold, Italic, List, Sparkles, Shuffle, Smile,
+  RotateCcw, Delete, ShieldAlert, ShieldCheck, Settings, X, Trash2,
+  CornerDownLeft, Shield, Sparkle
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { api } from "@/lib/api";
 import { sound } from "@/lib/sound";
 import type { DiaryEntry } from "@/lib/types";
@@ -24,146 +26,508 @@ const DAILY_PROMPTS = [
   "What did you do today that future-you will be thankful for?",
 ];
 
+const MOOD_GLOWS: Record<string, string> = {
+  Energized: 'rgba(245, 158, 11, 0.08)',
+  Peaceful: 'rgba(107, 128, 101, 0.08)',
+  Productive: 'rgba(200, 116, 103, 0.08)',
+  Chilled: 'rgba(217, 138, 126, 0.08)',
+  Tired: 'rgba(139, 92, 246, 0.08)',
+  Thoughtful: 'rgba(59, 130, 246, 0.08)',
+};
+
 const MOODS = [
   { label: "Energized", emoji: "⚡" },
   { label: "Peaceful", emoji: "🌿" },
-  { label: "Productive", emoji: "🔥" },
+  { label: "Productive", emoji: "🎯" },
   { label: "Chilled", emoji: "☕" },
-  { label: "Tired", emoji: "😴" },
-  { label: "Thoughtful", emoji: "🧠" },
+  { label: "Tired", emoji: "🌙" },
+  { label: "Thoughtful", emoji: "💭" },
 ];
 
-// ─── PIN / Lock screen ───────────────────────────────────────────────────────
+// ─── 3D Vault Lock Screen (Physical Keyboard Only, Kinetic Rings) ─────────────
 function LockScreen({
   onUnlocked,
 }: {
   onUnlocked: (pin: string, entries: DiaryEntry[]) => void;
 }) {
   const [pin, setPin] = useState("");
-  const [isSettingPin, setIsSettingPin] = useState(false);
+  const [mode, setMode] = useState<"unlock" | "reset" | "setup">("unlock");
+  const [resetStep, setResetStep] = useState<"enter" | "confirm">("enter");
+  const [tempNewPin, setTempNewPin] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [shake, setShake] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [ripples, setRipples] = useState<{ id: number; index: number }[]>([]);
 
-  const handleUnlock = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // 3D Tilt Parallax Motion Values
+  const cardRef = useRef<HTMLDivElement>(null);
+  const rawX = useMotionValue(0);
+  const rawY = useMotionValue(0);
+  const mouseX = useSpring(rawX, { stiffness: 280, damping: 26 });
+  const mouseY = useSpring(rawY, { stiffness: 280, damping: 26 });
+
+  const rotateX = useTransform(mouseY, [-0.5, 0.5], ["12deg", "-12deg"]);
+  const rotateY = useTransform(mouseX, [-0.5, 0.5], ["-12deg", "12deg"]);
+  const glareX = useTransform(mouseX, [-0.5, 0.5], ["0%", "100%"]);
+  const glareY = useTransform(mouseY, [-0.5, 0.5], ["0%", "100%"]);
+
+  // Mouse ambient lighting
+  const [coords, setCoords] = useState({ x: 0, y: 0 });
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    rawX.set(x);
+    rawY.set(y);
+    setCoords({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
+
+  const handleMouseLeave = () => {
+    rawX.set(0);
+    rawY.set(0);
+  };
+
+  const triggerShake = (msg: string) => {
+    sound.pop();
+    setError(msg);
+    setShake(true);
+    setPin("");
+    setTimeout(() => setShake(false), 500);
+  };
+
+  const handleUnlock = useCallback(async (pinToVerify: string) => {
     setError("");
     setLoading(true);
     try {
-      const data = await api.getDiaryEntries(pin);
+      const data = await api.getDiaryEntries(pinToVerify);
+      setSuccess(true);
       sound.chime();
-      onUnlocked(pin, data);
+      setTimeout(() => {
+        onUnlocked(pinToVerify, data);
+      }, 350);
     } catch (err: any) {
-      sound.pop();
-      if (err.message?.includes("Diary PIN not set") || err.message?.includes("Conflict")) {
-        setIsSettingPin(true);
-        setError("No PIN set yet — create one to protect your diary.");
+      const message = err?.message || String(err);
+      if (message.includes("Diary PIN not set")) {
+        setMode("setup");
+        setPin("");
+        setError("No passcode set yet. Type 4 digits to secure your journal.");
       } else {
-        setError("Incorrect PIN. Try again.");
+        triggerShake("Incorrect passcode. Try again or reset below.");
       }
     } finally {
       setLoading(false);
     }
-  };
+  }, [onUnlocked]);
 
-  const handleSetPin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (pin.length < 4) { setError("PIN must be at least 4 characters."); return; }
+  const handleResetSubmit = useCallback(async (confirmedPin: string) => {
     setError("");
     setLoading(true);
     try {
-      await api.setDiaryPin(pin);
+      await api.resetDiaryPin(confirmedPin);
+      setSuccess(true);
       sound.chime();
-      await handleUnlock(e);
-      setIsSettingPin(false);
+      const entries = await api.getDiaryEntries(confirmedPin);
+      setTimeout(() => {
+        onUnlocked(confirmedPin, entries);
+      }, 350);
     } catch {
-      setError("Failed to set PIN. Try again.");
+      triggerShake("Failed to reset passcode. Try again.");
     } finally {
       setLoading(false);
     }
+  }, [onUnlocked]);
+
+  // Handle digit input with ripple shockwaves
+  const handleDigit = useCallback((digit: string) => {
+    if (loading || success) return;
+    sound.pop();
+    setError("");
+    setActiveKey(digit);
+    setTimeout(() => setActiveKey(null), 140);
+
+    setPin((prev) => {
+      if (prev.length >= 4) return prev;
+      const targetIndex = prev.length;
+      const next = prev + digit;
+
+      // Trigger ripple shockwave on target kinetic ring
+      const rippleId = Date.now() + Math.random();
+      setRipples((r) => [...r, { id: rippleId, index: targetIndex }]);
+      setTimeout(() => {
+        setRipples((r) => r.filter((item) => item.id !== rippleId));
+      }, 600);
+
+      if (next.length === 4) {
+        if (mode === "unlock") {
+          setTimeout(() => handleUnlock(next), 90);
+        } else if (mode === "setup") {
+          setTimeout(async () => {
+            setLoading(true);
+            try {
+              await api.setDiaryPin(next);
+              setSuccess(true);
+              sound.chime();
+              const entries = await api.getDiaryEntries(next);
+              setTimeout(() => onUnlocked(next, entries), 350);
+            } catch {
+              triggerShake("Failed to set passcode. Try again.");
+            } finally {
+              setLoading(false);
+            }
+          }, 90);
+        } else if (mode === "reset") {
+          if (resetStep === "enter") {
+            setTimeout(() => {
+              setTempNewPin(next);
+              setResetStep("confirm");
+              setPin("");
+            }, 90);
+          } else {
+            setTimeout(() => {
+              if (next === tempNewPin) {
+                handleResetSubmit(next);
+              } else {
+                triggerShake("Passcodes do not match. Start over.");
+                setResetStep("enter");
+                setTempNewPin("");
+              }
+            }, 90);
+          }
+        }
+      }
+      return next;
+    });
+  }, [loading, success, mode, resetStep, tempNewPin, handleUnlock, handleResetSubmit, onUnlocked]);
+
+  const handleBackspace = useCallback(() => {
+    if (loading || success) return;
+    sound.pop();
+    setActiveKey("Backspace");
+    setTimeout(() => setActiveKey(null), 140);
+    setPin((prev) => prev.slice(0, -1));
+  }, [loading, success]);
+
+  const handleClear = useCallback(() => {
+    sound.pop();
+    setPin("");
+    setError("");
+  }, []);
+
+  // Global physical keyboard capture
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key >= "0" && e.key <= "9") {
+        e.preventDefault();
+        handleDigit(e.key);
+      } else if (e.key === "Backspace") {
+        e.preventDefault();
+        handleBackspace();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        handleClear();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleDigit, handleBackspace, handleClear]);
+
+  const startResetMode = () => {
+    sound.pop();
+    setMode("reset");
+    setResetStep("enter");
+    setTempNewPin("");
+    setPin("");
+    setError("");
+  };
+
+  const cancelResetMode = () => {
+    sound.pop();
+    setMode("unlock");
+    setResetStep("enter");
+    setTempNewPin("");
+    setPin("");
+    setError("");
   };
 
   return (
-    <div className="h-full flex items-center justify-center p-6 morning-bg relative">
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-gradient-to-tr from-[#D98A7E]/15 to-[#C87467]/10 rounded-full blur-3xl pointer-events-none" />
-
+    <div
+      onMouseMove={handleMouseMove}
+      className="h-full flex items-center justify-center p-6 bg-ground text-ink relative select-none overflow-hidden"
+      style={{ perspective: 1200 }}
+    >
+      {/* Dynamic Cursor Light Refraction Sphere */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 16 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-sm relative z-10"
+        className="pointer-events-none absolute w-[600px] h-[600px] rounded-full blur-3xl opacity-35"
+        style={{
+          background: "radial-gradient(circle, rgba(200, 116, 103, 0.28) 0%, rgba(217, 138, 126, 0.12) 40%, transparent 70%)",
+          left: coords.x ? coords.x - 300 : "50%",
+          top: coords.y ? coords.y - 300 : "40%",
+          transform: coords.x ? "none" : "translate(-50%, -50%)",
+          transition: "left 0.1s ease-out, top 0.1s ease-out",
+        }}
+      />
+
+      {/* Floating 3D Parallax Vault Card */}
+      <motion.div
+        ref={cardRef}
+        animate={shake ? { x: [-16, 16, -12, 12, -6, 6, 0] } : success ? { scale: [1, 1.05, 0.98], opacity: [1, 1, 0.9] } : {}}
+        transition={{ duration: 0.45, ease: "easeOut" }}
+        style={{
+          rotateX,
+          rotateY,
+          transformStyle: "preserve-3d",
+        }}
+        onMouseLeave={handleMouseLeave}
+        className="w-full max-w-lg relative z-10"
       >
-        <div className="relative overflow-hidden rounded-3xl clay-card border border-black/[0.08] shadow-lg">
-          <div className="relative px-8 pt-8 pb-6 text-center overflow-hidden">
-            <div className="flex justify-center mb-3">
-              <ClarityLogo size="lg" showText={false} theme="terracotta" shape="squircle" />
-            </div>
-            <h2 className="relative text-2xl font-bold tracking-tight text-[#24211E] font-serif">
-              Personal Diary
-            </h2>
-            <p className="relative text-[#827A72] text-xs mt-1 font-medium">
-              Encrypted &amp; private journal archives
-            </p>
-          </div>
+        <div className="relative overflow-hidden rounded-[32px] p-[1.5px] shadow-[0_24px_64px_rgba(60,50,40,0.12),0_8px_24px_rgba(0,0,0,0.06)] bg-gradient-to-b from-white/90 via-white/40 to-black/[0.08] transition-all">
+          {/* Edge Specular Light Follower */}
+          <div
+            className="pointer-events-none absolute inset-0 rounded-[32px] transition-opacity duration-300 opacity-80"
+            style={{
+              background: `radial-gradient(400px circle at ${coords.x}px ${coords.y}px, rgba(200, 116, 103, 0.35), transparent 60%)`,
+            }}
+          />
 
-          <div className="h-px w-full bg-gradient-to-r from-transparent via-[#C87467]/25 to-transparent" />
+          {/* Inner Card Body */}
+          <div className="relative rounded-[30px] bg-surface backdrop-blur-2xl px-10 py-10 flex flex-col items-center">
+            {/* 3D Floating Vault Emblem */}
+            <motion.div
+              style={{ transform: "translateZ(40px)" }}
+              className="relative flex items-center justify-center mb-6"
+            >
+              <div className="relative w-20 h-20 rounded-3xl bg-accent/15 border border-accent/30 shadow-sm flex items-center justify-center">
+                <motion.div
+                  animate={success ? { rotate: [0, 360], scale: [1, 1.25, 1] } : { rotate: [0, 3, -3, 0] }}
+                  transition={{ duration: 0.6 }}
+                >
+                  <ClarityLogo size="lg" showText={false} theme="terracotta" shape="squircle" />
+                </motion.div>
 
-          <div className="p-7">
-            <form onSubmit={isSettingPin ? handleSetPin : handleUnlock} className="space-y-4">
-              <AnimatePresence mode="wait">
-                {error && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    className="flex items-center gap-2 p-3 text-[#C87467] bg-[#C87467]/10 rounded-xl text-xs font-semibold border border-[#C87467]/20"
-                  >
-                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                    <span>{error}</span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <div>
-                <label className="block text-xs font-bold text-[#524B45] uppercase tracking-wider mb-2">
-                  {isSettingPin ? "Create Passcode" : "Enter Passcode"}
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#827A72]" />
-                  <input
-                    type="password"
-                    value={pin}
-                    onChange={(e) => setPin(e.target.value)}
-                    placeholder={isSettingPin ? "Min. 4 characters" : "••••••••"}
-                    className="morning-input pl-10 tracking-widest font-mono text-center text-lg font-bold"
-                    autoFocus
-                  />
+                {/* Status indicator lock glyph */}
+                <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-accent text-white flex items-center justify-center shadow-md">
+                  {mode === "reset" ? (
+                    <RotateCcw className="w-3.5 h-3.5 stroke-[2.4]" />
+                  ) : success ? (
+                    <Unlock className="w-3.5 h-3.5 stroke-[2.4]" />
+                  ) : (
+                    <Lock className="w-3.5 h-3.5 stroke-[2.4]" />
+                  )}
                 </div>
               </div>
+            </motion.div>
 
-              <button
-                type="submit"
-                disabled={loading || !pin}
-                className="w-full morning-btn-accent clay-button justify-center py-2.5 cursor-pointer font-sans"
-              >
-                {loading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : isSettingPin ? (
-                  <><Key className="w-4 h-4 stroke-[2.2]" /> Set Passcode</>
+            {/* Typography */}
+            <div className="text-center space-y-1.5 mb-8" style={{ transform: "translateZ(30px)" }}>
+              <h2 className="text-3xl font-bold tracking-tight text-ink font-serif">
+                {mode === "reset"
+                  ? resetStep === "enter"
+                    ? "Reset Passcode"
+                    : "Confirm New Passcode"
+                  : mode === "setup"
+                  ? "Protect Your Sanctuary"
+                  : "Private Vault"}
+              </h2>
+              <p className="text-ink-faint text-xs font-medium tracking-wide">
+                {mode === "reset"
+                  ? resetStep === "enter"
+                    ? "Enter 4 digits for your new passcode"
+                    : "Repeat the 4 digits to confirm"
+                  : mode === "setup"
+                  ? "Choose a 4-digit PIN using your keyboard"
+                  : "Type your 4-digit passcode on your keyboard"}
+              </p>
+            </div>
+
+            {/* ─── 4 Kinetic Floating Vault Rings ───────────────────────────────── */}
+            <div
+              style={{ transform: "translateZ(50px)" }}
+              className="py-4 px-6 flex items-center justify-center gap-6 mb-4 relative"
+            >
+              {[0, 1, 2, 3].map((idx) => {
+                const filled = pin.length > idx;
+                const active = pin.length === idx;
+                const ringRipples = ripples.filter((r) => r.index === idx);
+
+                return (
+                  <div key={idx} className="relative flex items-center justify-center">
+                    {/* Expanding Kinetic Ripple Shockwaves */}
+                    {ringRipples.map((r) => (
+                      <motion.div
+                        key={r.id}
+                        initial={{ scale: 0.8, opacity: 0.95 }}
+                        animate={{ scale: 2.3, opacity: 0 }}
+                        transition={{ duration: 0.55, ease: "easeOut" }}
+                        className="absolute w-14 h-14 rounded-full border-2 border-accent pointer-events-none"
+                      />
+                    ))}
+
+                    {/* Outer Ambient Kinetic Ring */}
+                    <motion.div
+                      animate={
+                        success
+                          ? { scale: [1, 1.2, 1], borderColor: "var(--c-done)" }
+                          : filled
+                          ? { scale: [1, 1.12, 1], borderColor: "var(--c-accent)" }
+                          : active
+                          ? { scale: [1, 1.05, 1], borderColor: "var(--c-accent-soft)" }
+                          : { scale: 1, borderColor: "var(--c-rule)" }
+                      }
+                      transition={{ duration: 0.35 }}
+                      className={clsx(
+                        "w-14 h-14 rounded-2xl border-2 flex items-center justify-center transition-all duration-200 relative overflow-hidden",
+                        filled
+                          ? "bg-raised shadow-xs border-accent"
+                          : active
+                          ? "bg-surface border-accent shadow-xs ring-2 ring-accent/20"
+                          : "bg-ground border-rule"
+                      )}
+                    >
+                      {/* Inner Core Gemstone / Glyph */}
+                      <AnimatePresence mode="wait">
+                        {filled ? (
+                          <motion.div
+                            key="filled"
+                            initial={{ scale: 0, rotate: -45 }}
+                            animate={{ scale: 1, rotate: 0 }}
+                            exit={{ scale: 0 }}
+                            transition={{ type: "spring", stiffness: 450, damping: 20 }}
+                            className={clsx(
+                              "w-5 h-5 rounded-full flex items-center justify-center text-white shadow-sm",
+                              success ? "bg-done" : "bg-accent"
+                            )}
+                          >
+                            <span className="w-2 h-2 rounded-full bg-white/90" />
+                          </motion.div>
+                        ) : active ? (
+                          <motion.div
+                            key="active"
+                            animate={{ opacity: [0.3, 0.9, 0.3], scale: [0.85, 1.15, 0.85] }}
+                            transition={{ repeat: Infinity, duration: 1.6, ease: "easeInOut" }}
+                            className="w-2.5 h-2.5 rounded-full bg-accent/50"
+                          />
+                        ) : (
+                          <div key="empty" className="w-2 h-2 rounded-full bg-rule" />
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Error & Status Toast */}
+            <div className="h-6 flex items-center justify-center mb-6" style={{ transform: "translateZ(30px)" }}>
+              <AnimatePresence mode="wait">
+                {error ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="flex items-center gap-1.5 text-xs text-accent font-semibold bg-accent/10 px-3 py-1 rounded-full border border-accent/20"
+                  >
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{error}</span>
+                  </motion.div>
+                ) : loading ? (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="flex items-center gap-2 text-xs text-ink-faint font-medium"
+                  >
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
+                    <span>Decrypting archives...</span>
+                  </motion.div>
+                ) : success ? (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="flex items-center gap-1.5 text-xs text-done font-bold"
+                  >
+                    <Sparkle className="w-3.5 h-3.5" />
+                    <span>Vault Unlocked</span>
+                  </motion.div>
                 ) : (
-                  <><Unlock className="w-4 h-4 stroke-[2.2]" /> Unlock Journal</>
+                  <p className="text-[11px] text-ink-faint font-mono tracking-tight flex items-center gap-1.5">
+                    <span>Press any 4 digits</span>
+                    <span>•</span>
+                    <kbd className="px-1.5 py-0.5 rounded bg-black/[0.04] text-ink-soft text-[10px] font-bold">Esc</kbd>
+                    <span>to clear</span>
+                  </p>
                 )}
-              </button>
+              </AnimatePresence>
+            </div>
 
-              <div className="text-center pt-1">
-                <button
+            <div className="h-px w-full bg-gradient-to-r from-transparent via-black/[0.06] to-transparent mb-6" />
+
+            {/* ─── Real-Time Physical Keyboard Visualizer Strip ──────────────────── */}
+            <div className="w-full flex flex-col items-center gap-3" style={{ transform: "translateZ(30px)" }}>
+              <div className="flex items-center gap-1.5 flex-wrap justify-center max-w-sm">
+                {["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map((k) => {
+                  const isPressed = activeKey === k;
+                  return (
+                    <motion.button
+                      key={k}
+                      type="button"
+                      onClick={() => handleDigit(k)}
+                      animate={isPressed ? { scale: 0.88, y: 2 } : { scale: 1, y: 0 }}
+                      className={clsx(
+                        "w-8 h-8 rounded-xl font-mono text-xs font-bold transition-colors flex items-center justify-center border cursor-pointer select-none shadow-xs",
+                        isPressed
+                          ? "bg-accent text-white border-accent shadow-sm"
+                          : "bg-white/80 hover:bg-white text-ink-soft hover:text-ink border-rule"
+                      )}
+                    >
+                      {k}
+                    </motion.button>
+                  );
+                })}
+
+                {/* Backspace Key */}
+                <motion.button
                   type="button"
-                  onClick={() => { setIsSettingPin(!isSettingPin); setError(""); setPin(""); }}
-                  className="text-xs font-semibold text-[#827A72] hover:text-[#C87467] transition cursor-pointer"
+                  onClick={handleBackspace}
+                  disabled={pin.length === 0}
+                  animate={activeKey === "Backspace" ? { scale: 0.88 } : { scale: 1 }}
+                  className={clsx(
+                    "px-2.5 h-8 rounded-xl font-mono text-[11px] font-bold transition-colors flex items-center gap-1 border cursor-pointer select-none shadow-xs",
+                    activeKey === "Backspace"
+                      ? "bg-accent text-white border-accent"
+                      : "bg-white/80 hover:bg-white text-ink-faint hover:text-ink border-rule disabled:opacity-30 disabled:pointer-events-none"
+                  )}
+                  title="Backspace"
                 >
-                  {isSettingPin ? "Already set up? Unlock with passcode" : "First time? Set your diary passcode"}
-                </button>
+                  <Delete className="w-3.5 h-3.5" />
+                  <span>Del</span>
+                </motion.button>
               </div>
-            </form>
+
+              {/* Recovery / Reset Link */}
+              <div className="pt-2 text-center">
+                {mode === "unlock" ? (
+                  <button
+                    type="button"
+                    onClick={startResetMode}
+                    className="text-xs font-bold text-ink-faint hover:text-accent transition cursor-pointer flex items-center gap-1.5 mx-auto"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Forgot Passcode? Reset PIN</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={cancelResetMode}
+                    className="text-xs font-bold text-ink-faint hover:text-ink transition cursor-pointer"
+                  >
+                    ← Cancel &amp; Return to Unlock
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </motion.div>
@@ -171,10 +535,153 @@ function LockScreen({
   );
 }
 
-// ─── Diary unlocked view ─────────────────────────────────────────────────────
+// ─── Passcode Settings Modal (Inside unlocked diary) ─────────────────────────
+function PasscodeSettingsModal({
+  currentPin,
+  onClose,
+  onPinChanged,
+}: {
+  currentPin: string;
+  onClose: () => void;
+  onPinChanged: (newPin: string | null) => void;
+}) {
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleChangePin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPin.trim().length !== 4) {
+      setError("New PIN must be exactly 4 digits.");
+      return;
+    }
+    if (newPin !== confirmPin) {
+      setError("Passcodes do not match.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await api.resetDiaryPin(newPin.trim());
+      sound.chime();
+      onPinChanged(newPin.trim());
+      onClose();
+    } catch {
+      setError("Failed to update PIN. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemovePin = async () => {
+    if (!confirm("Are you sure you want to remove passcode protection from your diary? Anyone on this computer will be able to open it.")) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.removeDiaryPin();
+      sound.chime();
+      onPinChanged(null);
+      onClose();
+    } catch {
+      setError("Failed to remove PIN.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 select-none">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 12 }}
+        className="w-full max-w-sm morning-card-elevated overflow-hidden bg-surface rounded-3xl border border-rule shadow-2xl"
+      >
+        <div className="px-6 py-4.5 bg-raised border-b border-rule flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-accent/15 flex items-center justify-center text-accent">
+              <Key className="w-4 h-4 stroke-[2.2]" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-ink font-serif">Passcode Settings</h3>
+              <p className="text-[11px] text-ink-faint">Update or remove diary encryption</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-ink-faint hover:text-ink transition">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleChangePin} className="p-6 space-y-4">
+          {error && (
+            <div className="flex items-center gap-2 p-2.5 text-xs font-semibold text-accent bg-accent/10 rounded-xl border border-accent/20">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
+              New 4-Digit Passcode
+            </label>
+            <input
+              type="password"
+              maxLength={4}
+              value={newPin}
+              onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ""))}
+              placeholder="••••"
+              className="morning-input text-center font-mono text-lg tracking-widest"
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
+              Confirm New Passcode
+            </label>
+            <input
+              type="password"
+              maxLength={4}
+              value={confirmPin}
+              onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ""))}
+              placeholder="••••"
+              className="morning-input text-center font-mono text-lg tracking-widest"
+            />
+          </div>
+
+          <div className="pt-2 flex flex-col gap-2">
+            <button
+              type="submit"
+              disabled={saving || newPin.length !== 4 || confirmPin.length !== 4}
+              className="morning-btn-accent justify-center py-2.5 w-full cursor-pointer disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              Save New Passcode
+            </button>
+
+            <button
+              type="button"
+              onClick={handleRemovePin}
+              disabled={saving}
+              className="text-xs font-bold text-accent hover:text-accent-soft py-2 transition cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Remove Passcode Protection
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
+
+// ─── Main Diary Unlocked View ────────────────────────────────────────────────
 export default function DiaryPage() {
   const [pin, setPin] = useState("");
   const [isLocked, setIsLocked] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
   const [entries, setEntries] = useState<Record<string, DiaryEntry>>({});
   const [dates, setDates] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
@@ -222,7 +729,7 @@ export default function DiaryPage() {
   const handleSave = async (date: string, body: string) => {
     setSavingIds((p) => ({ ...p, [date]: true }));
     try {
-      const saved = await api.saveDiaryEntry(date, pin, { body });
+      const saved = await api.saveDiaryEntry(date, pin, { body, mood: selectedMood || undefined });
       setEntries((p) => ({ ...p, [date]: saved }));
       setSavedIds((p) => ({ ...p, [date]: true }));
       sound.pop();
@@ -244,14 +751,18 @@ export default function DiaryPage() {
     if (!textareaRef.current) return;
     const p = DAILY_PROMPTS[promptIdx];
     const current = textareaRef.current.value.trim();
-    textareaRef.current.value = current ? `${current}\n\n✍️ *${p}*\n` : `✍️ *${p}*\n`;
+    textareaRef.current.value = current ? `${current}\n\n✨ *${p}*\n` : `✨ *${p}*\n`;
     textareaRef.current.focus();
     handleSave(selectedDate, textareaRef.current.value.trim());
   };
 
   const selectMoodPill = (mood: string) => {
     sound.pop();
-    setSelectedMood(mood === selectedMood ? null : mood);
+    const next = mood === selectedMood ? null : mood;
+    setSelectedMood(next);
+    if (textareaRef.current) {
+      handleSave(selectedDate, textareaRef.current.value.trim());
+    }
   };
 
   const handleTextChange = () => {
@@ -274,27 +785,50 @@ export default function DiaryPage() {
 
   return (
     <div className="h-full flex overflow-hidden bg-transparent">
-      {/* ── Left Sidebar: Date List ─────────────────────────────────── */}
-      <aside className="w-68 flex-shrink-0 border-r border-[#DCD6CC] flex flex-col bg-[#ECE8E1]/90">
-        <div className="px-5 py-4 border-b border-black/[0.06] flex items-center justify-between">
+      {/* Passcode Settings Modal */}
+      <AnimatePresence>
+        {showSettings && (
+          <PasscodeSettingsModal
+            currentPin={pin}
+            onClose={() => setShowSettings(false)}
+            onPinChanged={(newP) => {
+              if (newP) setPin(newP);
+              else {
+                setPin("");
+              }
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ─── Left Sidebar: Date List ────────────────────────────────────────── */}
+      <aside className="w-72 flex-shrink-0 border-r border-rule flex flex-col bg-surface/90 select-none">
+        <div className="px-5 py-4 border-b border-rule flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-[#D98A7E]/15 flex items-center justify-center text-[#C87467]">
+            <div className="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center text-accent">
               <BookOpen className="w-4 h-4 stroke-[2.2]" />
             </div>
-            <h2 className="font-bold text-[#24211E] text-base font-serif">Diary Entries</h2>
+            <h2 className="font-bold text-ink text-base font-serif">Diary Entries</h2>
           </div>
           <div className="flex items-center gap-1">
             <button
               title="Add date"
               onClick={() => { sound.pop(); setAddingDate((v) => !v); }}
-              className="p-1.5 rounded-lg hover:bg-black/[0.04] text-[#827A72] hover:text-[#24211E] transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg hover:bg-raised text-ink-faint hover:text-ink transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4 stroke-[2.2]" />
             </button>
             <button
+              title="Passcode Settings"
+              onClick={() => setShowSettings(true)}
+              className="p-1.5 rounded-lg hover:bg-raised text-ink-faint hover:text-ink transition-colors cursor-pointer"
+            >
+              <Settings className="w-4 h-4 stroke-[1.8]" />
+            </button>
+            <button
               title="Lock diary"
               onClick={() => { sound.pageTurn(); setIsLocked(true); setPin(""); setEntries({}); }}
-              className="p-1.5 rounded-lg hover:bg-[#C87467]/10 text-[#827A72] hover:text-[#C87467] transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg hover:bg-accent/10 text-ink-faint hover:text-accent transition-colors cursor-pointer"
             >
               <Lock className="w-4 h-4 stroke-[1.8]" />
             </button>
@@ -311,8 +845,8 @@ export default function DiaryPage() {
               transition={{ duration: 0.15 }}
               className="overflow-hidden"
             >
-              <div className="p-3 border-b border-black/[0.06] bg-[#F2EFE9] flex items-center gap-2">
-                <CalendarDays className="w-4 h-4 text-[#C87467] flex-shrink-0" />
+              <div className="p-3 border-b border-rule bg-raised flex items-center gap-2">
+                <CalendarDays className="w-4 h-4 text-accent flex-shrink-0" />
                 <input
                   type="date"
                   value={newDate}
@@ -321,7 +855,7 @@ export default function DiaryPage() {
                 />
                 <button
                   onClick={handleAddDate}
-                  className="p-1.5 rounded-lg bg-[#C87467] hover:bg-[#B86356] text-white transition-colors cursor-pointer shadow-xs"
+                  className="p-1.5 rounded-lg bg-accent hover:bg-accent-soft text-white transition-colors cursor-pointer shadow-xs"
                 >
                   <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                 </button>
@@ -345,17 +879,17 @@ export default function DiaryPage() {
                 className={clsx(
                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-left group cursor-pointer",
                   isSelected
-                    ? "bg-[#FAF8F5] border border-black/[0.08] shadow-sm text-[#24211E]"
-                    : "hover:bg-black/[0.03] border border-transparent text-[#6E6862]"
+                    ? "bg-surface border border-rule shadow-sm text-ink"
+                    : "hover:bg-black/[0.03] border border-transparent text-ink-soft"
                 )}
               >
                 <div className={clsx(
                   "w-9 h-9 rounded-xl flex flex-col items-center justify-center flex-shrink-0 text-xs font-bold leading-tight font-serif",
                   isToday
-                    ? "bg-gradient-to-tr from-[#D98A7E] to-[#C87467] text-white shadow-xs"
+                    ? "bg-accent text-white shadow-xs"
                     : isSelected
-                      ? "bg-[#D98A7E]/15 text-[#C87467] border border-[#D98A7E]/30"
-                      : "bg-[#FAF8F5] text-[#524B45] border border-black/[0.06]"
+                      ? "bg-accent/15 text-accent border border-accent/30"
+                      : "bg-surface text-ink-soft border border-rule"
                 )}>
                   <span className="text-[9px] uppercase tracking-wider opacity-80">{d.format("MMM")}</span>
                   <span className="text-xs font-bold -mt-0.5">{d.format("D")}</span>
@@ -364,23 +898,23 @@ export default function DiaryPage() {
                 <div className="flex-1 min-w-0">
                   <div className={clsx(
                     "text-xs font-bold truncate",
-                    isSelected ? "text-[#24211E]" : "text-[#524B45]"
+                    isSelected ? "text-ink" : "text-ink-soft"
                   )}>
                     {isToday ? "Today" : d.format("dddd")}
                   </div>
-                  <div className="text-[11px] text-[#827A72] truncate mt-0.5">
+                  <div className="text-[11px] text-ink-faint truncate mt-0.5">
                     {hasEntry ? entries[date].body!.slice(0, 30) + (entries[date].body!.length > 30 ? "..." : "") : "No entry yet"}
                   </div>
                 </div>
 
-                {isSelected && <ChevronRight className="w-3.5 h-3.5 text-[#827A72] flex-shrink-0" />}
+                {isSelected && <ChevronRight className="w-3.5 h-3.5 text-ink-faint flex-shrink-0" />}
               </button>
             );
           })}
         </nav>
       </aside>
 
-      {/* ── Right: Editor Canvas ────────────────────────────────────── */}
+      {/* ─── Right: Editor Canvas ────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <AnimatePresence mode="wait">
           <motion.div
@@ -392,38 +926,38 @@ export default function DiaryPage() {
             className="flex-1 flex flex-col overflow-hidden"
           >
             {/* Header with Date, Word count & Save Pulse */}
-            <div className="px-10 pt-6 pb-4 border-b border-[#DDD7CE] flex items-center justify-between bg-[#F5F2EC]/90 backdrop-blur-md">
+            <div className="px-10 pt-6 pb-4 border-b border-rule flex items-center justify-between bg-surface/90 backdrop-blur-md select-none">
               <div>
-                <p className="text-xs font-bold text-[#827A72] uppercase tracking-wider font-mono">
+                <p className="text-xs font-bold text-ink-faint uppercase tracking-wider font-mono">
                   {dayjs(selectedDate).format("dddd")}
                 </p>
-                <h2 className="text-2xl sm:text-3xl font-bold text-[#24211E] font-serif tracking-tight mt-0.5">
+                <h2 className="text-2xl sm:text-3xl font-bold text-ink font-serif tracking-tight mt-0.5">
                   {dayjs(selectedDate).format("MMMM D, YYYY")}
                 </h2>
               </div>
 
               {/* Stats & Tactile Save Indicator */}
               <div className="flex items-center gap-3">
-                <span className="font-mono text-xs text-[#827A72] px-2.5 py-1 rounded-lg bg-[#FAF8F5] border border-black/[0.06]">
-                  {wordCount} words · ~{readTime}m read
+                <span className="font-mono text-xs text-ink-faint px-2.5 py-1 rounded-lg bg-surface border border-rule">
+                  {wordCount} words • ~{readTime}m read
                 </span>
 
                 <div className="h-8 flex items-center">
                   <AnimatePresence mode="wait">
                     {savingIds[selectedDate] || isTyping ? (
                       <motion.span key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="flex items-center gap-1.5 text-xs text-[#C87467] font-medium bg-[#C87467]/10 px-2.5 py-1 rounded-lg border border-[#C87467]/20">
-                        <span className="w-2 h-2 rounded-full bg-[#C87467] animate-ping" />
+                        className="flex items-center gap-1.5 text-xs text-accent font-medium bg-accent/10 px-2.5 py-1 rounded-lg border border-accent/20">
+                        <span className="w-2 h-2 rounded-full bg-accent animate-ping" />
                         <span>Autosaving...</span>
                       </motion.span>
                     ) : savedIds[selectedDate] ? (
                       <motion.span key="saved" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-                        className="flex items-center gap-1.5 text-xs text-[#6B8065] font-semibold bg-[#6B8065]/10 px-2.5 py-1 rounded-lg border border-[#6B8065]/20">
+                        className="flex items-center gap-1.5 text-xs text-done font-semibold bg-done/10 px-2.5 py-1 rounded-lg border border-done/20">
                         <Check className="w-3.5 h-3.5 stroke-[2.5]" /> Saved
                       </motion.span>
                     ) : (
                       <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="flex items-center gap-1.5 text-xs text-[#827A72] px-2 py-1">
+                        className="flex items-center gap-1.5 text-xs text-ink-faint px-2 py-1">
                         <Pencil className="w-3.5 h-3.5 stroke-[1.8]" /> Ready
                       </motion.span>
                     )}
@@ -434,144 +968,78 @@ export default function DiaryPage() {
 
             {/* Notebook canvas wrapper */}
             <div className="flex-1 overflow-hidden p-6 flex flex-col space-y-4">
-
-              {/* Daily Reflection Prompt Carousel (Beats the blank page block!) */}
-              <div className="p-3.5 px-4.5 rounded-2xl bg-[#FAF8F5] border border-black/[0.06] shadow-xs flex items-center justify-between gap-4">
+              {/* Daily Reflection Prompt Carousel */}
+              <div className="p-3.5 px-4.5 rounded-2xl bg-surface border border-rule shadow-xs flex items-center justify-between gap-4 select-none">
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <div className="w-7 h-7 rounded-lg bg-[#D98A7E]/20 text-[#C87467] flex items-center justify-center flex-shrink-0">
-                    <Sparkles className="w-4 h-4" />
+                  <div className="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center text-accent flex-shrink-0">
+                    <Sparkles className="w-3.5 h-3.5" />
                   </div>
-                  <p className="font-serif italic text-sm text-[#524B45] truncate">
-                    &ldquo;{DAILY_PROMPTS[promptIdx]}&rdquo;
-                  </p>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[10px] uppercase tracking-wider font-bold text-ink-faint">
+                      Daily Reflection Prompt
+                    </div>
+                    <p className="text-xs font-semibold text-ink truncate italic font-serif">
+                      "{DAILY_PROMPTS[promptIdx]}"
+                    </p>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex items-center gap-1.5 flex-shrink-0">
                   <button
-                    type="button"
                     onClick={cyclePrompt}
-                    title="Cycle to next prompt"
-                    className="p-1.5 rounded-lg text-[#827A72] hover:text-[#24211E] hover:bg-black/[0.04] transition-colors cursor-pointer"
+                    title="Shuffle prompt"
+                    className="p-1.5 rounded-lg hover:bg-raised text-ink-faint hover:text-ink transition cursor-pointer"
                   >
                     <Shuffle className="w-3.5 h-3.5" />
                   </button>
                   <button
-                    type="button"
                     onClick={insertPrompt}
-                    className="px-2.5 py-1 rounded-lg bg-[#FAF8F5] hover:bg-white text-xs font-semibold text-[#C87467] border border-[#C87467]/30 hover:border-[#C87467] transition-all cursor-pointer shadow-2xs"
+                    className="px-2.5 py-1 rounded-lg bg-surface hover:bg-raised border border-rule text-[11px] font-bold text-accent transition cursor-pointer"
                   >
                     Use Prompt
                   </button>
                 </div>
               </div>
 
-              {/* Mood / Vibe Chips Bar */}
-              <div className="flex items-center justify-between px-2">
-                <div className="flex items-center gap-1.5 overflow-x-auto py-1">
-                  <span className="text-[11px] font-semibold text-[#827A72] mr-1">Mood:</span>
-                  {MOODS.map((m) => {
-                    const isSelected = selectedMood === m.label;
-                    return (
-                      <button
-                        key={m.label}
-                        type="button"
-                        onClick={() => selectMoodPill(m.label)}
-                        className={clsx(
-                          "px-2.5 py-1 rounded-full text-xs font-medium transition-all duration-150 flex items-center gap-1 cursor-pointer",
-                          isSelected
-                            ? "bg-[#C87467] text-white shadow-xs scale-105"
-                            : "bg-[#FAF8F5] hover:bg-white text-[#524B45] border border-black/[0.06]"
-                        )}
-                      >
-                        <span>{m.emoji}</span>
-                        <span>{m.label}</span>
-                      </button>
-                    );
-                  })}
+              {/* Mood selector strip */}
+              <div className="flex items-center gap-2 px-1 select-none">
+                <span className="text-xs font-bold text-ink-faint uppercase tracking-wider mr-1 flex items-center gap-1">
+                  <Smile className="w-3.5 h-3.5" /> Mood:
+                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {MOODS.map((m) => (
+                    <button
+                      key={m.label}
+                      onClick={() => selectMoodPill(m.label)}
+                      className={clsx(
+                        "flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold border transition-all cursor-pointer",
+                        selectedMood === m.label
+                          ? "bg-accent text-white border-accent shadow-xs"
+                          : "bg-surface text-ink-soft border-rule hover:border-rule hover:text-ink"
+                      )}
+                    >
+                      <span>{m.emoji}</span>
+                      <span>{m.label}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Notebook Ruled Body */}
-              <div className="clay-card flex-1 flex flex-col overflow-hidden border border-black/[0.08] shadow-sm relative">
-                <div className="absolute left-6 top-7 w-2.5 h-2.5 rounded-full brass-pin shadow-xs z-10 pointer-events-none" />
-                <div className="absolute left-6 bottom-16 w-2.5 h-2.5 rounded-full brass-pin shadow-xs z-10 pointer-events-none" />
+              {/* Physical Journal Textured Page */}
+              <div
+                style={{ '--mood-glow': selectedMood && MOOD_GLOWS[selectedMood] ? MOOD_GLOWS[selectedMood] : 'transparent' } as React.CSSProperties}
+                className="flex-1 overflow-hidden rounded-2xl bg-surface border border-rule p-6 sm:p-8 flex flex-col relative mood-glow transition-all duration-300">
+                {/* Left Margin Accent Line */}
+                <div className="absolute top-0 bottom-0 left-12 sm:left-16 w-px bg-accent/20 pointer-events-none" />
 
-                <div className="flex-1 overflow-auto ruled-paper pl-16 pr-8 py-6">
-                  <textarea
-                    ref={textareaRef}
-                    key={selectedDate}
-                    defaultValue={entry?.body || ""}
-                    onChange={handleTextChange}
-                    placeholder="What is on your mind today? Write down a moment, thought, or feeling..."
-                    className="w-full h-full min-h-[300px] bg-transparent resize-none outline-none leading-[32px] text-[#24211E] placeholder-[#A39B92] text-lg font-serif"
-                    onBlur={(e) => {
-                      const val = e.target.value.trim();
-                      if (val !== (entry?.body || "").trim()) {
-                        handleSave(selectedDate, val);
-                      }
-                    }}
-                  />
-                </div>
-
-                {/* Bottom Notebook Toolbar */}
-                <div className="bg-[#F2EFE9] px-6 py-2.5 border-t border-black/[0.06] flex items-center justify-between z-10">
-                  <div className="flex items-center gap-1 text-[#827A72]">
-                    <button
-                      type="button"
-                      title="Bold"
-                      onClick={() => {
-                        sound.pop();
-                        if (textareaRef.current) {
-                          textareaRef.current.value += "**bold**";
-                          textareaRef.current.focus();
-                        }
-                      }}
-                      className="p-1.5 hover:text-[#24211E] hover:bg-black/[0.04] rounded-lg transition-colors cursor-pointer"
-                    >
-                      <Bold className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      title="Italic"
-                      onClick={() => {
-                        sound.pop();
-                        if (textareaRef.current) {
-                          textareaRef.current.value += "*italic*";
-                          textareaRef.current.focus();
-                        }
-                      }}
-                      className="p-1.5 hover:text-[#24211E] hover:bg-black/[0.04] rounded-lg transition-colors cursor-pointer"
-                    >
-                      <Italic className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      title="Bullet list"
-                      onClick={() => {
-                        sound.pop();
-                        if (textareaRef.current) {
-                          textareaRef.current.value += "\n- ";
-                          textareaRef.current.focus();
-                        }
-                      }}
-                      className="p-1.5 hover:text-[#24211E] hover:bg-black/[0.04] rounded-lg transition-colors cursor-pointer"
-                    >
-                      <List className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (textareaRef.current) {
-                        handleSave(selectedDate, textareaRef.current.value.trim());
-                      }
-                    }}
-                    className="morning-btn-accent clay-button text-xs py-1.5 px-3.5 cursor-pointer"
-                  >
-                    Save Entry
-                  </button>
-                </div>
+                <textarea
+                  ref={textareaRef}
+                  defaultValue={currentText}
+                  onChange={handleTextChange}
+                  placeholder={`Write your private thoughts for ${dayjs(selectedDate).format("MMMM D")}...`}
+                  className="w-full h-full bg-transparent outline-none resize-none text-ink font-serif text-base sm:text-lg leading-relaxed placeholder:text-ink-faint pl-10 sm:pl-12 pr-4 border-none focus:ring-0"
+                  autoFocus
+                />
               </div>
             </div>
           </motion.div>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Plus, Trash2, X, CalendarDays, AlignLeft,
-  Loader2, CheckCircle2, Circle, CheckSquare, Sparkles, Check
+  Loader2, CheckSquare, Sparkles, Check
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
@@ -10,7 +10,7 @@ import type { Task } from "@/lib/types";
 import { clsx } from "clsx";
 import dayjs from "dayjs";
 
-// ─── New Task Modal ──────────────────────────────────────────────────────────
+// ─── New Task Modal (Disciplined Ledger Voucher) ──────────────────────────────
 function NewTaskModal({
   onClose,
   onCreated,
@@ -34,7 +34,7 @@ function NewTaskModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) { setError("Title is required."); return; }
+    if (!title.trim()) { setError("Task title is required."); return; }
     setSaving(true);
     setError("");
     try {
@@ -72,34 +72,41 @@ function NewTaskModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-xs p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 12 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 12 }}
-        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-md morning-card-elevated overflow-hidden"
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 6 }}
+        transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full max-w-md bg-surface rounded-none border border-rule shadow-none overflow-hidden"
       >
-        <div className="flex items-center justify-between px-6 py-4.5 bg-[#FAF8F5] border-b border-black/[0.06]">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#D98A7E]/15 flex items-center justify-center text-[#C87467] shadow-sm">
-              <CheckSquare className="w-4 h-4 stroke-[2.2]" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-[#24211E] font-serif">Create New Task</h2>
-              <p className="text-xs text-[#827A72]">Add an action item with optional deadline</p>
-            </div>
+        {/* Top Vermilion Margin Rule */}
+        <div className="h-0.5 bg-accent w-full" />
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3.5 bg-surface border-b border-rule">
+          <div>
+            <h2 className="text-base font-bold text-ink tracking-tight font-serif">
+              New Action Item
+            </h2>
+            <p className="text-[11px] text-ink-faint font-mono uppercase tracking-wider mt-0.5">
+              Task docket · ledger record
+            </p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-[#827A72] hover:text-[#24211E] hover:bg-black/[0.04] transition-colors cursor-pointer">
+          <button
+            onClick={onClose}
+            className="p-1 rounded-none text-ink-faint hover:text-ink hover:bg-raised transition cursor-pointer border border-rule hover:border-ink-soft"
+            aria-label="Close"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <div>
-            <label className="block text-xs font-bold text-[#524B45] uppercase tracking-wider mb-1.5">
+            <label className="block text-[11px] font-mono font-medium text-ink-soft uppercase tracking-wider mb-1">
               Task Title *
             </label>
             <input
@@ -107,57 +114,57 @@ function NewTaskModal({
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="What needs to be done? (e.g. 5km run, buy groceries)"
-              className="morning-input"
+              placeholder="e.g. Audit quarterly invoices, run 5km, draft memo"
+              className="w-full px-3 py-2 rounded-none border border-rule bg-ground text-ink placeholder:text-ink-faint text-xs outline-none focus:border-accent transition font-sans shadow-none"
             />
           </div>
 
           <div>
-            <label className="flex items-center gap-1.5 text-xs font-bold text-[#524B45] uppercase tracking-wider mb-1.5">
-              <AlignLeft className="w-3.5 h-3.5" /> Description
+            <label className="block text-[11px] font-mono font-medium text-ink-soft uppercase tracking-wider mb-1">
+              Particulars / Notes (Optional)
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Add details or notes..."
-              rows={3}
-              className="morning-input resize-none"
+              placeholder="Context or instructions..."
+              rows={2}
+              className="w-full px-3 py-2 rounded-none border border-rule bg-ground text-ink placeholder:text-ink-faint text-xs outline-none focus:border-accent transition font-sans resize-none shadow-none"
             />
           </div>
 
           <div>
-            <label className="flex items-center gap-1.5 text-xs font-bold text-[#524B45] uppercase tracking-wider mb-1.5">
-              <CalendarDays className="w-3.5 h-3.5" /> Due Date &amp; Time
+            <label className="block text-[11px] font-mono font-medium text-ink-soft uppercase tracking-wider mb-1">
+              Due Date &amp; Time (Optional)
             </label>
             <input
               type="datetime-local"
               value={dueAt}
               onChange={(e) => setDueAt(e.target.value)}
-              className="morning-input"
+              className="w-full px-3 py-1.5 rounded-none border border-rule bg-ground text-ink text-xs font-mono outline-none focus:border-accent transition shadow-none"
             />
           </div>
 
           {error && (
-            <p className="text-xs text-[#C87467] font-semibold bg-[#C87467]/10 p-2.5 rounded-lg border border-[#C87467]/20">
+            <p className="text-xs text-danger font-medium bg-danger/10 p-2 rounded-none border border-danger/20 font-mono">
               {error}
             </p>
           )}
 
-          <div className="flex gap-2.5 pt-2">
+          <div className="flex gap-2 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl border border-black/[0.08] text-sm font-semibold text-[#6E6862] hover:bg-black/[0.04] hover:text-[#24211E] transition cursor-pointer"
+              className="flex-1 py-2 rounded-none border border-rule text-xs font-mono font-medium text-ink-soft hover:bg-raised hover:text-ink transition active:scale-[0.98] cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 morning-btn-accent clay-button"
+              className="flex-1 py-2 rounded-none bg-accent text-white text-xs font-mono font-semibold hover:opacity-90 transition flex items-center justify-center gap-1.5 active:scale-[0.98] cursor-pointer disabled:opacity-50 shadow-none"
             >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4 stroke-[2.2]" />}
-              Create Task
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5 stroke-[2.2]" />}
+              Record Item
             </button>
           </div>
         </form>
@@ -166,7 +173,7 @@ function NewTaskModal({
   );
 }
 
-// ─── Main Tasks Page ─────────────────────────────────────────────────────────
+// ─── Main Tasks Page (Tight Ruled List) ──────────────────────────────────────
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [pendingOnly, setPendingOnly] = useState(false);
@@ -174,6 +181,7 @@ export default function TasksPage() {
   const [showModal, setShowModal] = useState(false);
   const [quickTitle, setQuickTitle] = useState("");
   const [quickSaving, setQuickSaving] = useState(false);
+  const [newlyAddedId, setNewlyAddedId] = useState<number | null>(null);
 
   useEffect(() => { loadTasks(); }, [pendingOnly]);
 
@@ -199,7 +207,6 @@ export default function TasksPage() {
     try {
       await api.updateTask(task.id, { completed: willBeCompleted });
 
-      // Check if all tasks are completed now
       const updatedTotal = tasks.length;
       const updatedDone = tasks.filter((t) => (t.id === task.id ? willBeCompleted : t.completed)).length;
       if (willBeCompleted && updatedDone === updatedTotal && updatedTotal > 0) {
@@ -227,6 +234,12 @@ export default function TasksPage() {
     }
   };
 
+  const handleTaskCreated = (t: Task) => {
+    setTasks((prev) => [t, ...prev]);
+    setNewlyAddedId(t.id);
+    setTimeout(() => setNewlyAddedId(null), 1600);
+  };
+
   const handleQuickAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!quickTitle.trim() || quickSaving) return;
@@ -237,7 +250,9 @@ export default function TasksPage() {
       });
       sound.pop();
       setTasks((prev) => [created, ...prev]);
+      setNewlyAddedId(created.id);
       setQuickTitle("");
+      setTimeout(() => setNewlyAddedId(null), 1600);
     } catch (err) {
       console.error("Failed to quick add task:", err);
     } finally {
@@ -251,103 +266,106 @@ export default function TasksPage() {
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   return (
-    <div className="h-full flex flex-col bg-transparent">
+    <div className="h-full flex flex-col bg-ground">
       <AnimatePresence>
         {showModal && (
-          <NewTaskModal onClose={() => setShowModal(false)} onCreated={(t) => setTasks((p) => [t, ...p])} />
+          <NewTaskModal onClose={() => setShowModal(false)} onCreated={handleTaskCreated} />
         )}
       </AnimatePresence>
 
-      {/* Desk Top Bar */}
-      <div className="shrink-0 bg-[#F5F2EC]/90 backdrop-blur-md border-b border-[#DDD7CE] px-8 py-4 flex items-center justify-between">
+      {/* Desk Top Bar (Ledger Navigation) */}
+      <div className="shrink-0 bg-surface border-b border-rule px-8 py-3.5 flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-bold text-[#24211E] tracking-tight font-serif">
-              Personal To-Dos
+            <h1 className="text-xl font-bold text-ink tracking-tight font-serif">
+              Tasks
             </h1>
-            <span className="font-mono text-xs font-semibold px-2.5 py-0.5 rounded-full bg-[#FAF8F5] border border-black/[0.08] text-[#827A72]">
+            <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-none bg-ground border border-rule text-ink-soft">
               {pendingCount} remaining
             </span>
           </div>
-          <p className="text-[#827A72] text-xs font-medium mt-0.5">
-            {dayjs().format("dddd, MMMM D")} · Daily intentions and habits
+          <p className="text-ink-faint text-xs mt-0.5 font-sans">
+            {dayjs().format("dddd, D MMMM YYYY")} · Action items &amp; disciplined execution
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <button
             onClick={() => { sound.pop(); setShowModal(true); }}
-            className="morning-btn-accent clay-button cursor-pointer"
+            className="px-3.5 py-1.5 rounded-none bg-accent text-white text-xs font-mono font-semibold hover:opacity-90 transition flex items-center gap-1.5 active:scale-[0.97] active:translate-y-[0.5px] cursor-pointer shadow-none"
           >
-            <Plus className="w-4 h-4 stroke-[2.2]" /> New Task
+            <Plus className="w-3.5 h-3.5 stroke-[2.2]" /> New Task
           </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-8 relative">
+      <div className="flex-1 overflow-auto p-6 sm:p-8">
         <div className="max-w-3xl mx-auto space-y-5">
 
-          {/* Daily Progress Completion Bar */}
+          {/* Progress Completion Rule */}
           {totalCount > 0 && (
-            <div className="clay-card rounded-2xl p-4 px-5 border border-black/[0.06] shadow-xs flex items-center justify-between gap-4">
+            <div className="bg-surface rounded-none border border-rule p-4 px-5 shadow-none flex items-center justify-between gap-4">
               <div className="flex-1">
                 <div className="flex justify-between items-center text-xs mb-1.5 font-medium">
-                  <span className="text-[#524B45]">
+                  <span className="text-ink-soft font-sans">
                     {progressPercent === 100 ? (
-                      <span className="text-[#6B8065] font-bold flex items-center gap-1">
-                        <Sparkles className="w-3.5 h-3.5" /> All clear for today! Great momentum.
+                      <span className="text-done font-medium flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5" /> All action items cleared for today.
                       </span>
                     ) : (
                       <span>{completedCount} of {totalCount} completed</span>
                     )}
                   </span>
-                  <span className="font-mono font-bold text-[#24211E]">{progressPercent}%</span>
+                  <span className="font-mono tabular-nums font-bold text-ink">{progressPercent}%</span>
                 </div>
-                <div className="w-full h-2 rounded-full bg-[#EAE5DE] overflow-hidden">
+                <div className="w-full h-1.5 rounded-none bg-ground border border-rule overflow-hidden">
                   <motion.div
-                    className="h-full rounded-full bg-gradient-to-r from-[#D98A7E] to-[#C87467]"
+                    className={clsx(
+                      "h-full rounded-none transition-all duration-500",
+                      progressPercent === 100 ? "bg-done" : "bg-done"
+                    )}
                     initial={{ width: 0 }}
                     animate={{ width: `${progressPercent}%` }}
-                    transition={{ type: "spring", stiffness: 200, damping: 25 }}
+                    transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
                   />
                 </div>
               </div>
             </div>
           )}
 
-          {/* Quick Task Inline Input */}
+          {/* Quick Task Inline Input (Sharp Ledger Row) */}
           <form
             onSubmit={handleQuickAdd}
-            className="clay-card rounded-2xl p-2.5 px-4 flex items-center gap-3 shadow-sm border border-black/[0.07]"
+            className="bg-surface rounded-none border border-rule p-2 px-3.5 flex items-center gap-2.5 shadow-none"
           >
-            <Plus className="w-4 h-4 text-[#827A72] flex-shrink-0" />
+            <Plus className="w-3.5 h-3.5 text-ink-faint shrink-0" />
             <input
               type="text"
               value={quickTitle}
               onChange={(e) => setQuickTitle(e.target.value)}
-              placeholder="Add a task... (e.g. 5km run, buy groceries, press Enter)"
-              className="flex-1 bg-transparent text-sm text-[#24211E] placeholder:text-[#A39B92] outline-none font-medium"
+              placeholder="Inscribe a new task... (press Enter)"
+              className="flex-1 bg-transparent text-xs text-ink placeholder:text-ink-faint outline-none font-sans"
             />
             <button
               type="submit"
               disabled={quickSaving || !quickTitle.trim()}
-              className="p-1 px-3 rounded-lg bg-[#FAF8F5] hover:bg-white text-xs font-bold text-[#C87467] border border-black/[0.06] transition-all disabled:opacity-40 cursor-pointer"
+              className="px-2.5 py-1 rounded-none bg-ink text-ground hover:opacity-90 text-xs font-mono font-medium transition-all active:scale-[0.97] disabled:opacity-40 cursor-pointer"
             >
               Add
             </button>
           </form>
 
-          {/* Filter Pills */}
-          <div className="flex items-center justify-between pt-1">
-            <div className="flex items-center gap-2">
+          {/* Filter Bar */}
+          <div className="flex items-center justify-between pt-0.5">
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => { sound.pop(); setPendingOnly(false); }}
                 className={clsx(
-                  "px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer",
+                  "px-2.5 py-1 rounded-none text-xs font-mono transition-all cursor-pointer border",
                   !pendingOnly
-                    ? "bg-[#24211E] text-white shadow-xs"
-                    : "bg-[#FAF8F5] text-[#827A72] hover:text-[#24211E] border border-black/[0.06]"
+                    ? "bg-ink text-ground border-ink font-semibold"
+                    : "bg-surface text-ink-soft hover:text-ink border-rule"
                 )}
               >
                 All Tasks ({totalCount})
@@ -356,105 +374,117 @@ export default function TasksPage() {
                 type="button"
                 onClick={() => { sound.pop(); setPendingOnly(true); }}
                 className={clsx(
-                  "px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer",
+                  "px-2.5 py-1 rounded-none text-xs font-mono transition-all cursor-pointer border",
                   pendingOnly
-                    ? "bg-[#24211E] text-white shadow-xs"
-                    : "bg-[#FAF8F5] text-[#827A72] hover:text-[#24211E] border border-black/[0.06]"
+                    ? "bg-ink text-ground border-ink font-semibold"
+                    : "bg-surface text-ink-soft hover:text-ink border-rule"
                 )}
               >
-                Pending Only ({pendingCount})
+                Pending ({pendingCount})
               </button>
             </div>
           </div>
 
-          {/* Task List Items */}
-          <div className="space-y-2.5">
-            <AnimatePresence mode="popLayout">
-              {tasks.map((task) => (
-                <motion.div
-                  key={task.id}
-                  layout
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.18 }}
-                  className={clsx(
-                    "clay-card rounded-2xl p-4 flex items-center justify-between gap-4 border transition-all duration-150 group",
-                    task.completed
-                      ? "bg-[#FAF8F5]/60 border-black/[0.04]"
-                      : "hover:border-[#C87467]/30 border-black/[0.07]"
-                  )}
-                >
-                  <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                    {/* Animated Checkbox with Ink-Pop */}
-                    <button
-                      type="button"
-                      onClick={() => toggleComplete(task)}
-                      className="cursor-pointer flex-shrink-0"
+          {/* The Tight Ruled Task Sheet */}
+          <div className="bg-surface rounded-none border border-rule overflow-hidden shadow-none">
+            {loading ? (
+              <div className="flex items-center justify-center py-12 text-ink-faint gap-2 font-mono text-xs">
+                <Loader2 className="w-4 h-4 animate-spin text-ink-soft" />
+                <span>Auditing tasks...</span>
+              </div>
+            ) : tasks.length === 0 ? (
+              <div className="text-center py-12 text-ink-faint p-6">
+                <p className="text-sm font-serif italic text-ink-soft">No tasks recorded in your ledger.</p>
+                <p className="text-xs mt-1 text-ink-faint font-sans">Inscribe an action item above to begin your day.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-rule">
+                {tasks.map((task) => {
+                  const isNew = newlyAddedId === task.id;
+
+                  return (
+                    <motion.div
+                      key={task.id}
+                      initial={isNew ? { clipPath: "inset(0 100% 0 0)", backgroundColor: "var(--c-raised)" } : false}
+                      animate={isNew ? { clipPath: "inset(0 0% 0 0)", backgroundColor: "transparent" } : {}}
+                      transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
+                      className="group flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-raised transition-all duration-150 border-l-2 border-l-transparent hover:border-l-ink-soft cursor-default text-xs"
                     >
-                      <motion.div
-                        whileTap={{ scale: 0.85 }}
-                        className={clsx(
-                          "w-5 h-5 rounded-lg flex items-center justify-center transition-colors duration-200 border",
-                          task.completed
-                            ? "bg-[#C87467] border-[#C87467] text-white shadow-xs"
-                            : "border-stone-300 bg-white hover:border-[#C87467]"
-                        )}
-                      >
-                        {task.completed && (
-                          <motion.div
-                            initial={{ scale: 0, rotate: -45 }}
-                            animate={{ scale: 1, rotate: 0 }}
-                            transition={{ type: "spring", stiffness: 500, damping: 28 }}
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {/* Square Checkbox */}
+                        <button
+                          type="button"
+                          onClick={() => toggleComplete(task)}
+                          className="cursor-pointer shrink-0"
+                          aria-label={task.completed ? "Mark incomplete" : "Mark complete"}
+                        >
+                          <div
+                            className={clsx(
+                              "w-4 h-4 rounded-none flex items-center justify-center transition-colors duration-150 border",
+                              task.completed
+                                ? "bg-done border-done text-white"
+                                : "border-rule bg-ground hover:border-ink-soft"
+                            )}
                           >
-                            <Check className="w-3.5 h-3.5 stroke-[3]" />
-                          </motion.div>
+                            {task.completed && (
+                              <Check className="w-3 h-3 stroke-[3]" />
+                            )}
+                          </div>
+                        </button>
+
+                        {/* Title with Literal Pen Strike-Through */}
+                        <div className="min-w-0 flex-1 relative">
+                          <div className="relative inline-block max-w-full">
+                            <span
+                              className={clsx(
+                                "font-sans text-xs transition-colors duration-200 block truncate",
+                                task.completed ? "text-ink-faint" : "text-ink font-medium"
+                              )}
+                            >
+                              {task.title}
+                            </span>
+
+                            {/* Literal Pen Strike-Through Line */}
+                            {task.completed && (
+                              <motion.span
+                                initial={{ scaleX: 0 }}
+                                animate={{ scaleX: 1 }}
+                                transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                                className="absolute left-0 top-1/2 -translate-y-1/2 h-[1.5px] bg-ink-soft/70 w-full origin-left pointer-events-none"
+                              />
+                            )}
+                          </div>
+
+                          {task.description && (
+                            <p className="text-[11px] text-ink-faint truncate mt-0.5 font-sans">
+                              {task.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Due Date & Actions */}
+                      <div className="flex items-center gap-2.5 shrink-0">
+                        {task.dueAt && (
+                          <span className="text-[10px] font-mono text-ink-faint flex items-center gap-1 bg-ground px-1.5 py-0.5 rounded-none border border-rule">
+                            <CalendarDays className="w-3 h-3 text-ink-soft" />
+                            {dayjs(task.dueAt).format("D MMM")}
+                          </span>
                         )}
-                      </motion.div>
-                    </button>
 
-                    <div className="min-w-0 flex-1">
-                      <p
-                        className={clsx(
-                          "text-sm font-medium transition-all duration-200 truncate",
-                          task.completed
-                            ? "line-through text-[#A39B92]"
-                            : "text-[#24211E]"
-                        )}
-                      >
-                        {task.title}
-                      </p>
-                      {task.description && (
-                        <p className="text-xs text-[#827A72] truncate mt-0.5">
-                          {task.description}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    {task.dueAt && (
-                      <span className="text-[11px] font-mono text-[#827A72] flex items-center gap-1 bg-[#FAF8F5] px-2 py-0.5 rounded-md border border-black/[0.05]">
-                        <CalendarDays className="w-3 h-3 text-[#C87467]" />
-                        {dayjs(task.dueAt).format("MMM D")}
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => deleteTask(task.id)}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-[#C87467]/10 text-[#827A72] hover:text-[#C87467] transition-all cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-
-            {tasks.length === 0 && !loading && (
-              <div className="text-center py-12 text-[#827A72] font-serif">
-                <p className="text-base italic">No tasks in your ledger yet.</p>
-                <p className="text-xs mt-1 text-[#A39B92]">Add a task above to plan your day.</p>
+                        <button
+                          type="button"
+                          onClick={() => deleteTask(task.id)}
+                          className="opacity-0 group-hover:opacity-100 p-1 rounded-none hover:text-danger text-ink-faint transition-all active:scale-90 border border-transparent hover:border-rule cursor-pointer"
+                          title="Delete task"
+                          aria-label="Delete task"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 stroke-[1.8]" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </div>
             )}
           </div>

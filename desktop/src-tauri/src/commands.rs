@@ -6,29 +6,61 @@ use crate::models::*;
 
 #[tauri::command]
 pub fn register(username: String, email: String, password: String) -> Result<AuthResponse, String> {
-    let hashed = bcrypt::hash(&password, 10).map_err(|e| e.to_string())?;
+    let clean_user = username.trim().to_string();
+    let clean_email = email.trim().to_lowercase();
+    let clean_pass = password.trim();
+
+    if clean_user.is_empty() {
+        return Err("Username cannot be empty".to_string());
+    }
+    if clean_email.is_empty() || !clean_email.contains('@') {
+        return Err("Please enter a valid email address".to_string());
+    }
+    if clean_pass.len() < 4 {
+        return Err("Password must be at least 4 characters".to_string());
+    }
+
+    let hashed = bcrypt::hash(clean_pass, 10).map_err(|e| e.to_string())?;
     let db = get_db();
     db.execute(
         "INSERT INTO users (username, email, password) VALUES (?1, ?2, ?3)",
-        params![username, email, hashed],
-    ).map_err(|e| format!("Registration failed: {}", e))?;
+        params![clean_user, clean_email, hashed],
+    ).map_err(|e| {
+        let err_str = e.to_string();
+        if err_str.contains("users.username") {
+            "Username is already taken".to_string()
+        } else if err_str.contains("users.email") {
+            "Email is already registered".to_string()
+        } else {
+            format!("Registration failed: {}", err_str)
+        }
+    })?;
     let id = db.last_insert_rowid();
-    Ok(AuthResponse { user_id: id, username })
+    Ok(AuthResponse { user_id: id, username: clean_user })
 }
 
 #[tauri::command]
 pub fn login(username: String, password: String) -> Result<AuthResponse, String> {
-    let db = get_db();
-    let mut stmt = db.prepare("SELECT id, password FROM users WHERE username = ?1")
-        .map_err(|e| e.to_string())?;
-    let (id, hash): (i64, String) = stmt.query_row(params![username], |row| {
-        Ok((row.get(0)?, row.get(1)?))
-    }).map_err(|_| "Invalid username or password".to_string())?;
+    let clean_user = username.trim();
+    let clean_pass = password.trim();
 
-    if !bcrypt::verify(&password, &hash).unwrap_or(false) {
-        return Err("Invalid username or password".to_string());
+    if clean_user.is_empty() || clean_pass.is_empty() {
+        return Err("Username and password are required".to_string());
     }
-    Ok(AuthResponse { user_id: id, username })
+
+    let db = get_db();
+    let mut stmt = db.prepare(
+        "SELECT id, username, password FROM users WHERE username = ?1 COLLATE NOCASE OR email = ?1 COLLATE NOCASE"
+    ).map_err(|e| e.to_string())?;
+
+    let (id, actual_username, hash): (i64, String, String) = stmt.query_row(params![clean_user], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+    }).map_err(|_| "Invalid username/email or password".to_string())?;
+
+    if !bcrypt::verify(clean_pass, &hash).unwrap_or(false) {
+        return Err("Invalid username/email or password".to_string());
+    }
+    Ok(AuthResponse { user_id: id, username: actual_username })
 }
 
 // ─── Tasks ───────────────────────────────────────────────────────────────────
@@ -130,9 +162,26 @@ pub fn delete_task(id: i64) -> Result<(), String> {
 
 #[tauri::command]
 pub fn set_diary_pin(user_id: i64, pin: String) -> Result<(), String> {
-    let hashed = bcrypt::hash(&pin, 10).map_err(|e| e.to_string())?;
+    let clean = pin.trim();
+    if clean.is_empty() {
+        return Err("PIN cannot be empty".to_string());
+    }
+    let hashed = bcrypt::hash(clean, 10).map_err(|e| e.to_string())?;
     let db = get_db();
     db.execute("UPDATE users SET diary_pin = ?1 WHERE id = ?2", params![hashed, user_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn reset_diary_pin(user_id: i64, new_pin: String) -> Result<(), String> {
+    set_diary_pin(user_id, new_pin)
+}
+
+#[tauri::command]
+pub fn remove_diary_pin(user_id: i64) -> Result<(), String> {
+    let db = get_db();
+    db.execute("UPDATE users SET diary_pin = NULL WHERE id = ?1", params![user_id])
         .map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -156,7 +205,10 @@ pub fn verify_diary_pin(user_id: i64, pin: String) -> Result<bool, String> {
         .map_err(|e| e.to_string())?;
     match stored {
         None => Err("Diary PIN not set".to_string()),
-        Some(hash) => Ok(bcrypt::verify(&pin, &hash).unwrap_or(false)),
+        Some(hash) => {
+            let clean = pin.trim();
+            Ok(bcrypt::verify(clean, &hash).unwrap_or(false))
+        }
     }
 }
 

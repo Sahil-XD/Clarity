@@ -14,6 +14,8 @@ pub fn run() {
             commands::update_task,
             commands::delete_task,
             commands::set_diary_pin,
+            commands::reset_diary_pin,
+            commands::remove_diary_pin,
             commands::check_diary_pin,
             commands::verify_diary_pin,
             commands::get_diary_entries,

@@ -143,11 +143,29 @@ class ApiClient {
   }
 
   async setDiaryPin(pin: string): Promise<void> {
+    const clean = pin.trim();
     if (!this.isTauri()) {
-      this.setMock("clarity_mock_pin", pin);
+      this.setMock("clarity_mock_pin", clean);
       return;
     }
-    return invoke("set_diary_pin", { userId: this.getUserId(), pin });
+    return invoke("set_diary_pin", { userId: this.getUserId(), pin: clean });
+  }
+
+  async resetDiaryPin(pin: string): Promise<void> {
+    const clean = pin.trim();
+    if (!this.isTauri()) {
+      this.setMock("clarity_mock_pin", clean);
+      return;
+    }
+    return invoke("reset_diary_pin", { userId: this.getUserId(), newPin: clean });
+  }
+
+  async removeDiaryPin(): Promise<void> {
+    if (!this.isTauri()) {
+      this.setMock("clarity_mock_pin", null);
+      return;
+    }
+    return invoke("remove_diary_pin", { userId: this.getUserId() });
   }
 
   async getDiaryEntries(pin: string): Promise<DiaryEntry[]> {
