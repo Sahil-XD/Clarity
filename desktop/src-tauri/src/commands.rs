@@ -153,6 +153,16 @@ pub fn update_task(id: i64, title: Option<String>, description: Option<String>, 
 #[tauri::command]
 pub fn delete_task(id: i64) -> Result<(), String> {
     let db = get_db();
+    // Proactively clean up any calendar_events associated with this task
+    if let Ok(mut stmt) = db.prepare("SELECT user_id, title FROM tasks WHERE id = ?1") {
+        if let Ok(row) = stmt.query_row(params![id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))) {
+            let (user_id, title) = row;
+            let _ = db.execute(
+                "DELETE FROM calendar_events WHERE user_id = ?1 AND event_type = 'TASK' AND title = ?2",
+                params![user_id, title],
+            );
+        }
+    }
     db.execute("DELETE FROM tasks WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -360,6 +370,15 @@ pub fn create_calendar_event(
 #[tauri::command]
 pub fn delete_calendar_event(id: i64) -> Result<(), String> {
     let db = get_db();
+    // If this was a task event, also delete the corresponding task
+    if let Ok(mut stmt) = db.prepare("SELECT user_id, title, event_type FROM calendar_events WHERE id = ?1") {
+        if let Ok(row) = stmt.query_row(params![id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))) {
+            let (user_id, title, event_type) = row;
+            if event_type == "TASK" {
+                let _ = db.execute("DELETE FROM tasks WHERE user_id = ?1 AND title = ?2", params![user_id, title]);
+            }
+        }
+    }
     db.execute("DELETE FROM calendar_events WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
     Ok(())

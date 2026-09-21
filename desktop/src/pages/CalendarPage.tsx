@@ -370,8 +370,30 @@ export default function CalendarPage() {
     }
   };
 
+  // Synchronize calendar events with tasks:
+  // Discard any task calendar events whose underlying task was deleted from tasks
+  const validEvents = allEvents.filter((e) => {
+    if (e.type !== "TASK") return true; // Notes always stay
+    return tasks.some(
+      (t) => t.title.trim().toLowerCase() === e.title.trim().toLowerCase()
+    );
+  });
+
   const mergedEvents: CalendarEvent[] = [
-    ...allEvents,
+    ...validEvents.map((e) => {
+      if (e.type === "TASK") {
+        const matching = tasks.find(
+          (t) => t.title.trim().toLowerCase() === e.title.trim().toLowerCase()
+        );
+        if (matching) {
+          return {
+            ...e,
+            completed: matching.completed,
+          };
+        }
+      }
+      return e;
+    }),
     ...tasks
       .filter((t) => t.dueAt)
       .map((t): CalendarEvent => ({
@@ -388,8 +410,11 @@ export default function CalendarPage() {
       }))
       .filter(
         (synced) =>
-          !allEvents.some(
-            (e) => e.type === "TASK" && e.title === synced.title && e.eventDate === synced.eventDate
+          !validEvents.some(
+            (e) =>
+              e.type === "TASK" &&
+              e.title.trim().toLowerCase() === synced.title.trim().toLowerCase() &&
+              e.eventDate === synced.eventDate
           )
       ),
   ];
@@ -724,7 +749,11 @@ function DiaryDayCard({
       return;
     }
     setConfirmDeleteId(null);
-    await api.deleteCalendarEvent(id);
+    if (id < 0) {
+      await api.deleteTask(-id);
+    } else {
+      await api.deleteCalendarEvent(id);
+    }
     onReload();
   };
 

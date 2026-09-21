@@ -95,4 +95,12 @@ fn init_tables(conn: &Connection) {
             created_at  TEXT NOT NULL DEFAULT (datetime('now'))
         );
     ").expect("Failed to create tables");
+
+    // Purge any orphaned task calendar events where the underlying task was deleted
+    let _ = conn.execute(
+        "DELETE FROM calendar_events WHERE event_type = 'TASK' AND NOT EXISTS (
+            SELECT 1 FROM tasks WHERE tasks.user_id = calendar_events.user_id AND tasks.title = calendar_events.title
+        )",
+        [],
+    );
 }

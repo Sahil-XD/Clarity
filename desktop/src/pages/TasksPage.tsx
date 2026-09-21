@@ -226,9 +226,26 @@ export default function TasksPage() {
 
   const deleteTask = async (id: number) => {
     sound.pop();
+    const taskToDelete = tasks.find((t) => t.id === id);
     try {
       await api.deleteTask(id);
       setTasks((prev) => prev.filter((t) => t.id !== id));
+      if (taskToDelete) {
+        try {
+          if (taskToDelete.dueAt) {
+            const datePart = dayjs(taskToDelete.dueAt).format("YYYY-MM-DD");
+            const dayEvents = await api.getCalendarDay(datePart);
+            const matching = dayEvents.filter(
+              (e) => e.type === "TASK" && e.title.trim().toLowerCase() === taskToDelete.title.trim().toLowerCase()
+            );
+            for (const m of matching) {
+              await api.deleteCalendarEvent(m.id);
+            }
+          }
+        } catch (syncErr) {
+          console.warn("Could not clean up calendar event:", syncErr);
+        }
+      }
     } catch (err) {
       console.error(err);
     }
