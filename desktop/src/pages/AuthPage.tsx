@@ -7,15 +7,17 @@ import {
 } from "lucide-react";
 import { ClarityLogo } from "@/components/ClarityLogo";
 import { sound } from "@/lib/sound";
-import { loadGoogleScript, initGoogleAuth, renderGoogleButton } from "@/lib/google-auth";
+import { loadGoogleScript, initGoogleAuth, renderGoogleButton, isGoogleConfigured } from "@/lib/google-auth";
 
 function GoogleSignInButton() {
   const googleBtnRef = useRef<HTMLDivElement>(null);
   const { googleLogin } = useAuth();
   const [googleError, setGoogleError] = useState("");
   const [googleLoading, setGoogleLoading] = useState(false);
+  const configured = isGoogleConfigured();
 
   useEffect(() => {
+    if (!configured) return;
     loadGoogleScript()
       .then(() => {
         initGoogleAuth(async (idToken) => {
@@ -36,9 +38,14 @@ function GoogleSignInButton() {
         }
       })
       .catch(() => {
-        // Google script failed to load — silent fallback
+        // Google script failed to load
       });
-  }, [googleLogin]);
+  }, [googleLogin, configured]);
+
+  const handleUnconfiguredClick = () => {
+    sound.pop();
+    setGoogleError("Google Sign-In ready: Add your VITE_GOOGLE_CLIENT_ID in desktop/.env to activate.");
+  };
 
   return (
     <div className="mt-3">
@@ -46,11 +53,39 @@ function GoogleSignInButton() {
         <div className="flex items-center justify-center py-3">
           <Loader2 className="w-5 h-5 animate-spin text-ink-faint" />
         </div>
-      ) : (
+      ) : configured ? (
         <div ref={googleBtnRef} className="flex justify-center [&>div]:!rounded-2xl [&>div]:!w-full" />
+      ) : (
+        <button
+          type="button"
+          onClick={handleUnconfiguredClick}
+          className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-2xl bg-raised border border-rule hover:border-ink/20 text-ink text-xs font-semibold shadow-xs transition-all cursor-pointer"
+        >
+          <svg className="w-4 h-4" viewBox="0 0 24 24">
+            <path
+              fill="#4285F4"
+              d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.9c2.28-2.1 3.645-5.2 3.645-9.15z"
+            />
+            <path
+              fill="#34A853"
+              d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.9-3.05c-1.08.72-2.45 1.16-4.03 1.16-3.1 0-5.73-2.1-6.68-4.94H1.21v3.13C3.25 21.36 7.34 24 12 24z"
+            />
+            <path
+              fill="#FBBC05"
+              d="M5.32 14.26c-.24-.72-.38-1.49-.38-2.26s.14-1.54.38-2.26V6.61H1.21C.44 8.14 0 9.87 0 12s.44 3.86 1.21 5.39l4.11-3.13z"
+            />
+            <path
+              fill="#EA4335"
+              d="M12 4.77c1.77 0 3.35.61 4.6 1.8l3.43-3.43C17.95 1.19 15.24 0 12 0 7.34 0 3.25 2.64 1.21 6.61l4.11 3.13c.95-2.84 3.58-4.97 6.68-4.97z"
+            />
+          </svg>
+          <span>Continue with Google</span>
+        </button>
       )}
       {googleError && (
-        <p className="text-xs text-danger mt-2 text-center font-medium">{googleError}</p>
+        <p className="text-[11px] text-ink-soft bg-surface border border-rule rounded-xl p-2 mt-2 text-center font-medium">
+          {googleError}
+        </p>
       )}
     </div>
   );

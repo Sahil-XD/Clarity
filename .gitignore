@@ -42,3 +42,13 @@ clarity_data.mv.db
 *.log
 logs/
 *_out.txt
+
+# Claude AI worktrees and local cache
+.claude/
+.claude-omniroute/
+
+# Environment & Secrets (keep examples tracked)
+.env
+.env.local
+desktop/.env
+backend/.env

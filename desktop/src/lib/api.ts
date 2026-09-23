@@ -72,21 +72,63 @@ class ApiClient {
     if (!this.isTauri()) {
       return { userId: 1, username: data.username || "sahil", token: "dev-token", email: data.email };
     }
-    return this.httpRequest('POST', '/api/auth/register', data);
+    // Local SQLite is the desktop source of truth for offline data
+    const localRes = await invoke<AuthResponse>("register", { ...data });
+
+    // Opportunistically register on cloud backend if reachable to get JWT
+    try {
+      const remoteRes = await this.httpRequest<AuthResponse>('POST', '/api/auth/register', data);
+      if (remoteRes?.token) {
+        localRes.token = remoteRes.token;
+      }
+    } catch {
+      // Backend offline or unreachable — local SQLite registration succeeded
+    }
+    return localRes;
   }
 
   async login(data: LoginRequest): Promise<AuthResponse> {
     if (!this.isTauri()) {
       return { userId: 1, username: data.username || "sahil", token: "dev-token" };
     }
-    return this.httpRequest('POST', '/api/auth/login', data);
+    // Authenticate with local SQLite so offline mode works 100%
+    const localRes = await invoke<AuthResponse>("login", { ...data });
+
+    // Opportunistically obtain cloud JWT token if backend is running
+    try {
+      const remoteRes = await this.httpRequest<AuthResponse>('POST', '/api/auth/login', data);
+      if (remoteRes?.token) {
+        localRes.token = remoteRes.token;
+        localRes.avatarUrl = remoteRes.avatarUrl;
+        localRes.email = remoteRes.email;
+      }
+    } catch {
+      // Backend offline or unreachable — local login succeeded
+    }
+    return localRes;
   }
 
   async googleLogin(idToken: string): Promise<AuthResponse> {
     if (!this.isTauri()) {
       return { userId: 1, username: "google-user", token: "dev-token", email: "dev@test.com", avatarUrl: "https://via.placeholder.com/40" };
     }
-    return this.httpRequest('POST', '/api/auth/google', { idToken });
+    // 1. Verify with Spring Boot backend
+    const remoteRes = await this.httpRequest<AuthResponse>('POST', '/api/auth/google', { idToken });
+
+    // 2. Ensure matching record in local SQLite so offline queries and FKs work
+    try {
+      const localUser = await invoke<AuthResponse>("ensure_oauth_user", {
+        username: remoteRes.username,
+        email: remoteRes.email || `${remoteRes.username}@google.oauth`,
+      });
+      return {
+        ...remoteRes,
+        userId: (localUser as any).user_id || localUser.userId || remoteRes.userId,
+      };
+    } catch (e) {
+      console.warn("Could not sync Google OAuth user to local SQLite:", e);
+      return remoteRes;
+    }
   }
 
   // ─── Tasks ─────────────────────────────────────────────────────────────────

@@ -86,4 +86,8 @@ export function renderGoogleButton(element: HTMLElement): void {
   });
 }
 
+export function isGoogleConfigured(): boolean {
+  return Boolean(GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.includes('your-google-client-id'));
+}
+
 export { GOOGLE_CLIENT_ID };

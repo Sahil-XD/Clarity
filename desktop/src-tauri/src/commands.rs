@@ -63,6 +63,34 @@ pub fn login(username: String, password: String) -> Result<AuthResponse, String>
     Ok(AuthResponse { user_id: id, username: actual_username })
 }
 
+#[tauri::command]
+pub fn ensure_oauth_user(username: String, email: String) -> Result<AuthResponse, String> {
+    let clean_user = username.trim().to_string();
+    let clean_email = email.trim().to_lowercase();
+    let db = get_db();
+
+    let mut stmt = db.prepare(
+        "SELECT id, username FROM users WHERE email = ?1 COLLATE NOCASE OR username = ?2 COLLATE NOCASE"
+    ).map_err(|e| e.to_string())?;
+
+    let existing: Result<(i64, String), rusqlite::Error> = stmt.query_row(params![clean_email, clean_user], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    });
+
+    if let Ok((id, uname)) = existing {
+        return Ok(AuthResponse { user_id: id, username: uname });
+    }
+
+    let dummy_hash = bcrypt::hash(uuid::Uuid::new_v4().to_string(), 4).unwrap_or_default();
+    db.execute(
+        "INSERT INTO users (username, email, password) VALUES (?1, ?2, ?3)",
+        params![clean_user, clean_email, dummy_hash],
+    ).map_err(|e| format!("Failed to create local user for OAuth: {}", e))?;
+
+    let id = db.last_insert_rowid();
+    Ok(AuthResponse { user_id: id, username: clean_user })
+}
+
 // ─── Tasks ───────────────────────────────────────────────────────────────────
 
 #[tauri::command]

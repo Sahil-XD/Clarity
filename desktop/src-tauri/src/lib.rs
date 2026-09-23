@@ -9,6 +9,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::register,
             commands::login,
+            commands::ensure_oauth_user,
             commands::get_tasks,
             commands::create_task,
             commands::update_task,
