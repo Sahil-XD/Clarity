@@ -16,8 +16,11 @@ function GoogleSignInButton() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const configured = isGoogleConfigured();
 
+  const hasInit = useRef(false);
+
   useEffect(() => {
-    if (!configured) return;
+    if (!configured || hasInit.current) return;
+    hasInit.current = true;
     loadGoogleScript()
       .then(() => {
         initGoogleAuth(async (idToken) => {
