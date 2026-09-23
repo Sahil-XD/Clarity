@@ -34,3 +34,4 @@ clarity:
     pin-hash-rounds: 10            # BCrypt rounds for diary PIN
   google:
     client-id: ${GOOGLE_CLIENT_ID:your-google-client-id}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}

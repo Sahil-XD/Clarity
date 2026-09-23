@@ -11,6 +11,8 @@ import type {
   Project,
   ProjectTask,
   ProjectTaskStatus,
+  SyncItem,
+  SyncPullResponse,
 } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
@@ -129,6 +131,17 @@ class ApiClient {
       console.warn("Could not sync Google OAuth user to local SQLite:", e);
       return remoteRes;
     }
+  }
+
+  // ─── Sync ──────────────────────────────────────────────────────────────────
+
+  async syncPush(items: SyncItem[]): Promise<void> {
+    return this.httpRequest("POST", "/api/sync/push", { items });
+  }
+
+  async syncPull(since?: string): Promise<SyncPullResponse> {
+    const query = since ? `?since=${encodeURIComponent(since)}` : "";
+    return this.httpRequest("GET", `/api/sync/pull${query}`);
   }
 
   // ─── Tasks ─────────────────────────────────────────────────────────────────

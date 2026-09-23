@@ -3,6 +3,7 @@ export interface User {
   username: string;
   email: string;
   diaryPinHash: string | null;
+  avatarUrl?: string | null;
   createdAt: string;
 }
 
@@ -16,6 +17,11 @@ export interface Task {
   reminderSent: boolean;
   createdAt: string;
   updatedAt: string;
+  // Sync fields
+  clientId?: string;
+  serverId?: number;
+  deletedAt?: string;
+  syncStatus?: "synced" | "pending" | "conflict";
 }
 
 export interface DiaryEntry {
@@ -25,6 +31,11 @@ export interface DiaryEntry {
   mood?: "HAPPY" | "NEUTRAL" | "SAD" | "ANXIOUS" | "EXCITED";
   createdAt: string;
   updatedAt: string;
+  // Sync fields
+  clientId?: string;
+  serverId?: number;
+  deletedAt?: string;
+  syncStatus?: "synced" | "pending" | "conflict";
 }
 
 export interface CalendarEvent {
@@ -39,12 +50,18 @@ export interface CalendarEvent {
   remindAt?: string;
   reminderSent: boolean;
   createdAt: string;
+  updatedAt?: string;
+  // Sync fields
+  clientId?: string;
+  serverId?: number;
+  deletedAt?: string;
+  syncStatus?: "synced" | "pending" | "conflict";
 }
 
 export interface AuthResponse {
   userId: number;
   username: string;
-  token: string;
+  token?: string;
   email?: string;
   avatarUrl?: string;
 }
@@ -74,6 +91,12 @@ export interface Expense {
   date: string;
   expenseType: ExpenseType;
   createdAt: string;
+  updatedAt?: string;
+  // Sync fields
+  clientId?: string;
+  serverId?: number;
+  deletedAt?: string;
+  syncStatus?: "synced" | "pending" | "conflict";
 }
 
 export interface Project {
@@ -81,6 +104,12 @@ export interface Project {
   title: string;
   description?: string;
   createdAt: string;
+  updatedAt?: string;
+  // Sync fields
+  clientId?: string;
+  serverId?: number;
+  deletedAt?: string;
+  syncStatus?: "synced" | "pending" | "conflict";
 }
 
 export type ProjectTaskStatus = "TODO" | "IN_PROGRESS" | "DONE";
@@ -92,4 +121,33 @@ export interface ProjectTask {
   description?: string;
   status: ProjectTaskStatus;
   createdAt: string;
+  updatedAt?: string;
+  // Sync fields
+  clientId?: string;
+  serverId?: number;
+  deletedAt?: string;
+  syncStatus?: "synced" | "pending" | "conflict";
+}
+
+// ─── Sync Types ──────────────────────────────────────────────────────────────
+
+export interface SyncItem {
+  type: "TASK" | "DIARY" | "CALENDAR" | "EXPENSE" | "PROJECT";
+  clientId: string;
+  action: "CREATE" | "UPDATE" | "DELETE";
+  updatedAt: string;
+  data: Record<string, unknown>;
+}
+
+export interface SyncPushRequest {
+  items: SyncItem[];
+}
+
+export interface SyncPullResponse {
+  serverTime: string;
+  tasks: Task[];
+  diary: DiaryEntry[];
+  calendar: CalendarEvent[];
+  expenses: Expense[];
+  projects: Project[];
 }
