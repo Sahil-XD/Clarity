@@ -26,8 +26,17 @@ public class AuthDto {
     }
 
     @Data
+    public static class GoogleAuthRequest {
+        @NotBlank
+        private String idToken;
+    }
+
+    @Data
     public static class TokenResponse {
         private final String token;
+        private final Long userId;
         private final String username;
+        private final String email;
+        private final String avatarUrl;
     }
 }

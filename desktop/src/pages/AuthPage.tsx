@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/lib/store";
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
 import {
@@ -7,6 +7,54 @@ import {
 } from "lucide-react";
 import { ClarityLogo } from "@/components/ClarityLogo";
 import { sound } from "@/lib/sound";
+import { loadGoogleScript, initGoogleAuth, renderGoogleButton } from "@/lib/google-auth";
+
+function GoogleSignInButton() {
+  const googleBtnRef = useRef<HTMLDivElement>(null);
+  const { googleLogin } = useAuth();
+  const [googleError, setGoogleError] = useState("");
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  useEffect(() => {
+    loadGoogleScript()
+      .then(() => {
+        initGoogleAuth(async (idToken) => {
+          setGoogleLoading(true);
+          setGoogleError("");
+          try {
+            await googleLogin(idToken);
+            sound.chime();
+          } catch (err) {
+            sound.pop();
+            setGoogleError(err instanceof Error ? err.message : "Google sign-in failed");
+          } finally {
+            setGoogleLoading(false);
+          }
+        });
+        if (googleBtnRef.current) {
+          renderGoogleButton(googleBtnRef.current);
+        }
+      })
+      .catch(() => {
+        // Google script failed to load — silent fallback
+      });
+  }, [googleLogin]);
+
+  return (
+    <div className="mt-3">
+      {googleLoading ? (
+        <div className="flex items-center justify-center py-3">
+          <Loader2 className="w-5 h-5 animate-spin text-ink-faint" />
+        </div>
+      ) : (
+        <div ref={googleBtnRef} className="flex justify-center [&>div]:!rounded-2xl [&>div]:!w-full" />
+      )}
+      {googleError && (
+        <p className="text-xs text-danger mt-2 text-center font-medium">{googleError}</p>
+      )}
+    </div>
+  );
+}
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -271,6 +319,16 @@ export default function AuthPage() {
                   )}
                 </button>
               </form>
+
+              {/* Divider */}
+              <div className="flex items-center gap-3 mt-4">
+                <div className="flex-1 h-px bg-rule" />
+                <span className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider">or</span>
+                <div className="flex-1 h-px bg-rule" />
+              </div>
+
+              {/* Google Sign-In Button */}
+              <GoogleSignInButton />
 
               {/* Offline Trust Badges */}
               <div className="pt-6 mt-6 border-t border-rule flex items-center justify-center gap-4 text-[11px] font-medium text-ink-faint">

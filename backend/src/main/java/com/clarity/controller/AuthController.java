@@ -23,4 +23,9 @@ public class AuthController {
     public ResponseEntity<AuthDto.TokenResponse> login(@Valid @RequestBody AuthDto.LoginRequest req) {
         return ResponseEntity.ok(authService.login(req));
     }
+
+    @PostMapping("/google")
+    public ResponseEntity<AuthDto.TokenResponse> googleLogin(@Valid @RequestBody AuthDto.GoogleAuthRequest req) {
+        return ResponseEntity.ok(authService.googleLogin(req.getIdToken()));
+    }
 }

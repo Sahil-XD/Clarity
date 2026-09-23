@@ -11,7 +11,7 @@ import { clsx } from "clsx";
 import { ClarityLogo } from "./ClarityLogo";
 
 export default function Layout() {
-  const { username, logout } = useAuth();
+  const { username, avatarUrl, logout } = useAuth();
   const location = useLocation();
   const [muted, setMuted] = useState(sound.isMuted());
   const [theme, setTheme] = useState<"light" | "dark">(() => {
@@ -87,9 +87,18 @@ export default function Layout() {
 
             {/* User Profile Stationery Chip */}
             <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-raised border border-rule transition-colors">
-              <div className="w-7 h-7 rounded-lg bg-ink text-ground flex items-center justify-center text-xs font-bold flex-shrink-0">
-                {userInitial}
-              </div>
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt={username || 'User'}
+                  className="w-7 h-7 rounded-lg object-cover flex-shrink-0"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-lg bg-ink text-ground flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  {userInitial}
+                </div>
+              )}
               <div className="min-w-0 flex-1">
                 <p className="text-[10.5px] font-medium text-ink-faint leading-tight">
                   {greeting()}

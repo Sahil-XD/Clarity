@@ -10,8 +10,15 @@ public class CorsConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                // desktop Tauri app + Expo dev server
-                .allowedOrigins("http://localhost:5173", "http://localhost:8081", "tauri://localhost")
+                // desktop Tauri app + Expo dev server + Expo Go
+                .allowedOrigins(
+                        "http://localhost:5173",      // Vite dev
+                        "http://localhost:8081",      // Expo dev
+                        "http://localhost:19000",     // Expo Go
+                        "http://localhost:19006",     // Expo web
+                        "tauri://localhost",          // Tauri
+                        "exp://localhost:19000"       // Expo scheme
+                )
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(true);

@@ -24,8 +24,17 @@ public class User implements UserDetails {
     @Column(nullable = false, unique = true)
     private String email;
 
-    @Column(nullable = false)
+    @Column
     private String password;
+
+    @Column(name = "google_id", unique = true)
+    private String googleId;
+
+    @Column(name = "avatar_url")
+    private String avatarUrl;
+
+    @Column(name = "auth_provider", nullable = false)
+    private String authProvider = "LOCAL";
 
     /** BCrypt hash of the 4–6 digit diary PIN */
     @Column(name = "diary_pin_hash")

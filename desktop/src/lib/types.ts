@@ -44,6 +44,9 @@ export interface CalendarEvent {
 export interface AuthResponse {
   userId: number;
   username: string;
+  token: string;
+  email?: string;
+  avatarUrl?: string;
 }
 
 export interface RegisterRequest {
@@ -55,6 +58,10 @@ export interface RegisterRequest {
 export interface LoginRequest {
   username: string;
   password: string;
+}
+
+export interface GoogleAuthRequest {
+  idToken: string;
 }
 
 export type ExpenseType = "EXPENSE" | "INCOME";

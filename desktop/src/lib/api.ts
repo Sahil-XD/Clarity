@@ -13,6 +13,8 @@ import type {
   ProjectTaskStatus,
 } from "./types";
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+
 class ApiClient {
   private isTauri(): boolean {
     return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -25,6 +27,24 @@ class ApiClient {
       throw new Error("Not authenticated");
     }
     return state.userId;
+  }
+
+  // Backend HTTP helper for server API calls
+  private async httpRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const token = useAuth.getState().token;
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(err || `HTTP ${res.status}`);
+    }
+    return res.json();
   }
 
   // ─── Browser Mock Storage Helpers ──────────────────────────────────────────
@@ -50,16 +70,23 @@ class ApiClient {
 
   async register(data: RegisterRequest): Promise<AuthResponse> {
     if (!this.isTauri()) {
-      return { userId: 1, username: data.username || "sahil", token: "dev-token" };
+      return { userId: 1, username: data.username || "sahil", token: "dev-token", email: data.email };
     }
-    return invoke("register", { ...data });
+    return this.httpRequest('POST', '/api/auth/register', data);
   }
 
   async login(data: LoginRequest): Promise<AuthResponse> {
     if (!this.isTauri()) {
       return { userId: 1, username: data.username || "sahil", token: "dev-token" };
     }
-    return invoke("login", { ...data });
+    return this.httpRequest('POST', '/api/auth/login', data);
+  }
+
+  async googleLogin(idToken: string): Promise<AuthResponse> {
+    if (!this.isTauri()) {
+      return { userId: 1, username: "google-user", token: "dev-token", email: "dev@test.com", avatarUrl: "https://via.placeholder.com/40" };
+    }
+    return this.httpRequest('POST', '/api/auth/google', { idToken });
   }
 
   // ─── Tasks ─────────────────────────────────────────────────────────────────

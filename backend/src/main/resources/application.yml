@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/clarity
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/clarity}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
@@ -32,3 +32,5 @@ clarity:
     expiration-ms: 86400000        # 24 hours
   diary:
     pin-hash-rounds: 10            # BCrypt rounds for diary PIN
+  google:
+    client-id: ${GOOGLE_CLIENT_ID:your-google-client-id}

@@ -77,6 +77,13 @@
       <artifactId>spring-boot-starter-mail</artifactId>
     </dependency>
 
+    <!-- Google OAuth2 token verification -->
+    <dependency>
+      <groupId>com.google.api-client</groupId>
+      <artifactId>google-api-client</artifactId>
+      <version>2.7.0</version>
+    </dependency>
+
     <!-- Scheduling (built into Spring, just needs the annotation) -->
 
     <!-- Lombok -->
