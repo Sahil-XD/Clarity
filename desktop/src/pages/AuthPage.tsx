@@ -57,16 +57,16 @@ function GoogleSignInButton() {
           <Loader2 className="w-5 h-5 animate-spin text-ink-faint" />
         </div>
       ) : configured ? (
-        <div 
-          ref={googleBtnRef} 
-          className="w-full min-h-[46px] flex justify-center [&>div]:!w-full [&>div]:!flex [&>div]:!justify-center [&>div>iframe]:!w-full [&>div>iframe]:!min-h-[46px] [&>div>iframe]:!rounded-2xl transition-all" 
-        />
+        <div className="w-full flex items-center justify-center my-1">
+          <div ref={googleBtnRef} className="flex justify-center items-center" />
+        </div>
       ) : (
-        <button
-          type="button"
-          onClick={handleUnconfiguredClick}
-          className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-2xl bg-raised border border-rule hover:border-ink/20 text-ink text-sm font-semibold shadow-xs transition-all cursor-pointer min-h-[46px]"
-        >
+        <div className="w-full flex justify-center my-1">
+          <button
+            type="button"
+            onClick={handleUnconfiguredClick}
+            className="w-full max-w-[300px] flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-full bg-raised border border-rule hover:border-ink/20 text-ink text-xs font-semibold shadow-xs transition-all cursor-pointer"
+          >
           <svg className="w-4 h-4" viewBox="0 0 24 24">
             <path
               fill="#4285F4"
@@ -87,6 +87,7 @@ function GoogleSignInButton() {
           </svg>
           <span>Continue with Google</span>
         </button>
+        </div>
       )}
       {googleError && (
         <p className="text-[11px] text-ink-soft bg-surface border border-rule rounded-xl p-2 mt-2 text-center font-medium">
