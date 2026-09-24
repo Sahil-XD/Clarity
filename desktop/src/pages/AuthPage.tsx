@@ -51,18 +51,21 @@ function GoogleSignInButton() {
   };
 
   return (
-    <div className="mt-3">
+    <div className="mt-3.5 w-full">
       {googleLoading ? (
-        <div className="flex items-center justify-center py-3">
+        <div className="flex items-center justify-center py-3.5">
           <Loader2 className="w-5 h-5 animate-spin text-ink-faint" />
         </div>
       ) : configured ? (
-        <div ref={googleBtnRef} className="flex justify-center [&>div]:!rounded-2xl [&>div]:!w-full" />
+        <div 
+          ref={googleBtnRef} 
+          className="w-full min-h-[46px] flex justify-center [&>div]:!w-full [&>div]:!flex [&>div]:!justify-center [&>div>iframe]:!w-full [&>div>iframe]:!min-h-[46px] [&>div>iframe]:!rounded-2xl transition-all" 
+        />
       ) : (
         <button
           type="button"
           onClick={handleUnconfiguredClick}
-          className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-2xl bg-raised border border-rule hover:border-ink/20 text-ink text-xs font-semibold shadow-xs transition-all cursor-pointer"
+          className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-2xl bg-raised border border-rule hover:border-ink/20 text-ink text-sm font-semibold shadow-xs transition-all cursor-pointer min-h-[46px]"
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24">
             <path

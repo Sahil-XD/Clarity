@@ -644,3 +644,108 @@ Phase 1 & 2 Complete: Google Sign-In with real clickable button
 **Status:** Ready to continue with Phase 3 (Cloud Sync) or Phase 4 (Mobile App)
 **Date:** 2026-09-23
 **Session:** Can be resumed anytime - all progress committed to git
+
+
+---
+
+## 🛡️ Second Agent Audit, Google OAuth Post-Mortem & Supabase Migration Plan
+
+**Date:** 2026-09-24  
+**Author:** Antigravity (Second Agent Pair Programmer)  
+**Status:** Audit Completed & Documented · Supabase Transition Planned (Waiting for User Signal)
+
+---
+
+### 1. Comprehensive Code Audit & Bug Fixes Conducted
+
+Upon reviewing the initial Phase 1 & 2 implementation by Claude Code, a full audit across the backend (Spring Boot), desktop Rust core (Tauri 2), and frontend (React / Vite) revealed **4 critical flaws** that were subsequently repaired:
+
+#### A. Broken Offline-First SQLite Auth (`desktop/src/lib/api.ts`)
+* **Identified Defect:** `api.login()` and `api.register()` had been rewritten to exclusively call `this.httpRequest('POST', '/api/auth/...')` against `http://localhost:8080`.
+* **Impact:** Clarity's core architecture is 100% offline-first using local SQLite (`rusqlite`). With this change, if a user launched the desktop app without running Spring Boot in the background, entering login details instantly failed with `TypeError: Failed to fetch`. Users were completely locked out of their local workspace.
+* **Resolution:** Re-architected into a resilient hybrid model:
+  1. Primary auth verifies against local SQLite via `invoke("login")` and `invoke("register")`.
+  2. Opportunistic cloud sync: If the cloud backend is reachable, it silently fetches the JWT token for sync. If unreachable, the local session continues without interruption.
+
+#### B. SQLite Foreign Key Constraint Violations on OAuth Login
+* **Identified Defect:** All local database tables (`tasks`, `expenses`, `diary_entries`, `projects`, `calendar_events`) enforce `user_id INTEGER NOT NULL REFERENCES users(id)`. When logging in via Google, Spring Boot returned a PostgreSQL user ID that did not exist in the local desktop SQLite `users` table.
+* **Impact:** Any attempt to create a task, diary entry, or expense locally after Google login triggered an unhandled SQLite fatal error: `FOREIGN KEY constraint failed`.
+* **Resolution:** Implemented a new Tauri Rust command:
+  ```rust
+  #[tauri::command]
+  pub fn ensure_oauth_user(username: String, email: String) -> Result<AuthResponse, String>
+  ```
+  Registered in `lib.rs` invoke handlers. `api.googleLogin()` now guarantees a local user row exists in SQLite, syncing the local `user_id` so relational database integrity is preserved offline.
+
+#### C. Windows Tauri Origin Rejection in Spring Boot CORS
+* **Identified Defect:** `CorsConfig.java` only whitelisted `"tauri://localhost"` (which applies strictly to macOS/Linux).
+* **Impact:** On Windows, Tauri utilizes Microsoft Edge WebView2, which communicates over `http://tauri.localhost` or `https://tauri.localhost`. All API calls from Windows Tauri were rejected by Spring Boot with CORS preflight violations.
+* **Resolution:** Updated `CorsConfig.java` to explicitly allow `http://tauri.localhost`, `https://tauri.localhost`, and dynamic IP regexes for mobile emulators (`http://10.0.2.2:*`).
+
+#### D. Accidental Git Submodule & Secret Tracking
+* **Identified Defect:** An internal Claude worktree (`.claude/worktrees/agent-a0be0c5a7d2f17ed3`) had been added to git as a submodule in commit `f43c035`. Furthermore, `.env` files were not ignored, presenting a risk of leaking API keys.
+* **Resolution:** Untracked `.claude/` from the git index, committed the worktree progress, and added `.claude/`, `.claude-omniroute/`, and `.env` rules to `.gitignore`.
+
+---
+
+### 2. Google OAuth Client ID & Secret Failure Analysis
+
+We attempted to complete the Google OAuth setup using the user's Google Cloud Console credentials:
+* **Client ID:** `890704715461-xxxxxx.apps.googleusercontent.com`
+* **Client Secret:** `GOCSPX-xxxxxx[REDACTED]`
+* **Configuration:** Added to `desktop/.env`, `backend/.env`, and mapped in `application.yml`.
+
+#### Why the Google Button Froze & Failed to Click:
+1. **Google's Anti-WebView Policy (`disallowed_useragent`):** Google deliberately restricts and degrades OAuth experiences within embedded webviews (Tauri, Electron, in-app mobile browsers).
+2. **Iframe Origin Freeze:** Google Identity Services (`gsi`) injects a cross-origin iframe. When the iframe detected the desktop webview origin, it failed the origin handshake:
+   ```text
+   [GSI_LOGGER]: authError=invalid_client: no registered origin
+   ```
+   When this happens, Google renders the button with `pointer-events: none` inside the iframe. The button is completely inert, unresponsive to mouse clicks, and impossible to interact with.
+3. **Google Cloud Console Domain Restrictions:**
+   * Google Cloud Console explicitly rejects `http://tauri.localhost` (`Must end with a public top-level domain`).
+   * When attempting to publish to production so external users could sign in, Google required domain ownership verification via Google Search Console and rejected `github.com` URLs (`Missing domain: github.com`).
+   * Testing mode restricts logins only to manually specified test user Gmail addresses.
+
+**Conclusion:** Using Google's raw embedded GSI iframe inside a Tauri desktop app is an anti-pattern that creates constant fragility, domain rejection, and a broken user experience.
+
+---
+
+### 3. Transition to Supabase: The Solution
+
+To provide a robust, production-ready, and hassle-free authentication and sync system, Clarity is transitioning to **Supabase** (Open-Source PostgreSQL Backend-as-a-Service).
+
+#### Key Advantages for Clarity:
+1. **Real, Clickable Buttons (No Frozen Iframes):**
+   * The "Sign in with Google" button is a pure React component styled to match Clarity's ruled stationery design system.
+   * Authentication triggers `supabase.auth.signInWithOAuth({ provider: 'google' })`, opening a clean system browser window.
+   * Google redirects back to Supabase's hosted callback (`https://<project-ref>.supabase.co/auth/v1/callback`), which Google permits with zero domain verification required.
+2. **Eliminates Need for Custom Auth Backend:**
+   * No need to maintain a separate Spring Boot server just to verify Google ID tokens.
+   * Out-of-the-box support for Email + Password, Magic Links, and OAuth.
+3. **Seamless Multi-Device Cloud Sync (Desktop + Mobile):**
+   * Supabase provides a hosted PostgreSQL database with Realtime WebSockets.
+   * Tasks, expenses, diary entries, and projects sync bi-directionally between Tauri Desktop and Expo React Native mobile.
+   * Row Level Security (RLS) ensures users only access their own encrypted data.
+
+---
+
+### 4. UI Polish: Google Button Sizing
+
+* Re-calibrated the Google Sign-In button container in `AuthPage.tsx` and `google-auth.ts`:
+  * Increased width from `320px` to `384px` to span the full inner width of the auth card (`max-w-md` minus padding).
+  * Adjusted height and padding to match the primary `py-3` CTA buttons (`Sign In to Workspace` / `Create My Account`).
+  * Styled the fallback button with consistent font typography, icon alignment, and border radii.
+
+---
+
+### 5. Remaining Roadmap & Next Action
+
+> **Notice:** Per user instruction, automated execution is paused here. The implementation of Supabase will not proceed autonomously until explicit user confirmation and project credentials are provided.
+
+#### Next Action Items (Upon User Approval):
+1. User provides Supabase Project URL & Anon Key (from [supabase.com](https://supabase.com)).
+2. Install `@supabase/supabase-js` in desktop and mobile codebases.
+3. Configure Supabase client in `desktop/src/lib/supabase.ts`.
+4. Replace raw GSI button with native Supabase OAuth handler in `AuthPage.tsx`.
+5. Apply PostgreSQL migrations in Supabase dashboard matching Clarity's local SQLite tables.

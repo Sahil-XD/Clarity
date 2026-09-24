@@ -81,7 +81,7 @@ export function renderGoogleButton(element: HTMLElement): void {
     size: 'large',
     text: 'signin_with',
     shape: 'pill',
-    width: 320,
+    width: 384,
     logo_alignment: 'center',
   });
 }
