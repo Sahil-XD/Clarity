@@ -687,6 +687,7 @@ export default function DiaryPage() {
   const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
   const [savingIds, setSavingIds] = useState<Record<string, boolean>>({});
   const [savedIds, setSavedIds] = useState<Record<string, boolean>>({});
+  const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
   const [isTyping, setIsTyping] = useState(false);
   const [addingDate, setAddingDate] = useState(false);
   const [newDate, setNewDate] = useState(dayjs().format("YYYY-MM-DD"));
@@ -732,10 +733,10 @@ export default function DiaryPage() {
       const saved = await api.saveDiaryEntry(date, pin, { body, mood: selectedMood || undefined });
       setEntries((p) => ({ ...p, [date]: saved }));
       setSavedIds((p) => ({ ...p, [date]: true }));
-      sound.pop();
+      setSaveErrors((p) => ({ ...p, [date]: "" }));
       setTimeout(() => setSavedIds((p) => ({ ...p, [date]: false })), 2000);
-    } catch {
-      alert(`Failed to save entry for ${date}`);
+    } catch (err: any) {
+      setSaveErrors((p) => ({ ...p, [date]: err?.message || "Failed to save" }));
     } finally {
       setSavingIds((p) => ({ ...p, [date]: false }));
     }
@@ -954,6 +955,13 @@ export default function DiaryPage() {
                       <motion.span key="saved" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
                         className="flex items-center gap-1.5 text-xs text-done font-semibold bg-done/10 px-2.5 py-1 rounded-lg border border-done/20">
                         <Check className="w-3.5 h-3.5 stroke-[2.5]" /> Saved
+                      </motion.span>
+                    ) : saveErrors[selectedDate] ? (
+                      <motion.span key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="flex items-center gap-1.5 text-xs text-danger font-semibold bg-danger/10 px-2.5 py-1 rounded-lg border border-danger/20"
+                        title={saveErrors[selectedDate]}>
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span>Save failed · Retrying</span>
                       </motion.span>
                     ) : (
                       <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
