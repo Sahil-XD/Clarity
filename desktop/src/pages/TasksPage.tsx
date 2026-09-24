@@ -41,7 +41,7 @@ function NewTaskModal({
       const task = await api.createTask({
         title: title.trim(),
         description: description.trim() || undefined,
-        dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
+        due_at: dueAt ? new Date(dueAt).toISOString() : undefined,
       });
 
       if (dueAt) {
@@ -51,9 +51,9 @@ function NewTaskModal({
           await api.createCalendarEvent({
             title: title.trim(),
             description: description.trim() || undefined,
-            eventDate: datePart,
-            startAt: timePart ? `${datePart}T${timePart}:00` : undefined,
-            type: "TASK",
+            event_date: datePart,
+            start_at: timePart ? `${datePart}T${timePart}:00` : undefined,
+            event_type: "TASK",
           });
         } catch (syncErr) {
           console.warn("Could not sync task to calendar:", syncErr);
@@ -181,7 +181,7 @@ export default function TasksPage() {
   const [showModal, setShowModal] = useState(false);
   const [quickTitle, setQuickTitle] = useState("");
   const [quickSaving, setQuickSaving] = useState(false);
-  const [newlyAddedId, setNewlyAddedId] = useState<number | null>(null);
+  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
 
   useEffect(() => { loadTasks(); }, [pendingOnly]);
 
@@ -224,7 +224,7 @@ export default function TasksPage() {
     }
   };
 
-  const deleteTask = async (id: number) => {
+  const deleteTask = async (id: string) => {
     sound.pop();
     const taskToDelete = tasks.find((t) => t.id === id);
     try {
@@ -232,11 +232,11 @@ export default function TasksPage() {
       setTasks((prev) => prev.filter((t) => t.id !== id));
       if (taskToDelete) {
         try {
-          if (taskToDelete.dueAt) {
-            const datePart = dayjs(taskToDelete.dueAt).format("YYYY-MM-DD");
+          if (taskToDelete.due_at) {
+            const datePart = dayjs(taskToDelete.due_at).format("YYYY-MM-DD");
             const dayEvents = await api.getCalendarDay(datePart);
             const matching = dayEvents.filter(
-              (e) => e.type === "TASK" && e.title.trim().toLowerCase() === taskToDelete.title.trim().toLowerCase()
+              (e) => e.event_type === "TASK" && e.title.trim().toLowerCase() === taskToDelete.title.trim().toLowerCase()
             );
             for (const m of matching) {
               await api.deleteCalendarEvent(m.id);
@@ -482,10 +482,10 @@ export default function TasksPage() {
 
                       {/* Due Date & Actions */}
                       <div className="flex items-center gap-2.5 shrink-0">
-                        {task.dueAt && (
+                        {task.due_at && (
                           <span className="text-[10px] font-mono text-ink-faint flex items-center gap-1 bg-ground px-1.5 py-0.5 rounded-none border border-rule">
                             <CalendarDays className="w-3 h-3 text-ink-soft" />
-                            {dayjs(task.dueAt).format("D MMM")}
+                            {dayjs(task.due_at).format("D MMM")}
                           </span>
                         )}
 

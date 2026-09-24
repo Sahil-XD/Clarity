@@ -47,15 +47,15 @@ function AddTaskModal({
       await api.createTask({
         title: title.trim(),
         description: description.trim() || undefined,
-        dueAt: eventDate ? new Date(eventDate).toISOString() : undefined
+        due_at: eventDate ? new Date(eventDate).toISOString() : undefined
       });
       const created = await api.createCalendarEvent({
         title: title.trim(),
         description: description.trim() || undefined,
-        eventDate,
-        type: "TASK",
-        startAt: startTime ? `${eventDate}T${startTime}:00` : undefined,
-        endAt: endTime ? `${eventDate}T${endTime}:00` : undefined,
+        event_date: eventDate,
+        event_type: "TASK",
+        start_at: startTime ? `${eventDate}T${startTime}:00` : undefined,
+        end_at: endTime ? `${eventDate}T${endTime}:00` : undefined,
       });
       onCreated(created);
       onClose();
@@ -222,8 +222,8 @@ function AddNoteModal({
       const created = await api.createCalendarEvent({
         title: text.trim(),
         description: undefined,
-        eventDate,
-        type: "NOTE",
+        event_date: eventDate,
+        event_type: "NOTE",
       });
       sound.chime();
       onCreated(created);
@@ -373,7 +373,7 @@ export default function CalendarPage() {
   // Synchronize calendar events with tasks:
   // Discard any task calendar events whose underlying task was deleted from tasks
   const validEvents = allEvents.filter((e) => {
-    if (e.type !== "TASK") return true; // Notes always stay
+    if (e.event_type !== "TASK") return true; // Notes always stay
     return tasks.some(
       (t) => t.title.trim().toLowerCase() === e.title.trim().toLowerCase()
     );
@@ -381,7 +381,7 @@ export default function CalendarPage() {
 
   const mergedEvents: CalendarEvent[] = [
     ...validEvents.map((e) => {
-      if (e.type === "TASK") {
+      if (e.event_type === "TASK") {
         const matching = tasks.find(
           (t) => t.title.trim().toLowerCase() === e.title.trim().toLowerCase()
         );
@@ -395,32 +395,36 @@ export default function CalendarPage() {
       return e;
     }),
     ...tasks
-      .filter((t) => t.dueAt)
+      .filter((t) => t.due_at)
       .map((t): CalendarEvent => ({
-        id: -(t.id),
+        id: t.id,
+        user_id: t.user_id,
         title: t.title,
         description: t.description,
-        eventDate: dayjs(t.dueAt).format("YYYY-MM-DD"),
-        type: "TASK",
-        startAt: t.dueAt,
-        endAt: undefined,
+        event_date: dayjs(t.due_at).format("YYYY-MM-DD"),
+        event_type: "TASK",
+        start_at: t.due_at,
+        end_at: null,
+        remind_at: t.remind_at,
+        reminder_sent: t.reminder_sent,
+        created_at: t.created_at,
+        updated_at: t.updated_at,
+        deleted_at: null,
         completed: t.completed,
-        reminderSent: t.reminderSent,
-        createdAt: t.createdAt,
       }))
       .filter(
         (synced) =>
           !validEvents.some(
             (e) =>
-              e.type === "TASK" &&
+              e.event_type === "TASK" &&
               e.title.trim().toLowerCase() === synced.title.trim().toLowerCase() &&
-              e.eventDate === synced.eventDate
+              e.event_date === synced.event_date
           )
       ),
   ];
 
   const filteredEvents = mergedEvents.filter((e) =>
-    tab === "tasks" ? e.type === "TASK" : e.type === "NOTE"
+    tab === "tasks" ? e.event_type === "TASK" : e.event_type === "NOTE"
   );
 
   const navigate = (dir: "prev" | "next") => {
@@ -639,9 +643,9 @@ function NotesFeed({
   const allDateStrings = new Set<string>(defaultRecentDays);
 
   events.forEach((e) => {
-    if (!byDate[e.eventDate]) byDate[e.eventDate] = [];
-    byDate[e.eventDate].push(e);
-    allDateStrings.add(e.eventDate);
+    if (!byDate[e.event_date]) byDate[e.event_date] = [];
+    byDate[e.event_date].push(e);
+    allDateStrings.add(e.event_date);
   });
   manualDates.forEach(d => allDateStrings.add(d));
 
@@ -725,9 +729,9 @@ function DiaryDayCard({
   const [saveError, setSaveError] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const [editId, setEditId] = useState<number | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const handleEdit = (note: CalendarEvent) => {
     setEditId(note.id);
@@ -741,18 +745,17 @@ function DiaryDayCard({
     onReload();
   };
 
-  const handleDelete = async (id: number) => {
-    // Two-step inline confirm — avoids the native browser dialog
-    if (confirmDeleteId !== id) {
-      setConfirmDeleteId(id);
-      setTimeout(() => setConfirmDeleteId((cur) => (cur === id ? null : cur)), 3500);
+  const handleDelete = async (note: CalendarEvent) => {
+    if (confirmDeleteId !== note.id) {
+      setConfirmDeleteId(note.id);
+      setTimeout(() => setConfirmDeleteId((cur) => (cur === note.id ? null : cur)), 3500);
       return;
     }
     setConfirmDeleteId(null);
-    if (id < 0) {
-      await api.deleteTask(-id);
+    if (note.event_type === "TASK") {
+      await api.deleteTask(note.id);
     } else {
-      await api.deleteCalendarEvent(id);
+      await api.deleteCalendarEvent(note.id);
     }
     onReload();
   };
@@ -766,8 +769,8 @@ function DiaryDayCard({
       const created = await api.createCalendarEvent({
         title: trimmed,
         description: undefined,
-        eventDate: date,
-        type: "NOTE",
+        event_date: date,
+        event_type: "NOTE",
       });
       sound.pop();
       onCreated(created);
@@ -898,7 +901,7 @@ function DiaryDayCard({
                       >
                         <span className="text-[11px] font-bold text-accent">Delete?</span>
                         <button
-                          onClick={() => handleDelete(note.id)}
+                          onClick={() => handleDelete(note)}
                           className="px-2 py-0.5 text-[11px] font-bold text-white morning-btn-primary rounded-md transition cursor-pointer"
                         >
                           Yes
@@ -920,7 +923,7 @@ function DiaryDayCard({
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => handleDelete(note.id)}
+                          onClick={() => handleDelete(note)}
                           title="Delete note"
                           className="p-1 rounded-lg text-ink-faint hover:text-accent hover:bg-accent/10 transition cursor-pointer"
                         >
@@ -1111,7 +1114,7 @@ function MonthView({
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
   const byDate = events.reduce((acc, e) => {
-    const k = e.eventDate;
+    const k = e.event_date;
     if (!acc[k]) acc[k] = [];
     acc[k].push(e);
     return acc;
@@ -1200,8 +1203,8 @@ function MonthView({
 
 // ─── Day View (Timeline Agenda) ───────────────────────────────────────────────
 function DayView({ events }: { events: CalendarEvent[]; tab: TabMode }) {
-  const allDay = events.filter((e) => !e.startAt);
-  const timed = events.filter((e) => !!e.startAt);
+  const allDay = events.filter((e) => !e.start_at);
+  const timed = events.filter((e) => !!e.start_at);
   const hours = Array.from({ length: 24 }, (_, i) => i);
 
   if (events.length === 0) {
@@ -1243,7 +1246,7 @@ function DayView({ events }: { events: CalendarEvent[]; tab: TabMode }) {
       {/* Hourly Timeline */}
       <div className="bg-surface rounded-xl border border-rule overflow-hidden">
         {hours.map((hour) => {
-          const hourEvents = timed.filter((e) => e.startAt && dayjs(e.startAt).hour() === hour);
+          const hourEvents = timed.filter((e) => e.start_at && dayjs(e.start_at).hour() === hour);
           const label = hour === 0 ? "12 AM" : hour < 12 ? `${hour} AM` : hour === 12 ? "12 PM" : `${hour - 12} PM`;
           return (
             <div

@@ -1,102 +1,12 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useAuth } from "@/lib/store";
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
 import {
   User, Mail, Lock, ArrowRight, Loader2, AlertCircle,
-  Eye, EyeOff, ShieldCheck, Database
+  Eye, EyeOff, ShieldCheck, Cloud
 } from "lucide-react";
 import { ClarityLogo } from "@/components/ClarityLogo";
 import { sound } from "@/lib/sound";
-import { loadGoogleScript, initGoogleAuth, renderGoogleButton, isGoogleConfigured } from "@/lib/google-auth";
-
-function GoogleSignInButton() {
-  const googleBtnRef = useRef<HTMLDivElement>(null);
-  const { googleLogin } = useAuth();
-  const [googleError, setGoogleError] = useState("");
-  const [googleLoading, setGoogleLoading] = useState(false);
-  const configured = isGoogleConfigured();
-
-  const hasInit = useRef(false);
-
-  useEffect(() => {
-    if (!configured || hasInit.current) return;
-    hasInit.current = true;
-    loadGoogleScript()
-      .then(() => {
-        initGoogleAuth(async (idToken) => {
-          setGoogleLoading(true);
-          setGoogleError("");
-          try {
-            await googleLogin(idToken);
-            sound.chime();
-          } catch (err) {
-            sound.pop();
-            setGoogleError(err instanceof Error ? err.message : "Google sign-in failed");
-          } finally {
-            setGoogleLoading(false);
-          }
-        });
-        if (googleBtnRef.current) {
-          renderGoogleButton(googleBtnRef.current);
-        }
-      })
-      .catch(() => {
-        // Google script failed to load
-      });
-  }, [googleLogin, configured]);
-
-  const handleUnconfiguredClick = () => {
-    sound.pop();
-    setGoogleError("Google Sign-In ready: Add your VITE_GOOGLE_CLIENT_ID in desktop/.env to activate.");
-  };
-
-  return (
-    <div className="mt-3.5 w-full">
-      {googleLoading ? (
-        <div className="flex items-center justify-center py-3.5">
-          <Loader2 className="w-5 h-5 animate-spin text-ink-faint" />
-        </div>
-      ) : configured ? (
-        <div className="w-full flex items-center justify-center my-1">
-          <div ref={googleBtnRef} className="flex justify-center items-center" />
-        </div>
-      ) : (
-        <div className="w-full flex justify-center my-1">
-          <button
-            type="button"
-            onClick={handleUnconfiguredClick}
-            className="w-full max-w-[300px] flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-full bg-raised border border-rule hover:border-ink/20 text-ink text-xs font-semibold shadow-xs transition-all cursor-pointer"
-          >
-          <svg className="w-4 h-4" viewBox="0 0 24 24">
-            <path
-              fill="#4285F4"
-              d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.9c2.28-2.1 3.645-5.2 3.645-9.15z"
-            />
-            <path
-              fill="#34A853"
-              d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.9-3.05c-1.08.72-2.45 1.16-4.03 1.16-3.1 0-5.73-2.1-6.68-4.94H1.21v3.13C3.25 21.36 7.34 24 12 24z"
-            />
-            <path
-              fill="#FBBC05"
-              d="M5.32 14.26c-.24-.72-.38-1.49-.38-2.26s.14-1.54.38-2.26V6.61H1.21C.44 8.14 0 9.87 0 12s.44 3.86 1.21 5.39l4.11-3.13z"
-            />
-            <path
-              fill="#EA4335"
-              d="M12 4.77c1.77 0 3.35.61 4.6 1.8l3.43-3.43C17.95 1.19 15.24 0 12 0 7.34 0 3.25 2.64 1.21 6.61l4.11 3.13c.95-2.84 3.58-4.97 6.68-4.97z"
-            />
-          </svg>
-          <span>Continue with Google</span>
-        </button>
-        </div>
-      )}
-      {googleError && (
-        <p className="text-[11px] text-ink-soft bg-surface border border-rule rounded-xl p-2 mt-2 text-center font-medium">
-          {googleError}
-        </p>
-      )}
-    </div>
-  );
-}
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -106,8 +16,9 @@ export default function AuthPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
-  const { login, register } = useAuth();
+  const { loginWithEmail, registerWithEmail, loginWithGoogle } = useAuth();
 
   // 3D Tilt Parallax
   const cardRef = useRef<HTMLDivElement>(null);
@@ -144,9 +55,9 @@ export default function AuthPage() {
 
     try {
       if (isLogin) {
-        await login({ username, password });
+        await loginWithEmail(email, password);
       } else {
-        await register({ username, email, password });
+        await registerWithEmail(email, password, username);
       }
       sound.chime();
     } catch (err) {
@@ -154,6 +65,20 @@ export default function AuthPage() {
       setError(err instanceof Error ? err.message : "Authentication failed. Please check your details.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
+    setError("");
+    try {
+      await loginWithGoogle();
+      // OAuth redirects — no chime here; initAuth picks up the session on return
+    } catch (err) {
+      sound.pop();
+      setError(err instanceof Error ? err.message : "Google sign-in failed.");
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -216,7 +141,7 @@ export default function AuthPage() {
               <p className="text-ink-soft text-xs mt-1.5 font-medium max-w-xs mx-auto">
                 {isLogin
                   ? "Welcome back to your private personal sanctuary"
-                  : "Create your offline-first encrypted personal workspace"}
+                  : "Create your cloud-synced personal workspace"}
               </p>
 
               {/* Mode Switcher Tabs */}
@@ -265,28 +190,7 @@ export default function AuthPage() {
                   )}
                 </AnimatePresence>
 
-                {/* Username Input with Dedicated Icon Slot */}
-                <div>
-                  <label className="block text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
-                    {isLogin ? "Username or Email" : "Username"}
-                  </label>
-                  <div className="flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-ground border border-rule focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15 focus-within:bg-raised transition-all group">
-                    <div className="w-5 h-5 flex items-center justify-center text-ink-faint group-focus-within:text-accent transition-colors flex-shrink-0">
-                      <User className="w-4 h-4" />
-                    </div>
-                    <input
-                      type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder={isLogin ? "sahil or you@example.com" : "e.g. sahil"}
-                      required
-                      autoFocus
-                      className="w-full bg-transparent text-sm font-medium text-ink placeholder:text-ink-faint outline-none border-none p-0 focus:ring-0 font-sans"
-                    />
-                  </div>
-                </div>
-
-                {/* Email (Register only) */}
+                {/* Username Input (Register only) */}
                 <AnimatePresence>
                   {!isLogin && (
                     <motion.div
@@ -297,17 +201,17 @@ export default function AuthPage() {
                       className="overflow-hidden space-y-1.5"
                     >
                       <label className="block text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
-                        Email Address
+                        Username
                       </label>
                       <div className="flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-ground border border-rule focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15 focus-within:bg-raised transition-all group">
                         <div className="w-5 h-5 flex items-center justify-center text-ink-faint group-focus-within:text-accent transition-colors flex-shrink-0">
-                          <Mail className="w-4 h-4" />
+                          <User className="w-4 h-4" />
                         </div>
                         <input
-                          type="email"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          placeholder="you@example.com"
+                          type="text"
+                          value={username}
+                          onChange={(e) => setUsername(e.target.value)}
+                          placeholder="e.g. sahil"
                           required={!isLogin}
                           className="w-full bg-transparent text-sm font-medium text-ink placeholder:text-ink-faint outline-none border-none p-0 focus:ring-0 font-sans"
                         />
@@ -315,6 +219,27 @@ export default function AuthPage() {
                     </motion.div>
                   )}
                 </AnimatePresence>
+
+                {/* Email Input */}
+                <div>
+                  <label className="block text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
+                    Email Address
+                  </label>
+                  <div className="flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-ground border border-rule focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15 focus-within:bg-raised transition-all group">
+                    <div className="w-5 h-5 flex items-center justify-center text-ink-faint group-focus-within:text-accent transition-colors flex-shrink-0">
+                      <Mail className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      required
+                      autoFocus
+                      className="w-full bg-transparent text-sm font-medium text-ink placeholder:text-ink-faint outline-none border-none p-0 focus:ring-0 font-sans"
+                    />
+                  </div>
+                </div>
 
                 {/* Password Input with Show/Hide Toggle */}
                 <div>
@@ -370,18 +295,52 @@ export default function AuthPage() {
               </div>
 
               {/* Google Sign-In Button */}
-              <GoogleSignInButton />
+              <div className="mt-3.5 w-full">
+                {googleLoading ? (
+                  <div className="flex items-center justify-center py-3.5">
+                    <Loader2 className="w-5 h-5 animate-spin text-ink-faint" />
+                  </div>
+                ) : (
+                  <div className="w-full flex justify-center my-1">
+                    <button
+                      type="button"
+                      onClick={handleGoogleLogin}
+                      className="w-full max-w-[300px] flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-full bg-raised border border-rule hover:border-ink/20 text-ink text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24">
+                        <path
+                          fill="#4285F4"
+                          d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.9c2.28-2.1 3.645-5.2 3.645-9.15z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.9-3.05c-1.08.72-2.45 1.16-4.03 1.16-3.1 0-5.73-2.1-6.68-4.94H1.21v3.13C3.25 21.36 7.34 24 12 24z"
+                        />
+                        <path
+                          fill="#FBBC05"
+                          d="M5.32 14.26c-.24-.72-.38-1.49-.38-2.26s.14-1.54.38-2.26V6.61H1.21C.44 8.14 0 9.87 0 12s.44 3.86 1.21 5.39l4.11-3.13z"
+                        />
+                        <path
+                          fill="#EA4335"
+                          d="M12 4.77c1.77 0 3.35.61 4.6 1.8l3.43-3.43C17.95 1.19 15.24 0 12 0 7.34 0 3.25 2.64 1.21 6.61l4.11 3.13c.95-2.84 3.58-4.97 6.68-4.97z"
+                        />
+                      </svg>
+                      <span>Continue with Google</span>
+                    </button>
+                  </div>
+                )}
+              </div>
 
-              {/* Offline Trust Badges */}
+              {/* Trust Badges */}
               <div className="pt-6 mt-6 border-t border-rule flex items-center justify-center gap-4 text-[11px] font-medium text-ink-faint">
                 <div className="flex items-center gap-1">
-                  <Database className="w-3.5 h-3.5 text-done" />
-                  <span>100% Offline SQLite</span>
+                  <Cloud className="w-3.5 h-3.5 text-done" />
+                  <span>Cloud Synced</span>
                 </div>
                 <span>•</span>
                 <div className="flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-accent" />
-                  <span>Encrypted Vault</span>
+                  <span>Secure Auth</span>
                 </div>
               </div>
             </div>
