@@ -1,9 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
-import { useAuth } from "./store";
+﻿import { supabase } from "./supabase";
 import type {
-  AuthResponse,
-  LoginRequest,
-  RegisterRequest,
   Task,
   DiaryEntry,
   CalendarEvent,
@@ -11,568 +7,459 @@ import type {
   Project,
   ProjectTask,
   ProjectTaskStatus,
-  SyncItem,
-  SyncPullResponse,
+  Profile,
 } from "./types";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+/**
+ * Get the current authenticated user's ID, or throw.
+ */
+async function requireUserId(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) return user.id;
 
-class ApiClient {
-  private isTauri(): boolean {
-    return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.user) return session.user.id;
+
+  throw new Error("Not authenticated");
+}
+
+// ─── Profile ────────────────────────────────────────────────────────────────
+
+async function getProfile(): Promise<Profile | null> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", userId)
+    .single();
+  if (error && error.code !== "PGRST116") throw error; // PGRST116 = no rows
+  return data;
+}
+
+async function upsertProfile(profile: Partial<Profile>): Promise<Profile> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("profiles")
+    .upsert({ id: userId, ...profile }, { onConflict: "id" })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// ─── Tasks ──────────────────────────────────────────────────────────────────
+
+async function getTasks(pendingOnly = false): Promise<Task[]> {
+  const userId = await requireUserId();
+  let query = supabase
+    .from("tasks")
+    .select("*")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
+
+  if (pendingOnly) {
+    query = query.eq("completed", false);
   }
 
-  private getUserId(): number {
-    const state = useAuth.getState();
-    if (!state.userId) {
-      if (!this.isTauri()) return 1;
-      throw new Error("Not authenticated");
-    }
-    return state.userId;
-  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
+}
 
-  // Backend HTTP helper for server API calls
-  private async httpRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const token = useAuth.getState().token;
-    const res = await fetch(`${API_BASE_URL}${path}`, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(err || `HTTP ${res.status}`);
-    }
-    return res.json();
-  }
-
-  // ─── Browser Mock Storage Helpers ──────────────────────────────────────────
-
-  private getMock<T>(key: string, fallback: T): T {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : fallback;
-    } catch {
-      return fallback;
-    }
-  }
-
-  private setMock<T>(key: string, value: T): void {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // ignore
-    }
-  }
-
-  // ─── Auth ──────────────────────────────────────────────────────────────────
-
-  async register(data: RegisterRequest): Promise<AuthResponse> {
-    if (!this.isTauri()) {
-      return { userId: 1, username: data.username || "sahil", token: "dev-token", email: data.email };
-    }
-    // Local SQLite is the desktop source of truth for offline data
-    const localRes = await invoke<AuthResponse>("register", { ...data });
-
-    // Opportunistically register on cloud backend if reachable to get JWT
-    try {
-      const remoteRes = await this.httpRequest<AuthResponse>('POST', '/api/auth/register', data);
-      if (remoteRes?.token) {
-        localRes.token = remoteRes.token;
-      }
-    } catch {
-      // Backend offline or unreachable — local SQLite registration succeeded
-    }
-    return localRes;
-  }
-
-  async login(data: LoginRequest): Promise<AuthResponse> {
-    if (!this.isTauri()) {
-      return { userId: 1, username: data.username || "sahil", token: "dev-token" };
-    }
-    // Authenticate with local SQLite so offline mode works 100%
-    const localRes = await invoke<AuthResponse>("login", { ...data });
-
-    // Opportunistically obtain cloud JWT token if backend is running
-    try {
-      const remoteRes = await this.httpRequest<AuthResponse>('POST', '/api/auth/login', data);
-      if (remoteRes?.token) {
-        localRes.token = remoteRes.token;
-        localRes.avatarUrl = remoteRes.avatarUrl;
-        localRes.email = remoteRes.email;
-      }
-    } catch {
-      // Backend offline or unreachable — local login succeeded
-    }
-    return localRes;
-  }
-
-  async googleLogin(idToken: string): Promise<AuthResponse> {
-    if (!this.isTauri()) {
-      return { userId: 1, username: "google-user", token: "dev-token", email: "dev@test.com", avatarUrl: "https://via.placeholder.com/40" };
-    }
-    // 1. Verify with Spring Boot backend
-    const remoteRes = await this.httpRequest<AuthResponse>('POST', '/api/auth/google', { idToken });
-
-    // 2. Ensure matching record in local SQLite so offline queries and FKs work
-    try {
-      const localUser = await invoke<AuthResponse>("ensure_oauth_user", {
-        username: remoteRes.username,
-        email: remoteRes.email || `${remoteRes.username}@google.oauth`,
-      });
-      return {
-        ...remoteRes,
-        userId: (localUser as any).user_id || localUser.userId || remoteRes.userId,
-      };
-    } catch (e) {
-      console.warn("Could not sync Google OAuth user to local SQLite:", e);
-      return remoteRes;
-    }
-  }
-
-  // ─── Sync ──────────────────────────────────────────────────────────────────
-
-  async syncPush(items: SyncItem[]): Promise<void> {
-    return this.httpRequest("POST", "/api/sync/push", { items });
-  }
-
-  async syncPull(since?: string): Promise<SyncPullResponse> {
-    const query = since ? `?since=${encodeURIComponent(since)}` : "";
-    return this.httpRequest("GET", `/api/sync/pull${query}`);
-  }
-
-  // ─── Tasks ─────────────────────────────────────────────────────────────────
-
-  async getTasks(pendingOnly = false): Promise<Task[]> {
-    if (!this.isTauri()) {
-      const list = this.getMock<Task[]>("clarity_mock_tasks", []);
-      return pendingOnly ? list.filter((t) => !t.completed) : list;
-    }
-    return invoke("get_tasks", { userId: this.getUserId(), pendingOnly });
-  }
-
-  async createTask(task: Partial<Task>): Promise<Task> {
-    if (!this.isTauri()) {
-      const list = this.getMock<Task[]>("clarity_mock_tasks", []);
-      const newTask: Task = {
-        id: Date.now(),
-        userId: this.getUserId(),
-        title: task.title || "",
-        description: task.description || null,
-        completed: false,
-        dueAt: task.dueAt || null,
-        createdAt: new Date().toISOString(),
-      };
-      list.unshift(newTask);
-      this.setMock("clarity_mock_tasks", list);
-      return newTask;
-    }
-    return invoke("create_task", {
-      userId: this.getUserId(),
+async function createTask(task: Partial<Task>): Promise<Task> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("tasks")
+    .insert({
+      user_id: userId,
       title: task.title,
       description: task.description || null,
-      dueAt: task.dueAt || null,
-    });
-  }
+      due_at: task.due_at || null,
+      completed: false,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
 
-  async updateTask(id: number, patch: Partial<Task>): Promise<Task> {
-    if (!this.isTauri()) {
-      const list = this.getMock<Task[]>("clarity_mock_tasks", []);
-      const idx = list.findIndex((t) => t.id === id);
-      if (idx !== -1) {
-        list[idx] = { ...list[idx], ...patch };
-        this.setMock("clarity_mock_tasks", list);
-        return list[idx];
-      }
-      throw new Error("Task not found");
-    }
-    return invoke("update_task", {
-      id,
-      title: patch.title,
-      description: patch.description,
-      completed: patch.completed,
-      dueAt: patch.dueAt,
-    });
-  }
+async function updateTask(id: string, patch: Partial<Task>): Promise<Task> {
+  const updates: Record<string, unknown> = {};
+  if (patch.title !== undefined) updates.title = patch.title;
+  if (patch.description !== undefined) updates.description = patch.description;
+  if (patch.completed !== undefined) updates.completed = patch.completed;
+  if (patch.due_at !== undefined) updates.due_at = patch.due_at;
 
-  async deleteTask(id: number): Promise<void> {
-    if (!this.isTauri()) {
-      const list = this.getMock<Task[]>("clarity_mock_tasks", []);
-      this.setMock("clarity_mock_tasks", list.filter((t) => t.id !== id));
-      return;
-    }
-    return invoke("delete_task", { id });
-  }
+  const { data, error } = await supabase
+    .from("tasks")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
 
-  // ─── Diary ─────────────────────────────────────────────────────────────────
+async function deleteTask(id: string): Promise<void> {
+  // Soft delete
+  const { error } = await supabase
+    .from("tasks")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
 
-  async checkDiaryPin(): Promise<boolean> {
-    if (!this.isTauri()) {
-      return !!this.getMock<string | null>("clarity_mock_pin", null);
-    }
-    return invoke("check_diary_pin", { userId: this.getUserId() });
-  }
+// ─── Diary ──────────────────────────────────────────────────────────────────
 
-  async verifyDiaryPin(pin: string): Promise<boolean> {
-    if (!this.isTauri()) {
-      const saved = this.getMock<string | null>("clarity_mock_pin", null);
-      return !saved || saved === pin;
-    }
-    return invoke("verify_diary_pin", { userId: this.getUserId(), pin });
-  }
+/**
+ * Hash PIN using SHA-256 with Web Crypto API so plaintext PIN is never stored
+ */
+async function hashPin(pin: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(`clarity_vault_${pin.trim()}`);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
-  async setDiaryPin(pin: string): Promise<void> {
-    const clean = pin.trim();
-    if (!this.isTauri()) {
-      this.setMock("clarity_mock_pin", clean);
-      return;
-    }
-    return invoke("set_diary_pin", { userId: this.getUserId(), pin: clean });
-  }
+async function checkDiaryPin(): Promise<boolean> {
+  const profile = await getProfile();
+  return !!profile?.diary_pin_hash;
+}
 
-  async resetDiaryPin(pin: string): Promise<void> {
-    const clean = pin.trim();
-    if (!this.isTauri()) {
-      this.setMock("clarity_mock_pin", clean);
-      return;
-    }
-    return invoke("reset_diary_pin", { userId: this.getUserId(), newPin: clean });
-  }
+async function verifyDiaryPin(pin: string): Promise<boolean> {
+  const profile = await getProfile();
+  if (!profile?.diary_pin_hash) return true; // No pin set
+  const hashed = await hashPin(pin);
+  // Compare against hashed PIN or legacy unhashed string for backward compatibility
+  return profile.diary_pin_hash === hashed || profile.diary_pin_hash === pin.trim();
+}
 
-  async removeDiaryPin(): Promise<void> {
-    if (!this.isTauri()) {
-      this.setMock("clarity_mock_pin", null);
-      return;
-    }
-    return invoke("remove_diary_pin", { userId: this.getUserId() });
-  }
+async function setDiaryPin(pin: string): Promise<void> {
+  const hashed = await hashPin(pin);
+  await upsertProfile({ diary_pin_hash: hashed });
+}
 
-  async getDiaryEntries(pin: string): Promise<DiaryEntry[]> {
-    const ok = await this.verifyDiaryPin(pin);
+async function resetDiaryPin(newPin: string): Promise<void> {
+  const hashed = await hashPin(newPin);
+  await upsertProfile({ diary_pin_hash: hashed });
+}
+
+async function removeDiaryPin(): Promise<void> {
+  await upsertProfile({ diary_pin_hash: null });
+}
+
+async function getDiaryEntries(pin: string): Promise<DiaryEntry[]> {
+  const hasPin = await checkDiaryPin();
+  if (hasPin) {
+    const ok = await verifyDiaryPin(pin);
     if (!ok) throw new Error("Invalid PIN");
-    if (!this.isTauri()) {
-      return this.getMock<DiaryEntry[]>("clarity_mock_diary", []);
-    }
-    return invoke("get_diary_entries", { userId: this.getUserId() });
+  } else if (!pin) {
+    throw new Error("Diary PIN not set");
   }
 
-  async saveDiaryEntry(date: string, pin: string, body: Partial<DiaryEntry>): Promise<DiaryEntry> {
-    const ok = await this.verifyDiaryPin(pin);
-    if (!ok) throw new Error("Invalid PIN");
-    if (!this.isTauri()) {
-      const list = this.getMock<DiaryEntry[]>("clarity_mock_diary", []);
-      const existing = list.findIndex((e) => e.date === date);
-      const entry: DiaryEntry = {
-        id: existing !== -1 ? list[existing].id : Date.now(),
-        userId: this.getUserId(),
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("diary_entries")
+    .select("*")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .order("date", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+async function saveDiaryEntry(
+  date: string,
+  pin: string,
+  body: Partial<DiaryEntry>
+): Promise<DiaryEntry> {
+  const ok = await verifyDiaryPin(pin);
+  if (!ok) throw new Error("Invalid PIN");
+
+  const userId = await requireUserId();
+
+  // Upsert by user_id + date (unique constraint)
+  const { data, error } = await supabase
+    .from("diary_entries")
+    .upsert(
+      {
+        user_id: userId,
         date,
         body: body.body || "",
         mood: body.mood || null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      if (existing !== -1) {
-        list[existing] = entry;
-      } else {
-        list.push(entry);
-      }
-      this.setMock("clarity_mock_diary", list);
-      return entry;
-    }
-    return invoke("save_diary_entry", {
-      userId: this.getUserId(),
-      date,
-      body: body.body || "",
-      mood: body.mood || null,
-    });
-  }
+      },
+      { onConflict: "user_id,date" }
+    )
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
 
-  // ─── Calendar ──────────────────────────────────────────────────────────────
+// ─── Calendar ───────────────────────────────────────────────────────────────
 
-  async getYearHeatmap(year: number): Promise<Record<number, number>> {
-    if (!this.isTauri()) {
-      return {};
-    }
-    return invoke("get_year_heatmap", { userId: this.getUserId(), year });
-  }
+async function getYearHeatmap(year: number): Promise<Record<number, number>> {
+  const userId = await requireUserId();
+  const from = `${year}-01-01`;
+  const to = `${year}-12-31`;
 
-  async getCalendarDay(date: string): Promise<CalendarEvent[]> {
-    if (!this.isTauri()) {
-      const list = this.getMock<CalendarEvent[]>("clarity_mock_calendar", []);
-      return list.filter((e) => e.eventDate === date);
-    }
-    return invoke("get_calendar_day", { userId: this.getUserId(), date });
-  }
+  const { data, error } = await supabase
+    .from("calendar_events")
+    .select("event_date")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .gte("event_date", from)
+    .lte("event_date", to);
 
-  async getCalendarRange(from: string, to: string): Promise<CalendarEvent[]> {
-    if (!this.isTauri()) {
-      const list = this.getMock<CalendarEvent[]>("clarity_mock_calendar", []);
-      return list.filter((e) => e.eventDate >= from && e.eventDate <= to);
-    }
-    return invoke("get_calendar_range", { userId: this.getUserId(), from, to });
-  }
+  if (error) throw error;
 
-  async createCalendarEvent(event: Partial<CalendarEvent>): Promise<CalendarEvent> {
-    if (!this.isTauri()) {
-      const list = this.getMock<CalendarEvent[]>("clarity_mock_calendar", []);
-      const newEvent: CalendarEvent = {
-        id: Date.now(),
-        userId: this.getUserId(),
-        title: event.title || "",
-        description: event.description || null,
-        eventDate: event.eventDate || new Date().toISOString().split("T")[0],
-        startAt: event.startAt || null,
-        endAt: event.endAt || null,
-        type: event.type || "TASK",
-        createdAt: new Date().toISOString(),
-      };
-      list.push(newEvent);
-      this.setMock("clarity_mock_calendar", list);
-      return newEvent;
-    }
-    return invoke("create_calendar_event", {
-      userId: this.getUserId(),
+  const heatmap: Record<number, number> = {};
+  (data ?? []).forEach((row) => {
+    const month = parseInt(row.event_date.split("-")[1], 10);
+    heatmap[month] = (heatmap[month] || 0) + 1;
+  });
+  return heatmap;
+}
+
+async function getCalendarDay(date: string): Promise<CalendarEvent[]> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("calendar_events")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("event_date", date)
+    .is("deleted_at", null)
+    .order("start_at", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+async function getCalendarRange(
+  from: string,
+  to: string
+): Promise<CalendarEvent[]> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("calendar_events")
+    .select("*")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .gte("event_date", from)
+    .lte("event_date", to)
+    .order("event_date", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+async function createCalendarEvent(
+  event: Partial<CalendarEvent>
+): Promise<CalendarEvent> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("calendar_events")
+    .insert({
+      user_id: userId,
       title: event.title,
       description: event.description || null,
-      eventDate: event.eventDate,
-      startAt: event.startAt || null,
-      endAt: event.endAt || null,
-      eventType: event.type,
-    });
-  }
+      event_date: event.event_date,
+      start_at: event.start_at || null,
+      end_at: event.end_at || null,
+      event_type: event.event_type || "NOTE",
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
 
-  async updateCalendarEvent(id: number, title: string): Promise<void> {
-    if (!this.isTauri()) {
-      const list = this.getMock<CalendarEvent[]>("clarity_mock_calendar", []);
-      const idx = list.findIndex((e) => e.id === id);
-      if (idx !== -1) {
-        list[idx].title = title;
-        this.setMock("clarity_mock_calendar", list);
-      }
-      return;
-    }
-    return invoke("update_calendar_event", { id, title });
-  }
+async function updateCalendarEvent(
+  id: string,
+  title: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("calendar_events")
+    .update({ title })
+    .eq("id", id);
+  if (error) throw error;
+}
 
-  async deleteCalendarEvent(id: number): Promise<void> {
-    if (!this.isTauri()) {
-      const list = this.getMock<CalendarEvent[]>("clarity_mock_calendar", []);
-      this.setMock("clarity_mock_calendar", list.filter((e) => e.id !== id));
-      return;
-    }
-    return invoke("delete_calendar_event", { id });
-  }
+async function deleteCalendarEvent(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("calendar_events")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
 
-  // ─── Expenses ──────────────────────────────────────────────────────────────
+// ─── Expenses ───────────────────────────────────────────────────────────────
 
-  async getExpenses(): Promise<Expense[]> {
-    if (!this.isTauri()) {
-      return this.getMock<Expense[]>("clarity_mock_expenses", []);
-    }
-    return invoke("get_expenses", { userId: this.getUserId() });
-  }
+async function getExpenses(): Promise<Expense[]> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("expenses")
+    .select("*")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .order("date", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
 
-  async createExpense(expense: Omit<Expense, "id" | "createdAt">): Promise<Expense> {
-    if (!this.isTauri()) {
-      const list = this.getMock<Expense[]>("clarity_mock_expenses", []);
-      const newExpense: Expense = {
-        id: Date.now(),
-        userId: this.getUserId(),
-        amount: expense.amount,
-        category: expense.category,
-        description: expense.description || null,
-        date: expense.date,
-        expenseType: expense.expenseType,
-        createdAt: new Date().toISOString(),
-      };
-      list.unshift(newExpense);
-      this.setMock("clarity_mock_expenses", list);
-      return newExpense;
-    }
-    return invoke("create_expense", {
-      userId: this.getUserId(),
+async function createExpense(
+  expense: Omit<Expense, "id" | "created_at" | "updated_at" | "deleted_at" | "user_id">
+): Promise<Expense> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("expenses")
+    .insert({
+      user_id: userId,
       amount: expense.amount,
       category: expense.category,
       description: expense.description || null,
       date: expense.date,
-      expenseType: expense.expenseType,
-    });
-  }
+      expense_type: expense.expense_type,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
 
-  async deleteExpense(id: number): Promise<void> {
-    if (!this.isTauri()) {
-      const list = this.getMock<Expense[]>("clarity_mock_expenses", []);
-      this.setMock("clarity_mock_expenses", list.filter((e) => e.id !== id));
-      return;
-    }
-    return invoke("delete_expense", { id });
-  }
+async function deleteExpense(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("expenses")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
 
-  // ─── Projects ──────────────────────────────────────────────────────────────
+// ─── Projects ───────────────────────────────────────────────────────────────
 
-  async getProjects(): Promise<Project[]> {
-    if (!this.isTauri()) {
-      return this.getMock<Project[]>("clarity_mock_projects", []);
-    }
-    return invoke("get_projects", { userId: this.getUserId() });
-  }
+async function getProjects(): Promise<Project[]> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("projects")
+    .select("*")
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
 
-  async createProject(project: Pick<Project, "title"> & { description?: string }): Promise<Project> {
-    if (!this.isTauri()) {
-      const list = this.getMock<Project[]>("clarity_mock_projects", []);
-      const newProj: Project = {
-        id: Date.now(),
-        userId: this.getUserId(),
-        title: project.title,
-        description: project.description || null,
-        createdAt: new Date().toISOString(),
-      };
-      list.push(newProj);
-      this.setMock("clarity_mock_projects", list);
-      return newProj;
-    }
-    return invoke("create_project", {
-      userId: this.getUserId(),
+async function createProject(
+  project: Pick<Project, "title"> & { description?: string | null }
+): Promise<Project> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("projects")
+    .insert({
+      user_id: userId,
       title: project.title,
       description: project.description || null,
-    });
-  }
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
 
-  async deleteProject(id: number): Promise<void> {
-    if (!this.isTauri()) {
-      const list = this.getMock<Project[]>("clarity_mock_projects", []);
-      this.setMock("clarity_mock_projects", list.filter((p) => p.id !== id));
-      return;
-    }
-    return invoke("delete_project", { id });
-  }
+async function deleteProject(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("projects")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
 
-  async getProjectTasks(projectId: number): Promise<ProjectTask[]> {
-    if (!this.isTauri()) {
-      const list = this.getMock<ProjectTask[]>("clarity_mock_project_tasks", []);
-      return list.filter((t) => t.projectId === projectId);
-    }
-    return invoke("get_project_tasks", { projectId });
-  }
+async function getProjectTasks(projectId: string): Promise<ProjectTask[]> {
+  const { data, error } = await supabase
+    .from("project_tasks")
+    .select("*")
+    .eq("project_id", projectId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
 
-  async createProjectTask(
-    task: Pick<ProjectTask, "title" | "projectId"> & { description?: string; status?: ProjectTaskStatus }
-  ): Promise<ProjectTask> {
-    if (!this.isTauri()) {
-      const list = this.getMock<ProjectTask[]>("clarity_mock_project_tasks", []);
-      const newTask: ProjectTask = {
-        id: Date.now(),
-        projectId: task.projectId,
-        title: task.title,
-        description: task.description || null,
-        status: task.status ?? "TODO",
-        createdAt: new Date().toISOString(),
-      };
-      list.push(newTask);
-      this.setMock("clarity_mock_project_tasks", list);
-      return newTask;
-    }
-    return invoke("create_project_task", {
-      projectId: task.projectId,
+async function createProjectTask(
+  task: Pick<ProjectTask, "title" | "project_id"> & {
+    description?: string | null;
+    status?: ProjectTaskStatus;
+  }
+): Promise<ProjectTask> {
+  const { data, error } = await supabase
+    .from("project_tasks")
+    .insert({
+      project_id: task.project_id,
       title: task.title,
       description: task.description || null,
       status: task.status ?? "TODO",
-    });
-  }
-
-  async updateProjectTaskStatus(id: number, status: ProjectTaskStatus): Promise<void> {
-    if (!this.isTauri()) {
-      const list = this.getMock<ProjectTask[]>("clarity_mock_project_tasks", []);
-      const idx = list.findIndex((t) => t.id === id);
-      if (idx !== -1) {
-        list[idx].status = status;
-        this.setMock("clarity_mock_project_tasks", list);
-      }
-      return;
-    }
-    return invoke("update_project_task_status", { id, status });
-  }
-
-  async deleteProjectTask(id: number): Promise<void> {
-    if (!this.isTauri()) {
-      const list = this.getMock<ProjectTask[]>("clarity_mock_project_tasks", []);
-      this.setMock("clarity_mock_project_tasks", list.filter((t) => t.id !== id));
-      return;
-    }
-    return invoke("delete_project_task", { id });
-  }
-
-  // ─── Sync Helpers ──────────────────────────────────────────────────────────
-
-  async ensureSupabaseUser(supabaseId: string, email: string, username: string): Promise<AuthResponse> {
-    if (!this.isTauri()) {
-      return { userId: 1, username };
-    }
-    return invoke("ensure_supabase_user", { supabaseId, email, username });
-  }
-
-  async getPendingTasks(): Promise<any[]> {
-    if (!this.isTauri()) return [];
-    return invoke("get_pending_tasks", { userId: this.getUserId() });
-  }
-
-  async getPendingDiaryEntries(): Promise<any[]> {
-    if (!this.isTauri()) return [];
-    return invoke("get_pending_diary_entries", { userId: this.getUserId() });
-  }
-
-  async getPendingCalendarEvents(): Promise<any[]> {
-    if (!this.isTauri()) return [];
-    return invoke("get_pending_calendar_events", { userId: this.getUserId() });
-  }
-
-  async getPendingExpenses(): Promise<any[]> {
-    if (!this.isTauri()) return [];
-    return invoke("get_pending_expenses", { userId: this.getUserId() });
-  }
-
-  async getPendingProjects(): Promise<any[]> {
-    if (!this.isTauri()) return [];
-    return invoke("get_pending_projects", { userId: this.getUserId() });
-  }
-
-  async getPendingProjectTasks(projectId: number): Promise<any[]> {
-    if (!this.isTauri()) return [];
-    return invoke("get_pending_project_tasks", { projectId });
-  }
-
-  async markSynced(table: string, id: number): Promise<void> {
-    if (!this.isTauri()) return;
-    return invoke("mark_synced", { table, id });
-  }
-
-  async setServerId(table: string, id: number, serverId: string): Promise<void> {
-    if (!this.isTauri()) return;
-    return invoke("set_server_id", { table, id, serverId });
-  }
-
-  async upsertFromServer(table: string, userId: number, serverId: string, data: any): Promise<void> {
-    if (!this.isTauri()) return;
-    return invoke("upsert_from_server", { table, userId, serverId, data });
-  }
-
-  async deleteFromServer(table: string, serverId: string): Promise<void> {
-    if (!this.isTauri()) return;
-    return invoke("delete_from_server", { table, serverId });
-  }
-
-  async getLastSyncTime(): Promise<string | null> {
-    if (!this.isTauri()) return null;
-    return invoke("get_last_sync_time");
-  }
-
-  async setLastSyncTime(time: string): Promise<void> {
-    if (!this.isTauri()) return;
-    return invoke("set_last_sync_time", { time });
-  }
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
 
-export const api = new ApiClient();
+async function updateProjectTaskStatus(
+  id: string,
+  status: ProjectTaskStatus
+): Promise<void> {
+  const { error } = await supabase
+    .from("project_tasks")
+    .update({ status })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+async function deleteProjectTask(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("project_tasks")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+// ─── Export as api object ───────────────────────────────────────────────────
+
+export const api = {
+  // Profile
+  getProfile,
+  upsertProfile,
+  // Tasks
+  getTasks,
+  createTask,
+  updateTask,
+  deleteTask,
+  // Diary
+  checkDiaryPin,
+  verifyDiaryPin,
+  setDiaryPin,
+  resetDiaryPin,
+  removeDiaryPin,
+  getDiaryEntries,
+  saveDiaryEntry,
+  // Calendar
+  getYearHeatmap,
+  getCalendarDay,
+  getCalendarRange,
+  createCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent,
+  // Expenses
+  getExpenses,
+  createExpense,
+  deleteExpense,
+  // Projects
+  getProjects,
+  createProject,
+  deleteProject,
+  getProjectTasks,
+  createProjectTask,
+  updateProjectTaskStatus,
+  deleteProjectTask,
+};

@@ -1,4 +1,4 @@
-import { createClient, type User as SupabaseUser, type Session } from '@supabase/supabase-js';
+﻿import { createClient, type User as SupabaseUser, type Session } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -46,9 +46,32 @@ export async function getSupabaseUser(): Promise<SupabaseUser | null> {
 }
 
 /**
- * Sign in with Google OAuth (opens system browser)
+ * Sign in with Google OAuth
+ * Checks for Tauri environment to prevent Google 403 disallowed_useragent in WebView2
  */
 export async function signInWithGoogle() {
+  const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+  if (isTauri) {
+    try {
+      const { open } = await import("@tauri-apps/plugin-shell");
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: 'http://localhost:5173',
+          skipBrowserRedirect: true,
+        },
+      });
+      if (error) throw error;
+      if (data?.url) {
+        await open(data.url);
+        return data;
+      }
+    } catch {
+      throw new Error("Google Sign-In on desktop requires external browser deep-linking. Please use your Email and Password for direct desktop access!");
+    }
+  }
+
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
@@ -94,16 +117,17 @@ export async function signUpWithEmail(email: string, password: string, username:
 
   if (error) throw error;
 
-  // Create profile in Supabase
-  if (data.user) {
-    const { error: profileError } = await supabase.from('profiles').insert({
-      id: data.user.id,
-      username,
-      email,
-    });
-
-    if (profileError) {
-      console.error('[Supabase] Profile creation error:', profileError);
+  // Attempt client-side profile upsert if session is active (e.g. email confirmations disabled)
+  // Note: docs/supabase-profile-trigger.sql handles this via database trigger automatically
+  if (data.user && data.session) {
+    try {
+      await supabase.from('profiles').upsert({
+        id: data.user.id,
+        username,
+        email,
+      }, { onConflict: 'id' });
+    } catch (profileError) {
+      console.warn('[Supabase] Client profile upsert skipped (handled by DB trigger):', profileError);
     }
   }
 
