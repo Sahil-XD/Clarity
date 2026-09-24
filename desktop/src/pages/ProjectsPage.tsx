@@ -188,7 +188,7 @@ function InlineAddTask({
   status,
   onCreated,
 }: {
-  projectId: number;
+  projectId: string;
   status: TaskStatus;
   onCreated: (t: any) => void;
 }) {
@@ -201,7 +201,7 @@ function InlineAddTask({
     setSaving(true);
     try {
       const task = await api.createProjectTask({
-        projectId,
+        project_id: projectId,
         title: title.trim(),
         status,
       });
@@ -268,11 +268,11 @@ function InlineAddTask({
 // ─── Main Projects Page (Ruled Kanban Board) ─────────────────────────────────
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<any[]>([]);
-  const [tasks, setTasks] = useState<Record<number, any[]>>({});
+  const [tasks, setTasks] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(true);
-  const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [showNewProject, setShowNewProject] = useState(false);
-  const [newlyAddedTaskId, setNewlyAddedTaskId] = useState<number | null>(null);
+  const [newlyAddedTaskId, setNewlyAddedTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     loadProjects();
@@ -294,7 +294,7 @@ export default function ProjectsPage() {
     }
   };
 
-  const loadTasksForProject = async (projectId: number) => {
+  const loadTasksForProject = async (projectId: string) => {
     try {
       const data = await api.getProjectTasks(projectId);
       setTasks((p) => ({ ...p, [projectId]: data }));
@@ -307,12 +307,12 @@ export default function ProjectsPage() {
 
   const currentTasks = activeProjectId != null ? tasks[activeProjectId] || [] : [];
 
-  const moveTask = async (taskId: number, newStatus: TaskStatus) => {
+  const moveTask = async (taskId: string, newStatus: TaskStatus) => {
     if (activeProjectId == null) return;
     sound.pop();
     setTasks((prev) => ({
       ...prev,
-      [activeProjectId]: prev[activeProjectId].map((t) =>
+      [activeProjectId]: (prev[activeProjectId] || []).map((t) =>
         t.id === taskId ? { ...t, status: newStatus } : t
       ),
     }));
@@ -321,19 +321,19 @@ export default function ProjectsPage() {
     } catch {}
   };
 
-  const deleteTask = async (taskId: number) => {
+  const deleteTask = async (taskId: string) => {
     if (activeProjectId == null) return;
     sound.pop();
     setTasks((prev) => ({
       ...prev,
-      [activeProjectId]: prev[activeProjectId].filter((t) => t.id !== taskId),
+      [activeProjectId]: (prev[activeProjectId] || []).filter((t) => t.id !== taskId),
     }));
     try {
       await api.deleteProjectTask(taskId);
     } catch {}
   };
 
-  const deleteProject = async (projectId: number) => {
+  const deleteProject = async (projectId: string) => {
     sound.pop();
     setProjects((p) => p.filter((pr) => pr.id !== projectId));
     if (activeProjectId === projectId) {
@@ -629,8 +629,8 @@ export default function ProjectsPage() {
 
                                   <div className="mt-2.5 pt-2 border-t border-rule/50 flex items-center justify-between text-[10px] font-mono text-ink-faint">
                                     <span>
-                                      {dayjs(task.createdAt || undefined).isValid()
-                                        ? dayjs(task.createdAt).format("D MMM")
+                                      {dayjs(task.created_at || undefined).isValid()
+                                        ? dayjs(task.created_at).format("D MMM")
                                         : "—"}
                                     </span>
 
