@@ -92,7 +92,7 @@ function AddExpenseModal({
         category,
         description: description.trim() || undefined,
         date,
-        expenseType: "EXPENSE",
+        expense_type: "EXPENSE",
       });
       sound.pop();
       onCreated(item);
@@ -260,7 +260,7 @@ export default function ExpensesPage() {
   const [showModal, setShowModal] = useState(false);
   const [modalInitial, setModalInitial] = useState<{ amount?: string; category?: string; description?: string } | undefined>(undefined);
   const [filterMonth, setFilterMonth] = useState(dayjs().format("YYYY-MM"));
-  const [newlyAddedId, setNewlyAddedId] = useState<number | null>(null);
+  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
 
   useEffect(() => {
     loadExpenses();
@@ -278,7 +278,7 @@ export default function ExpensesPage() {
     }
   };
 
-  const deleteExpense = async (id: number) => {
+  const deleteExpense = async (id: string) => {
     try {
       await api.deleteExpense(id);
       setExpenses((p) => p.filter((e) => e.id !== id));
@@ -305,18 +305,37 @@ export default function ExpensesPage() {
   // Sort chronological for accurate running balance calculations
   const chronologicalMonthExpenses = useMemo(() => {
     return [...monthFiltered]
-      .filter((e) => e.expenseType !== "INCOME")
+      .filter((e) => e.expense_type !== "INCOME")
       .sort((a, b) => {
         if (a.date !== b.date) return a.date.localeCompare(b.date);
-        return a.id - b.id;
+        return a.id.localeCompare(b.id);
       });
   }, [monthFiltered]);
 
-  const monthlyBudget = 20000;
+  const [monthlyBudget, setMonthlyBudget] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem("clarity_monthly_budget");
+      return stored ? parseFloat(stored) || 20000 : 20000;
+    } catch {
+      return 20000;
+    }
+  });
+  const [editingBudget, setEditingBudget] = useState(false);
+  const [tempBudgetInput, setTempBudgetInput] = useState("");
+
+  const handleSaveBudget = (newVal: number) => {
+    if (newVal > 0) {
+      setMonthlyBudget(newVal);
+      try {
+        localStorage.setItem("clarity_monthly_budget", String(newVal));
+      } catch {}
+    }
+    setEditingBudget(false);
+  };
 
   // Pre-calculate running cumulative spend and balance for every expense
   const expenseBalanceMap = useMemo(() => {
-    const map = new Map<number, { cumulativeSpent: number; remainingBudget: number }>();
+    const map = new Map<string, { cumulativeSpent: number; remainingBudget: number }>();
     let runningTotal = 0;
     for (const exp of chronologicalMonthExpenses) {
       runningTotal += exp.amount;
@@ -331,7 +350,7 @@ export default function ExpensesPage() {
   // Expense-only metrics
   const totalSpentThisMonth = useMemo(() => {
     return monthFiltered
-      .filter((e) => e.expenseType !== "INCOME")
+      .filter((e) => e.expense_type !== "INCOME")
       .reduce((sum, e) => sum + e.amount, 0);
   }, [monthFiltered]);
 
@@ -342,14 +361,16 @@ export default function ExpensesPage() {
     ? Math.min(daysInMonth, Math.max(1, dayjs().date()))
     : (dayjs(filterMonth).isBefore(dayjs(), "month") ? daysInMonth : 1);
 
+  const safeBudget = monthlyBudget > 0 ? monthlyBudget : 1;
+  const safeDays = daysInMonth > 0 ? daysInMonth : 30;
   const dailyAverage = currentDay > 0 ? totalSpentThisMonth / currentDay : 0;
-  const expectedPaceSpend = (monthlyBudget / daysInMonth) * currentDay;
+  const expectedPaceSpend = (safeBudget / safeDays) * currentDay;
   const paceDiff = totalSpentThisMonth - expectedPaceSpend; // negative = under pace (good), positive = over pace
   const isUnderPace = paceDiff <= 0;
 
-  const spendPct = Math.min(100, (totalSpentThisMonth / monthlyBudget) * 100);
-  const pacePct = Math.min(100, Math.max(0, (currentDay / daysInMonth) * 100));
-  const budgetUtilization = Math.round((totalSpentThisMonth / monthlyBudget) * 100);
+  const spendPct = Math.min(100, (totalSpentThisMonth / safeBudget) * 100);
+  const pacePct = Math.min(100, Math.max(0, (currentDay / safeDays) * 100));
+  const budgetUtilization = Math.round((totalSpentThisMonth / safeBudget) * 100);
 
   // Real-state reactivity: pace tick & track colors reflect state (moss, brass, danger)
   const paceState = useMemo<"moss" | "brass" | "danger">(() => {
@@ -396,7 +417,7 @@ export default function ExpensesPage() {
   // Category breakdown
   const categoryTotals = useMemo(() => {
     return monthFiltered
-      .filter((e) => e.expenseType !== "INCOME")
+      .filter((e) => e.expense_type !== "INCOME")
       .reduce<Record<string, number>>((acc, e) => {
         acc[e.category] = (acc[e.category] || 0) + e.amount;
         return acc;
@@ -492,9 +513,41 @@ export default function ExpensesPage() {
                   <span className="text-3xl font-bold font-mono text-ink tabular-nums tracking-tight">
                     ₹{totalSpentThisMonth.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
-                  <span className="text-xs font-mono text-ink-faint">
-                    of ₹{monthlyBudget.toLocaleString("en-IN")} cap
-                  </span>
+                  {editingBudget ? (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const v = parseFloat(tempBudgetInput);
+                        if (v > 0) handleSaveBudget(v);
+                        else setEditingBudget(false);
+                      }}
+                      className="inline-flex items-center gap-1.5"
+                    >
+                      <input
+                        type="number"
+                        autoFocus
+                        value={tempBudgetInput}
+                        onChange={(e) => setTempBudgetInput(e.target.value)}
+                        onBlur={() => {
+                          const v = parseFloat(tempBudgetInput);
+                          if (v > 0) handleSaveBudget(v);
+                          else setEditingBudget(false);
+                        }}
+                        className="w-24 px-1 py-0.5 text-xs font-mono bg-ground border border-accent text-ink outline-none"
+                      />
+                    </form>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setTempBudgetInput(String(monthlyBudget));
+                        setEditingBudget(true);
+                      }}
+                      title="Click to customize monthly budget cap"
+                      className="text-xs font-mono text-ink-faint hover:text-accent transition cursor-pointer underline decoration-dashed underline-offset-2"
+                    >
+                      of ₹{monthlyBudget.toLocaleString("en-IN")} cap
+                    </button>
+                  )}
                 </div>
               </div>
 
