@@ -504,6 +504,75 @@ class ApiClient {
     }
     return invoke("delete_project_task", { id });
   }
+
+  // ─── Sync Helpers ──────────────────────────────────────────────────────────
+
+  async ensureSupabaseUser(supabaseId: string, email: string, username: string): Promise<AuthResponse> {
+    if (!this.isTauri()) {
+      return { userId: 1, username };
+    }
+    return invoke("ensure_supabase_user", { supabaseId, email, username });
+  }
+
+  async getPendingTasks(): Promise<any[]> {
+    if (!this.isTauri()) return [];
+    return invoke("get_pending_tasks", { userId: this.getUserId() });
+  }
+
+  async getPendingDiaryEntries(): Promise<any[]> {
+    if (!this.isTauri()) return [];
+    return invoke("get_pending_diary_entries", { userId: this.getUserId() });
+  }
+
+  async getPendingCalendarEvents(): Promise<any[]> {
+    if (!this.isTauri()) return [];
+    return invoke("get_pending_calendar_events", { userId: this.getUserId() });
+  }
+
+  async getPendingExpenses(): Promise<any[]> {
+    if (!this.isTauri()) return [];
+    return invoke("get_pending_expenses", { userId: this.getUserId() });
+  }
+
+  async getPendingProjects(): Promise<any[]> {
+    if (!this.isTauri()) return [];
+    return invoke("get_pending_projects", { userId: this.getUserId() });
+  }
+
+  async getPendingProjectTasks(projectId: number): Promise<any[]> {
+    if (!this.isTauri()) return [];
+    return invoke("get_pending_project_tasks", { projectId });
+  }
+
+  async markSynced(table: string, id: number): Promise<void> {
+    if (!this.isTauri()) return;
+    return invoke("mark_synced", { table, id });
+  }
+
+  async setServerId(table: string, id: number, serverId: string): Promise<void> {
+    if (!this.isTauri()) return;
+    return invoke("set_server_id", { table, id, serverId });
+  }
+
+  async upsertFromServer(table: string, userId: number, serverId: string, data: any): Promise<void> {
+    if (!this.isTauri()) return;
+    return invoke("upsert_from_server", { table, userId, serverId, data });
+  }
+
+  async deleteFromServer(table: string, serverId: string): Promise<void> {
+    if (!this.isTauri()) return;
+    return invoke("delete_from_server", { table, serverId });
+  }
+
+  async getLastSyncTime(): Promise<string | null> {
+    if (!this.isTauri()) return null;
+    return invoke("get_last_sync_time");
+  }
+
+  async setLastSyncTime(time: string): Promise<void> {
+    if (!this.isTauri()) return;
+    return invoke("set_last_sync_time", { time });
+  }
 }
 
 export const api = new ApiClient();

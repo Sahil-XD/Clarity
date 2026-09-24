@@ -1,6 +1,7 @@
 pub mod db;
 pub mod models;
 pub mod commands;
+pub mod sync_commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -10,6 +11,7 @@ pub fn run() {
             commands::register,
             commands::login,
             commands::ensure_oauth_user,
+            commands::ensure_supabase_user,
             commands::get_tasks,
             commands::create_task,
             commands::update_task,
@@ -37,6 +39,19 @@ pub fn run() {
             commands::create_project_task,
             commands::update_project_task_status,
             commands::delete_project_task,
+            // Sync commands
+            sync_commands::get_pending_tasks,
+            sync_commands::get_pending_diary_entries,
+            sync_commands::get_pending_calendar_events,
+            sync_commands::get_pending_expenses,
+            sync_commands::get_pending_projects,
+            sync_commands::get_pending_project_tasks,
+            sync_commands::mark_synced,
+            sync_commands::set_server_id,
+            sync_commands::upsert_from_server,
+            sync_commands::delete_from_server,
+            sync_commands::get_last_sync_time,
+            sync_commands::set_last_sync_time,
         ])
         .run(tauri::generate_context!())
         .expect("error running Clarity");

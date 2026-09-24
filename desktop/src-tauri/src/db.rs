@@ -94,7 +94,56 @@ fn init_tables(conn: &Connection) {
             status      TEXT NOT NULL DEFAULT 'TODO',
             created_at  TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        -- Sync metadata table
+        CREATE TABLE IF NOT EXISTS sync_meta (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
     ").expect("Failed to create tables");
+
+    // Add sync columns to all tables (safe to re-run — ALTERs silently fail if column exists)
+    let sync_migrations = vec![
+        // tasks
+        "ALTER TABLE tasks ADD COLUMN server_id TEXT",
+        "ALTER TABLE tasks ADD COLUMN client_id TEXT",
+        "ALTER TABLE tasks ADD COLUMN deleted_at TEXT",
+        "ALTER TABLE tasks ADD COLUMN sync_status TEXT DEFAULT 'pending'",
+        // diary_entries
+        "ALTER TABLE diary_entries ADD COLUMN server_id TEXT",
+        "ALTER TABLE diary_entries ADD COLUMN client_id TEXT",
+        "ALTER TABLE diary_entries ADD COLUMN deleted_at TEXT",
+        "ALTER TABLE diary_entries ADD COLUMN sync_status TEXT DEFAULT 'pending'",
+        // calendar_events
+        "ALTER TABLE calendar_events ADD COLUMN server_id TEXT",
+        "ALTER TABLE calendar_events ADD COLUMN client_id TEXT",
+        "ALTER TABLE calendar_events ADD COLUMN deleted_at TEXT",
+        "ALTER TABLE calendar_events ADD COLUMN sync_status TEXT DEFAULT 'pending'",
+        "ALTER TABLE calendar_events ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))",
+        // expenses
+        "ALTER TABLE expenses ADD COLUMN server_id TEXT",
+        "ALTER TABLE expenses ADD COLUMN client_id TEXT",
+        "ALTER TABLE expenses ADD COLUMN deleted_at TEXT",
+        "ALTER TABLE expenses ADD COLUMN sync_status TEXT DEFAULT 'pending'",
+        "ALTER TABLE expenses ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))",
+        // projects
+        "ALTER TABLE projects ADD COLUMN server_id TEXT",
+        "ALTER TABLE projects ADD COLUMN client_id TEXT",
+        "ALTER TABLE projects ADD COLUMN deleted_at TEXT",
+        "ALTER TABLE projects ADD COLUMN sync_status TEXT DEFAULT 'pending'",
+        "ALTER TABLE projects ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))",
+        // project_tasks
+        "ALTER TABLE project_tasks ADD COLUMN server_id TEXT",
+        "ALTER TABLE project_tasks ADD COLUMN client_id TEXT",
+        "ALTER TABLE project_tasks ADD COLUMN deleted_at TEXT",
+        "ALTER TABLE project_tasks ADD COLUMN sync_status TEXT DEFAULT 'pending'",
+        "ALTER TABLE project_tasks ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))",
+    ];
+
+    for migration in sync_migrations {
+        // Ignore "duplicate column" errors — means migration already ran
+        let _ = conn.execute(migration, []);
+    }
 
     // Purge any orphaned task calendar events where the underlying task was deleted
     let _ = conn.execute(

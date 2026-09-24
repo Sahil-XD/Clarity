@@ -91,15 +91,45 @@ pub fn ensure_oauth_user(username: String, email: String) -> Result<AuthResponse
     Ok(AuthResponse { user_id: id, username: clean_user })
 }
 
+#[tauri::command]
+pub fn ensure_supabase_user(supabase_id: String, email: String, username: String) -> Result<AuthResponse, String> {
+    let clean_user = username.trim().to_string();
+    let clean_email = email.trim().to_lowercase();
+    let db = get_db();
+
+    // Check if user already exists by email
+    let mut stmt = db.prepare(
+        "SELECT id, username FROM users WHERE email = ?1 COLLATE NOCASE"
+    ).map_err(|e| e.to_string())?;
+
+    let existing: Result<(i64, String), rusqlite::Error> = stmt.query_row(params![clean_email], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    });
+
+    if let Ok((id, uname)) = existing {
+        return Ok(AuthResponse { user_id: id, username: uname });
+    }
+
+    // Create new user (no password needed for Supabase users)
+    let dummy_hash = bcrypt::hash(&supabase_id, 4).unwrap_or_default();
+    db.execute(
+        "INSERT INTO users (username, email, password) VALUES (?1, ?2, ?3)",
+        params![clean_user, clean_email, dummy_hash],
+    ).map_err(|e| format!("Failed to create local user for Supabase: {}", e))?;
+
+    let id = db.last_insert_rowid();
+    Ok(AuthResponse { user_id: id, username: clean_user })
+}
+
 // ─── Tasks ───────────────────────────────────────────────────────────────────
 
 #[tauri::command]
 pub fn get_tasks(user_id: i64, pending_only: bool) -> Result<Vec<Task>, String> {
     let db = get_db();
     let sql = if pending_only {
-        "SELECT id, title, description, completed, due_at, created_at, updated_at FROM tasks WHERE user_id = ?1 AND completed = 0 ORDER BY created_at DESC"
+        "SELECT id, title, description, completed, due_at, created_at, updated_at FROM tasks WHERE user_id = ?1 AND completed = 0 AND deleted_at IS NULL ORDER BY created_at DESC"
     } else {
-        "SELECT id, title, description, completed, due_at, created_at, updated_at FROM tasks WHERE user_id = ?1 ORDER BY created_at DESC"
+        "SELECT id, title, description, completed, due_at, created_at, updated_at FROM tasks WHERE user_id = ?1 AND deleted_at IS NULL ORDER BY created_at DESC"
     };
     let mut stmt = db.prepare(sql).map_err(|e| e.to_string())?;
     let tasks = stmt.query_map(params![user_id], |row| {
@@ -121,9 +151,10 @@ pub fn get_tasks(user_id: i64, pending_only: bool) -> Result<Vec<Task>, String> 
 #[tauri::command]
 pub fn create_task(user_id: i64, title: String, description: Option<String>, due_at: Option<String>) -> Result<Task, String> {
     let db = get_db();
+    let client_id = uuid::Uuid::new_v4().to_string();
     db.execute(
-        "INSERT INTO tasks (user_id, title, description, due_at) VALUES (?1, ?2, ?3, ?4)",
-        params![user_id, title, description, due_at],
+        "INSERT INTO tasks (user_id, title, description, due_at, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+        params![user_id, title, description, due_at, client_id],
     ).map_err(|e| e.to_string())?;
     let id = db.last_insert_rowid();
     let mut stmt = db.prepare("SELECT id, title, description, completed, due_at, created_at, updated_at FROM tasks WHERE id = ?1")
@@ -146,20 +177,20 @@ pub fn update_task(id: i64, title: Option<String>, description: Option<String>, 
     let db = get_db();
     // Build dynamic update
     if let Some(t) = &title {
-        db.execute("UPDATE tasks SET title = ?1, updated_at = datetime('now') WHERE id = ?2", params![t, id])
+        db.execute("UPDATE tasks SET title = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![t, id])
             .map_err(|e| e.to_string())?;
     }
     if let Some(d) = &description {
-        db.execute("UPDATE tasks SET description = ?1, updated_at = datetime('now') WHERE id = ?2", params![d, id])
+        db.execute("UPDATE tasks SET description = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![d, id])
             .map_err(|e| e.to_string())?;
     }
     if let Some(c) = completed {
         let val: i32 = if c { 1 } else { 0 };
-        db.execute("UPDATE tasks SET completed = ?1, updated_at = datetime('now') WHERE id = ?2", params![val, id])
+        db.execute("UPDATE tasks SET completed = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
             .map_err(|e| e.to_string())?;
     }
     if let Some(d) = &due_at {
-        db.execute("UPDATE tasks SET due_at = ?1, updated_at = datetime('now') WHERE id = ?2", params![d, id])
+        db.execute("UPDATE tasks SET due_at = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![d, id])
             .map_err(|e| e.to_string())?;
     }
 
@@ -186,13 +217,16 @@ pub fn delete_task(id: i64) -> Result<(), String> {
         if let Ok(row) = stmt.query_row(params![id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))) {
             let (user_id, title) = row;
             let _ = db.execute(
-                "DELETE FROM calendar_events WHERE user_id = ?1 AND event_type = 'TASK' AND title = ?2",
+                "UPDATE calendar_events SET deleted_at = datetime('now'), sync_status = 'pending' WHERE user_id = ?1 AND event_type = 'TASK' AND title = ?2 AND deleted_at IS NULL",
                 params![user_id, title],
             );
         }
     }
-    db.execute("DELETE FROM tasks WHERE id = ?1", params![id])
-        .map_err(|e| e.to_string())?;
+    // Soft delete: set deleted_at and mark pending sync
+    db.execute(
+        "UPDATE tasks SET deleted_at = datetime('now'), sync_status = 'pending' WHERE id = ?1",
+        params![id],
+    ).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -254,7 +288,7 @@ pub fn verify_diary_pin(user_id: i64, pin: String) -> Result<bool, String> {
 pub fn get_diary_entries(user_id: i64) -> Result<Vec<DiaryEntry>, String> {
     let db = get_db();
     let mut stmt = db.prepare(
-        "SELECT id, date, body, mood, created_at, updated_at FROM diary_entries WHERE user_id = ?1 ORDER BY date DESC"
+        "SELECT id, date, body, mood, created_at, updated_at FROM diary_entries WHERE user_id = ?1 AND deleted_at IS NULL ORDER BY date DESC"
     ).map_err(|e| e.to_string())?;
     let entries = stmt.query_map(params![user_id], |row| {
         Ok(DiaryEntry {
@@ -274,10 +308,11 @@ pub fn get_diary_entries(user_id: i64) -> Result<Vec<DiaryEntry>, String> {
 #[tauri::command]
 pub fn save_diary_entry(user_id: i64, date: String, body: String, mood: Option<String>) -> Result<DiaryEntry, String> {
     let db = get_db();
+    let client_id = uuid::Uuid::new_v4().to_string();
     db.execute(
-        "INSERT INTO diary_entries (user_id, date, body, mood) VALUES (?1, ?2, ?3, ?4)
-         ON CONFLICT(user_id, date) DO UPDATE SET body = ?3, mood = ?4, updated_at = datetime('now')",
-        params![user_id, date, body, mood],
+        "INSERT INTO diary_entries (user_id, date, body, mood, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')
+         ON CONFLICT(user_id, date) DO UPDATE SET body = ?3, mood = ?4, updated_at = datetime('now'), sync_status = 'pending'",
+        params![user_id, date, body, mood, client_id],
     ).map_err(|e| e.to_string())?;
 
     let mut stmt = db.prepare(
@@ -301,7 +336,7 @@ pub fn save_diary_entry(user_id: i64, date: String, body: String, mood: Option<S
 pub fn get_calendar_day(user_id: i64, date: String) -> Result<Vec<CalendarEvent>, String> {
     let db = get_db();
     let mut stmt = db.prepare(
-        "SELECT id, title, description, event_date, start_at, end_at, event_type, created_at FROM calendar_events WHERE user_id = ?1 AND event_date = ?2 ORDER BY start_at"
+        "SELECT id, title, description, event_date, start_at, end_at, event_type, created_at FROM calendar_events WHERE user_id = ?1 AND event_date = ?2 AND deleted_at IS NULL ORDER BY start_at"
     ).map_err(|e| e.to_string())?;
     let events = stmt.query_map(params![user_id, date], |row| {
         Ok(CalendarEvent {
@@ -324,7 +359,7 @@ pub fn get_calendar_day(user_id: i64, date: String) -> Result<Vec<CalendarEvent>
 pub fn get_calendar_range(user_id: i64, from: String, to: String) -> Result<Vec<CalendarEvent>, String> {
     let db = get_db();
     let mut stmt = db.prepare(
-        "SELECT id, title, description, event_date, start_at, end_at, event_type, created_at FROM calendar_events WHERE user_id = ?1 AND event_date >= ?2 AND event_date <= ?3 ORDER BY event_date, start_at"
+        "SELECT id, title, description, event_date, start_at, end_at, event_type, created_at FROM calendar_events WHERE user_id = ?1 AND event_date >= ?2 AND event_date <= ?3 AND deleted_at IS NULL ORDER BY event_date, start_at"
     ).map_err(|e| e.to_string())?;
     let events = stmt.query_map(params![user_id, from, to], |row| {
         Ok(CalendarEvent {
@@ -348,7 +383,7 @@ pub fn get_year_heatmap(user_id: i64, year: i32) -> Result<std::collections::Has
     let db = get_db();
     let year_str = format!("{}", year);
     let mut stmt = db.prepare(
-        "SELECT CAST(strftime('%m', event_date) AS INTEGER) as month, COUNT(*) as cnt FROM calendar_events WHERE user_id = ?1 AND strftime('%Y', event_date) = ?2 GROUP BY month"
+        "SELECT CAST(strftime('%m', event_date) AS INTEGER) as month, COUNT(*) as cnt FROM calendar_events WHERE user_id = ?1 AND strftime('%Y', event_date) = ?2 AND deleted_at IS NULL GROUP BY month"
     ).map_err(|e| e.to_string())?;
     let mut map = std::collections::HashMap::new();
     let rows = stmt.query_map(params![user_id, year_str], |row| {
@@ -373,9 +408,10 @@ pub fn create_calendar_event(
     event_type: String,
 ) -> Result<CalendarEvent, String> {
     let db = get_db();
+    let client_id = uuid::Uuid::new_v4().to_string();
     db.execute(
-        "INSERT INTO calendar_events (user_id, title, description, event_date, start_at, end_at, event_type) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![user_id, title, description, event_date, start_at, end_at, event_type],
+        "INSERT INTO calendar_events (user_id, title, description, event_date, start_at, end_at, event_type, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending')",
+        params![user_id, title, description, event_date, start_at, end_at, event_type, client_id],
     ).map_err(|e| e.to_string())?;
     let id = db.last_insert_rowid();
     let mut stmt = db.prepare(
@@ -398,25 +434,33 @@ pub fn create_calendar_event(
 #[tauri::command]
 pub fn delete_calendar_event(id: i64) -> Result<(), String> {
     let db = get_db();
-    // If this was a task event, also delete the corresponding task
+    // If this was a task event, also soft-delete the corresponding task
     if let Ok(mut stmt) = db.prepare("SELECT user_id, title, event_type FROM calendar_events WHERE id = ?1") {
         if let Ok(row) = stmt.query_row(params![id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))) {
             let (user_id, title, event_type) = row;
             if event_type == "TASK" {
-                let _ = db.execute("DELETE FROM tasks WHERE user_id = ?1 AND title = ?2", params![user_id, title]);
+                let _ = db.execute(
+                    "UPDATE tasks SET deleted_at = datetime('now'), sync_status = 'pending' WHERE user_id = ?1 AND title = ?2 AND deleted_at IS NULL",
+                    params![user_id, title],
+                );
             }
         }
     }
-    db.execute("DELETE FROM calendar_events WHERE id = ?1", params![id])
-        .map_err(|e| e.to_string())?;
+    // Soft delete calendar event
+    db.execute(
+        "UPDATE calendar_events SET deleted_at = datetime('now'), sync_status = 'pending' WHERE id = ?1",
+        params![id],
+    ).map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
 pub fn update_calendar_event(id: i64, title: String) -> Result<(), String> {
     let db = get_db();
-    db.execute("UPDATE calendar_events SET title = ?1 WHERE id = ?2", params![title, id])
-        .map_err(|e| e.to_string())?;
+    db.execute(
+        "UPDATE calendar_events SET title = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2",
+        params![title, id],
+    ).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -425,7 +469,7 @@ pub fn update_calendar_event(id: i64, title: String) -> Result<(), String> {
 #[tauri::command]
 pub fn get_expenses(user_id: i64) -> Result<Vec<Expense>, String> {
     let db = get_db();
-    let mut stmt = db.prepare("SELECT id, amount, category, description, date, type, created_at FROM expenses WHERE user_id = ?1 ORDER BY date DESC, id DESC")
+    let mut stmt = db.prepare("SELECT id, amount, category, description, date, type, created_at FROM expenses WHERE user_id = ?1 AND deleted_at IS NULL ORDER BY date DESC, id DESC")
         .map_err(|e| e.to_string())?;
     
     let expenses = stmt.query_map(params![user_id], |row| {
@@ -450,9 +494,10 @@ pub fn create_expense(
     user_id: i64, amount: f64, category: String, description: Option<String>, date: String, expense_type: String
 ) -> Result<Expense, String> {
     let db = get_db();
+    let client_id = uuid::Uuid::new_v4().to_string();
     db.execute(
-        "INSERT INTO expenses (user_id, amount, category, description, date, type) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![user_id, amount, category, description, date, expense_type],
+        "INSERT INTO expenses (user_id, amount, category, description, date, type, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending')",
+        params![user_id, amount, category, description, date, expense_type, client_id],
     ).map_err(|e| e.to_string())?;
 
     let id = db.last_insert_rowid();
@@ -474,7 +519,10 @@ pub fn create_expense(
 #[tauri::command]
 pub fn delete_expense(id: i64) -> Result<(), String> {
     let db = get_db();
-    db.execute("DELETE FROM expenses WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
+    db.execute(
+        "UPDATE expenses SET deleted_at = datetime('now'), sync_status = 'pending' WHERE id = ?1",
+        params![id],
+    ).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -483,7 +531,7 @@ pub fn delete_expense(id: i64) -> Result<(), String> {
 #[tauri::command]
 pub fn get_projects(user_id: i64) -> Result<Vec<Project>, String> {
     let db = get_db();
-    let mut stmt = db.prepare("SELECT id, title, description, created_at FROM projects WHERE user_id = ?1 ORDER BY id DESC")
+    let mut stmt = db.prepare("SELECT id, title, description, created_at FROM projects WHERE user_id = ?1 AND deleted_at IS NULL ORDER BY id DESC")
         .map_err(|e| e.to_string())?;
     let projects = stmt.query_map(params![user_id], |row| {
         Ok(Project {
@@ -501,9 +549,10 @@ pub fn get_projects(user_id: i64) -> Result<Vec<Project>, String> {
 #[tauri::command]
 pub fn create_project(user_id: i64, title: String, description: Option<String>) -> Result<Project, String> {
     let db = get_db();
+    let client_id = uuid::Uuid::new_v4().to_string();
     db.execute(
-        "INSERT INTO projects (user_id, title, description) VALUES (?1, ?2, ?3)",
-        params![user_id, title, description],
+        "INSERT INTO projects (user_id, title, description, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, 'pending')",
+        params![user_id, title, description, client_id],
     ).map_err(|e| e.to_string())?;
     let id = db.last_insert_rowid();
     let mut stmt = db.prepare("SELECT id, title, description, created_at FROM projects WHERE id = ?1")
@@ -521,14 +570,23 @@ pub fn create_project(user_id: i64, title: String, description: Option<String>) 
 #[tauri::command]
 pub fn delete_project(id: i64) -> Result<(), String> {
     let db = get_db();
-    db.execute("DELETE FROM projects WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
+    // Soft delete the project (CASCADE will handle project_tasks via foreign key)
+    db.execute(
+        "UPDATE projects SET deleted_at = datetime('now'), sync_status = 'pending' WHERE id = ?1",
+        params![id],
+    ).map_err(|e| e.to_string())?;
+    // Also mark all project_tasks as deleted
+    db.execute(
+        "UPDATE project_tasks SET deleted_at = datetime('now'), sync_status = 'pending' WHERE project_id = ?1 AND deleted_at IS NULL",
+        params![id],
+    ).map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
 pub fn get_project_tasks(project_id: i64) -> Result<Vec<ProjectTask>, String> {
     let db = get_db();
-    let mut stmt = db.prepare("SELECT id, project_id, title, description, status, created_at FROM project_tasks WHERE project_id = ?1")
+    let mut stmt = db.prepare("SELECT id, project_id, title, description, status, created_at FROM project_tasks WHERE project_id = ?1 AND deleted_at IS NULL")
         .map_err(|e| e.to_string())?;
     let tasks = stmt.query_map(params![project_id], |row| {
         Ok(ProjectTask {
@@ -548,9 +606,10 @@ pub fn get_project_tasks(project_id: i64) -> Result<Vec<ProjectTask>, String> {
 #[tauri::command]
 pub fn create_project_task(project_id: i64, title: String, description: Option<String>, status: String) -> Result<ProjectTask, String> {
     let db = get_db();
+    let client_id = uuid::Uuid::new_v4().to_string();
     db.execute(
-        "INSERT INTO project_tasks (project_id, title, description, status) VALUES (?1, ?2, ?3, ?4)",
-        params![project_id, title, description, status],
+        "INSERT INTO project_tasks (project_id, title, description, status, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+        params![project_id, title, description, status, client_id],
     ).map_err(|e| e.to_string())?;
     let id = db.last_insert_rowid();
     let mut stmt = db.prepare("SELECT id, project_id, title, description, status, created_at FROM project_tasks WHERE id = ?1")
@@ -570,13 +629,19 @@ pub fn create_project_task(project_id: i64, title: String, description: Option<S
 #[tauri::command]
 pub fn update_project_task_status(id: i64, status: String) -> Result<(), String> {
     let db = get_db();
-    db.execute("UPDATE project_tasks SET status = ?1 WHERE id = ?2", params![status, id]).map_err(|e| e.to_string())?;
+    db.execute(
+        "UPDATE project_tasks SET status = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2",
+        params![status, id],
+    ).map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
 pub fn delete_project_task(id: i64) -> Result<(), String> {
     let db = get_db();
-    db.execute("DELETE FROM project_tasks WHERE id = ?1", params![id]).map_err(|e| e.to_string())?;
+    db.execute(
+        "UPDATE project_tasks SET deleted_at = datetime('now'), sync_status = 'pending' WHERE id = ?1",
+        params![id],
+    ).map_err(|e| e.to_string())?;
     Ok(())
 }
