@@ -52,3 +52,9 @@ logs/
 .env.local
 desktop/.env
 backend/.env
+
+# Environment Dumps & Local Secrets
+*_env.txt
+*env.txt
+*.env*
+!*.env.example
