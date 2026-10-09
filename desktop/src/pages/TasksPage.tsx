@@ -38,27 +38,15 @@ function NewTaskModal({
     setSaving(true);
     setError("");
     try {
+      const formattedDueAt = dueAt
+        ? (dueAt.includes("T") ? dueAt : `${dueAt}T00:00:00`)
+        : undefined;
+
       const task = await api.createTask({
         title: title.trim(),
         description: description.trim() || undefined,
-        due_at: dueAt ? new Date(dueAt).toISOString() : undefined,
+        due_at: formattedDueAt,
       });
-
-      if (dueAt) {
-        try {
-          const datePart = dueAt.split("T")[0];
-          const timePart = dueAt.includes("T") ? dueAt.split("T")[1] : undefined;
-          await api.createCalendarEvent({
-            title: title.trim(),
-            description: description.trim() || undefined,
-            event_date: datePart,
-            start_at: timePart ? `${datePart}T${timePart}:00` : undefined,
-            event_type: "TASK",
-          });
-        } catch (syncErr) {
-          console.warn("Could not sync task to calendar:", syncErr);
-        }
-      }
 
       sound.pop();
       onCreated(task);
@@ -226,26 +214,9 @@ export default function TasksPage() {
 
   const deleteTask = async (id: string) => {
     sound.pop();
-    const taskToDelete = tasks.find((t) => t.id === id);
     try {
       await api.deleteTask(id);
       setTasks((prev) => prev.filter((t) => t.id !== id));
-      if (taskToDelete) {
-        try {
-          if (taskToDelete.due_at) {
-            const datePart = dayjs(taskToDelete.due_at).format("YYYY-MM-DD");
-            const dayEvents = await api.getCalendarDay(datePart);
-            const matching = dayEvents.filter(
-              (e) => e.event_type === "TASK" && e.title.trim().toLowerCase() === taskToDelete.title.trim().toLowerCase()
-            );
-            for (const m of matching) {
-              await api.deleteCalendarEvent(m.id);
-            }
-          }
-        } catch (syncErr) {
-          console.warn("Could not clean up calendar event:", syncErr);
-        }
-      }
     } catch (err) {
       console.error(err);
     }

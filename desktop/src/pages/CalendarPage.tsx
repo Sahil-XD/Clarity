@@ -44,20 +44,34 @@ function AddTaskModal({
     setSaving(true);
     setError("");
     try {
-      await api.createTask({
+      const taskDue = eventDate
+        ? `${eventDate}T${startTime ? `${startTime}:00` : "00:00:00"}`
+        : undefined;
+
+      const createdTask = await api.createTask({
         title: title.trim(),
         description: description.trim() || undefined,
-        due_at: eventDate ? new Date(eventDate).toISOString() : undefined
+        due_at: taskDue,
       });
-      const created = await api.createCalendarEvent({
-        title: title.trim(),
-        description: description.trim() || undefined,
+
+      const virtualEvent: CalendarEvent = {
+        id: createdTask.id,
+        user_id: createdTask.user_id,
+        title: createdTask.title,
+        description: createdTask.description,
         event_date: eventDate,
         event_type: "TASK",
-        start_at: startTime ? `${eventDate}T${startTime}:00` : undefined,
-        end_at: endTime ? `${eventDate}T${endTime}:00` : undefined,
-      });
-      onCreated(created);
+        start_at: taskDue || null,
+        end_at: endTime ? `${eventDate}T${endTime}:00` : null,
+        remind_at: createdTask.remind_at,
+        reminder_sent: createdTask.reminder_sent,
+        created_at: createdTask.created_at,
+        updated_at: createdTask.updated_at,
+        deleted_at: null,
+        completed: createdTask.completed,
+      };
+
+      onCreated(virtualEvent);
       onClose();
     } catch (err: any) {
       setError(err.message || "Failed to create task.");
@@ -370,38 +384,17 @@ export default function CalendarPage() {
     }
   };
 
-  // Synchronize calendar events with tasks:
-  // Discard any task calendar events whose underlying task was deleted from tasks
-  const validEvents = allEvents.filter((e) => {
-    if (e.event_type !== "TASK") return true; // Notes always stay
-    return tasks.some(
-      (t) => t.title.trim().toLowerCase() === e.title.trim().toLowerCase()
-    );
-  });
-
-  const mergedEvents: CalendarEvent[] = [
-    ...validEvents.map((e) => {
-      if (e.event_type === "TASK") {
-        const matching = tasks.find(
-          (t) => t.title.trim().toLowerCase() === e.title.trim().toLowerCase()
-        );
-        if (matching) {
-          return {
-            ...e,
-            completed: matching.completed,
-          };
-        }
-      }
-      return e;
-    }),
-    ...tasks
-      .filter((t) => t.due_at)
-      .map((t): CalendarEvent => ({
+  // Derive calendar task view directly from tasks table (Single Source of Truth)
+  const taskEvents: CalendarEvent[] = tasks
+    .filter((t) => Boolean(t.due_at))
+    .map((t) => {
+      const datePart = t.due_at ? t.due_at.split("T")[0] : "";
+      return {
         id: t.id,
         user_id: t.user_id,
         title: t.title,
         description: t.description,
-        event_date: dayjs(t.due_at).format("YYYY-MM-DD"),
+        event_date: datePart,
         event_type: "TASK",
         start_at: t.due_at,
         end_at: null,
@@ -411,21 +404,14 @@ export default function CalendarPage() {
         updated_at: t.updated_at,
         deleted_at: null,
         completed: t.completed,
-      }))
-      .filter(
-        (synced) =>
-          !validEvents.some(
-            (e) =>
-              e.event_type === "TASK" &&
-              e.title.trim().toLowerCase() === synced.title.trim().toLowerCase() &&
-              e.event_date === synced.event_date
-          )
-      ),
-  ];
+      };
+    });
 
-  const filteredEvents = mergedEvents.filter((e) =>
-    tab === "tasks" ? e.event_type === "TASK" : e.event_type === "NOTE"
-  );
+  // Filter notes directly from calendar_events table
+  const noteEvents: CalendarEvent[] = allEvents.filter((e) => e.event_type !== "TASK");
+
+  // Active view: either tasks or notes
+  const filteredEvents = tab === "tasks" ? taskEvents : noteEvents;
 
   const navigate = (dir: "prev" | "next") => {
     const delta = dir === "next" ? 1 : -1;

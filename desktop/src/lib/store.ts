@@ -20,7 +20,7 @@ interface AuthState {
 
 export const useAuth = create<AuthState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       supabaseUser: null,
       username: null,
       email: null,
@@ -109,13 +109,10 @@ export const useAuth = create<AuthState>()(
           }
         } catch (err) {
           console.warn("[Auth] Network or auth error during initAuth:", err);
-          // If offline but state was previously authenticated, keep user in app
-          const state = get();
-          if (state.isAuthenticated && (state.email || state.username)) {
-            console.info("[Auth] Retaining offline session for:", state.username || state.email);
-          } else {
-            set({ isAuthenticated: false });
-          }
+          set({
+            supabaseUser: null,
+            isAuthenticated: false,
+          });
         } finally {
           set({ isLoading: false });
         }
@@ -135,11 +132,10 @@ export const useAuth = create<AuthState>()(
     {
       name: "clarity-auth",
       partialize: (state) => ({
-        // Only persist these fields — not the full SupabaseUser (session is managed by Supabase)
+        // Only persist profile metadata — session authentication is verified live via Supabase
         username: state.username,
         email: state.email,
         avatarUrl: state.avatarUrl,
-        isAuthenticated: state.isAuthenticated,
       }),
     }
   )

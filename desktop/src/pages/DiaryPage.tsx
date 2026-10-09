@@ -694,6 +694,7 @@ export default function DiaryPage() {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimerRef = useRef<any>(null);
+  const typingDateRef = useRef<string>(dayjs().format("YYYY-MM-DD"));
 
   // Build the default date list: last 14 days
   const buildDefaultDates = () =>
@@ -715,11 +716,20 @@ export default function DiaryPage() {
   };
 
   const handleAddDate = () => {
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+      setIsTyping(false);
+      if (textareaRef.current) {
+        handleSave(typingDateRef.current, textareaRef.current.value.trim());
+      }
+    }
     if (!dates.includes(newDate)) {
       const updated = [...new Set([...dates, newDate])].sort((a, b) => (a > b ? -1 : 1));
       setDates(updated);
     }
     setSelectedDate(newDate);
+    typingDateRef.current = newDate;
     setAddingDate(false);
     sound.pageTurn();
     setTimeout(() => textareaRef.current?.focus(), 100);
@@ -766,13 +776,30 @@ export default function DiaryPage() {
 
   const handleTextChange = () => {
     setIsTyping(true);
+    typingDateRef.current = selectedDate;
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => {
       setIsTyping(false);
       if (textareaRef.current) {
-        handleSave(selectedDate, textareaRef.current.value.trim());
+        handleSave(typingDateRef.current, textareaRef.current.value.trim());
       }
     }, 1500);
+  };
+
+  const handleSelectDate = (date: string) => {
+    if (date === selectedDate) return;
+    // Flush any pending auto-save immediately to the PREVIOUS date before switching
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+      setIsTyping(false);
+      if (textareaRef.current) {
+        handleSave(typingDateRef.current, textareaRef.current.value.trim());
+      }
+    }
+    sound.pageTurn();
+    setSelectedDate(date);
+    typingDateRef.current = date;
   };
 
   if (isLocked) return <LockScreen onUnlocked={handleUnlocked} />;
@@ -874,7 +901,7 @@ export default function DiaryPage() {
             return (
               <button
                 key={date}
-                onClick={() => { sound.pageTurn(); setSelectedDate(date); }}
+                onClick={() => handleSelectDate(date)}
                 className={clsx(
                   "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-left group cursor-pointer",
                   isSelected
