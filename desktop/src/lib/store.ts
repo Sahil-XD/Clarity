@@ -70,74 +70,56 @@ export const useAuth = create<AuthState>()(
       },
 
       initAuth: async () => {
-        set({ isLoading: true });
         try {
-          // 1. Check local session from Supabase storage first (works offline)
+          // 1. Check local session from Supabase storage first (instant, 0ms, works offline)
           const { data: { session } } = await supabase.auth.getSession();
 
           if (session?.user) {
-            // We have a cached local session. Attempt live server verification if online
-            try {
-              const { data: { user }, error: userError } = await supabase.auth.getUser();
-              if (user) {
-                let profile = await api.getProfile().catch(() => null);
-                if (!profile) {
-                  profile = await api.upsertProfile({
-                    username: user.user_metadata?.username || user.user_metadata?.full_name || user.email?.split("@")[0] || "user",
-                    email: user.email || "",
-                  }).catch(() => null);
+            // Instantly unlock UI with cached session so user NEVER stares at a frozen loading screen
+            set({
+              supabaseUser: session.user,
+              username: session.user.user_metadata?.username || session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "user",
+              email: session.user.email || null,
+              avatarUrl: session.user.user_metadata?.avatar_url || null,
+              isAuthenticated: true,
+              isLoading: false,
+            });
+
+            // 2. Perform live server verification asynchronously with a 4s timeout in background
+            const verifyPromise = Promise.race([
+              supabase.auth.getUser(),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error("Auth verification timeout")), 4000)
+              ),
+            ]);
+
+            verifyPromise
+              .then(async ({ data: { user }, error: userError }) => {
+                if (user) {
+                  api.getProfile().then((profile) => {
+                    if (profile) {
+                      set({
+                        username: profile.username || user.user_metadata?.username || user.email?.split("@")[0] || "user",
+                        avatarUrl: profile.avatar_url || user.user_metadata?.avatar_url || null,
+                      });
+                    }
+                  }).catch(() => {});
+                } else if (userError) {
+                  console.warn("[Auth] Session explicitly revoked by server:", userError.message);
+                  set({
+                    supabaseUser: null,
+                    username: null,
+                    email: null,
+                    avatarUrl: null,
+                    isAuthenticated: false,
+                  });
                 }
-
-                set({
-                  supabaseUser: user,
-                  username: profile?.username || user.user_metadata?.username || user.email?.split("@")[0] || "user",
-                  email: user.email || null,
-                  avatarUrl: profile?.avatar_url || user.user_metadata?.avatar_url || null,
-                  isAuthenticated: true,
-                });
-                return;
-              }
-
-              if (userError) {
-                // Confirmed invalid session: auth server explicitly rejected token/session
-                console.warn("[Auth] Server rejected session token:", userError.message);
-                set({
-                  supabaseUser: null,
-                  username: null,
-                  email: null,
-                  avatarUrl: null,
-                  isAuthenticated: false,
-                });
-                return;
-              }
-            } catch (networkErr: any) {
-              // Distinguish network unavailability (offline) vs other failures
-              const isNetworkIssue =
-                (typeof navigator !== "undefined" && !navigator.onLine) ||
-                networkErr?.name === "TypeError" ||
-                /fetch|network|offline|failed to fetch/i.test(networkErr?.message || "");
-
-              if (isNetworkIssue) {
-                console.info("[Auth] Network unavailable (offline), maintaining cached session");
-                set({
-                  supabaseUser: session.user,
-                  email: session.user.email || null,
-                  isAuthenticated: true,
-                });
-                return;
-              }
-
-              // Unknown failure: clear auth for safety
-              console.warn("[Auth] Unknown error verifying user session:", networkErr);
-              set({
-                supabaseUser: null,
-                username: null,
-                email: null,
-                avatarUrl: null,
-                isAuthenticated: false,
+              })
+              .catch((err) => {
+                console.info("[Auth] Network verification slow/offline, continuing with cached session:", err.message);
               });
-              return;
-            }
+
+            return;
           } else {
             // No session exists
             set({
@@ -146,17 +128,16 @@ export const useAuth = create<AuthState>()(
               email: null,
               avatarUrl: null,
               isAuthenticated: false,
+              isLoading: false,
             });
           }
         } catch (err) {
-          console.warn("[Auth] Unexpected error during initAuth:", err);
-          // Preserve local session if present
-          const { data: { session } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
-          if (session?.user) {
-            set({ supabaseUser: session.user, isAuthenticated: true });
-          } else {
-            set({ supabaseUser: null, isAuthenticated: false });
-          }
+          console.warn("[Auth] Error during initAuth:", err);
+          set({
+            supabaseUser: null,
+            isAuthenticated: false,
+            isLoading: false,
+          });
         } finally {
           set({ isLoading: false });
         }

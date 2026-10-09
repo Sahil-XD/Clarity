@@ -47,6 +47,20 @@ async function upsertProfile(profile: Partial<Profile>): Promise<Profile> {
   return data;
 }
 
+
+function withTimeout<T>(
+  promise: PromiseLike<T>,
+  ms = 10000,
+  errorMsg = "Network request timed out. Please check your connection."
+): Promise<T> {
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(errorMsg)), ms)
+    ),
+  ]);
+}
+
 // ─── Tasks ──────────────────────────────────────────────────────────────────
 
 async function getTasks(pendingOnly = false): Promise<Task[]> {
@@ -62,7 +76,7 @@ async function getTasks(pendingOnly = false): Promise<Task[]> {
     query = query.eq("completed", false);
   }
 
-  const { data, error } = await query;
+  const { data, error } = await withTimeout(query);
   if (error) throw error;
   return data ?? [];
 }
@@ -319,7 +333,7 @@ async function getCalendarRange(
   to: string
 ): Promise<CalendarEvent[]> {
   const userId = await requireUserId();
-  const { data, error } = await supabase
+  const query = supabase
     .from("calendar_events")
     .select("*")
     .eq("user_id", userId)
@@ -327,6 +341,7 @@ async function getCalendarRange(
     .gte("event_date", from)
     .lte("event_date", to)
     .order("event_date", { ascending: true });
+  const { data, error } = await withTimeout(query);
   if (error) throw error;
   return data ?? [];
 }
@@ -375,12 +390,13 @@ async function deleteCalendarEvent(id: string): Promise<void> {
 
 async function getExpenses(): Promise<Expense[]> {
   const userId = await requireUserId();
-  const { data, error } = await supabase
+  const query = supabase
     .from("expenses")
     .select("*")
     .eq("user_id", userId)
     .is("deleted_at", null)
     .order("date", { ascending: false });
+  const { data, error } = await withTimeout(query);
   if (error) throw error;
   return data ?? [];
 }
@@ -417,12 +433,13 @@ async function deleteExpense(id: string): Promise<void> {
 
 async function getProjects(): Promise<Project[]> {
   const userId = await requireUserId();
-  const { data, error } = await supabase
+  const query = supabase
     .from("projects")
     .select("*")
     .eq("user_id", userId)
     .is("deleted_at", null)
     .order("created_at", { ascending: false });
+  const { data, error } = await withTimeout(query);
   if (error) throw error;
   return data ?? [];
 }
@@ -453,12 +470,13 @@ async function deleteProject(id: string): Promise<void> {
 }
 
 async function getProjectTasks(projectId: string): Promise<ProjectTask[]> {
-  const { data, error } = await supabase
+  const query = supabase
     .from("project_tasks")
     .select("*")
     .eq("project_id", projectId)
     .is("deleted_at", null)
     .order("created_at", { ascending: true });
+  const { data, error } = await withTimeout(query);
   if (error) throw error;
   return data ?? [];
 }
