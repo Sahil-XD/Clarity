@@ -116,7 +116,7 @@ function AddExpenseModal({
         transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
         className="w-full max-w-md bg-surface rounded-none border border-rule shadow-none overflow-hidden"
       >
-        {/* Top Vermilion Margin Line (Bahi Khata margin rule) */}
+        {/* Top Accent Margin Line */}
         <div className="h-0.5 bg-accent w-full" />
 
         {/* Header */}
@@ -502,7 +502,7 @@ export default function ExpensesPage() {
         <div className="max-w-4xl mx-auto space-y-6">
 
           {/* ─── Hero Summary: The Paced Spending Track ───────────────────────── */}
-          {/* Replaces 4 redundant cards with one disciplined bahi khata header */}
+          {/* Unified executive summary header */}
           <div className="bg-surface rounded-none border border-rule p-6 space-y-4 shadow-none">
             <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 border-b border-rule/60 pb-3.5">
               <div>

@@ -15,7 +15,7 @@
 
 Modern tools like **Notion**, **TickTick**, and **Brite** have become bloated, cognitive-heavy, and financially predatory. They bombard users with complex relational databases, infinite nested toggles, and expensive monthly subscriptions just to jot down daily reflections or track everyday expenses.
 
-**Clarity takes the opposite approach.** It is designed as a digital **Bahi Khata (bound ledger folio)**:
+**Clarity takes the opposite approach.** It is designed as a focused, disciplined **Executive Workspace & Second Brain**:
 * **Strict ₹0 Budget:** Completely free and open-source, leveraging generous perpetual free tiers (Tauri, React, Supabase).
 * **Physical Stationery Warmth:** Inspired by cloth-bound notebooks, engineering graph paper, clean ruling lines, and Newsreader serif typography.
 * **Complete Privacy & Local Resilience:** Local-first offline access, SHA-256 encrypted PIN vault for personal reflections, and seamless cloud synchronization.
@@ -34,7 +34,7 @@ Modern tools like **Notion**, **TickTick**, and **Brite** have become bloated, c
 
 ---
 
-## ✦ Design Philosophy: The Ruled Ledger (Bahi Khata)
+## ✦ Design Philosophy: The Ruled Ledger (Executive Ledger)
 
 Clarity is not a pastel mood board—it is an executive personal ledger:
 * **Disciplined Palette:** Blue-black ink (`#121519`), leaf ground (`#1A1E24`), and vermilion rules (`#E2604F`) reserved strictly for primary actions.

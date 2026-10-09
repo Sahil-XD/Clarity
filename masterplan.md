@@ -44,7 +44,7 @@ Studios behind **Utsubo**, **Rolls-Royce**, and **Apple** use a fundamentally di
 
 ## 4. The Cinematic Opening Sequence (Optic Focus Pull: Blurry to Visible)
 
-> **Core Concept:** A clean, minimalist focus pull that visually embodies the very concept of *Clarity*. No long mottos, no multi-phase speeches—just the **Emblem + Name "CLARITY"** snapping from deep atmospheric lens blur into crisp, crystalline focus.
+> **Core Concept:** A clean, minimalist focus pull that visually embodies the very concept of *Clarity*. No long mottos, no multi-phase speeches—just the **Emblem + Name "Clarity"** snapping from deep atmospheric lens blur into crisp, crystalline focus.
 
 ```mermaid
 graph LR
@@ -63,7 +63,7 @@ graph LR
   * Opacity locks to full: `1.0`.
 * **Visual Elements:**
   * **The Clarity Emblem:** High-precision geometric facets snap into razor-sharp lines.
-  * **The Wordmark:** **CLARITY** in crisp serif/geometric typography with subtle tracking expansion (`letter-spacing: 0.22em -> 0.12em`).
+  * **The Wordmark:** **Clarity** in crisp serif/geometric typography with subtle tracking expansion (`letter-spacing: 0.22em -> 0.12em`).
   * Pure simplicity: **Just Logo + Name "Clarity"** (no mottos or extra text).
 
 ### Stage 3: Seamless Dissolve into Workspace (2.0s – 2.5s)
