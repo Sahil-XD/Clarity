@@ -110,7 +110,29 @@ async function deleteTask(id: string): Promise<void> {
   if (error) throw error;
 }
 
-// ─── Diary ──────────────────────────────────────────────────────────────────
+// ─── Diary ────────────────────────────────────────────────────────────────
+
+const UI_TO_DB_MOOD: Record<string, string> = {
+  Energized: "EXCITED",
+  Peaceful: "HAPPY",
+  Productive: "HAPPY",
+  Chilled: "NEUTRAL",
+  Thoughtful: "NEUTRAL",
+  Tired: "SAD",
+  HAPPY: "HAPPY",
+  NEUTRAL: "NEUTRAL",
+  SAD: "SAD",
+  ANXIOUS: "ANXIOUS",
+  EXCITED: "EXCITED",
+};
+
+const DB_TO_UI_MOOD: Record<string, string> = {
+  EXCITED: "Energized",
+  HAPPY: "Peaceful",
+  NEUTRAL: "Chilled",
+  SAD: "Tired",
+  ANXIOUS: "Thoughtful",
+};
 
 /**
  * Hash PIN using salted SHA-256 with Web Crypto API so plaintext PIN is never stored
@@ -137,8 +159,8 @@ async function verifyDiaryPin(pin: string): Promise<boolean> {
   const legacyHash = await hashPin(pin, "");
   if (profile.diary_pin_hash === saltedHash) return true;
   if (profile.diary_pin_hash === legacyHash || profile.diary_pin_hash === pin.trim()) {
-    // Automatically upgrade legacy hash to user-salted hash
-    await setDiaryPin(pin);
+    // Attempt non-blocking upgrade to user-salted hash
+    setDiaryPin(pin).catch((err) => console.warn("Could not upgrade PIN hash:", err));
     return true;
   }
   return false;
@@ -147,17 +169,35 @@ async function verifyDiaryPin(pin: string): Promise<boolean> {
 async function setDiaryPin(pin: string): Promise<void> {
   const userId = await requireUserId();
   const hashed = await hashPin(pin, userId);
-  await upsertProfile({ diary_pin_hash: hashed });
+  const { data: updated, error } = await supabase
+    .from("profiles")
+    .update({ diary_pin_hash: hashed })
+    .eq("id", userId)
+    .select();
+  if (error || !updated || updated.length === 0) {
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase.from("profiles").upsert(
+      {
+        id: userId,
+        diary_pin_hash: hashed,
+        email: user?.email || "",
+        username: user?.user_metadata?.username || user?.email?.split("@")[0] || "user",
+      },
+      { onConflict: "id" }
+    );
+  }
 }
 
 async function resetDiaryPin(newPin: string): Promise<void> {
-  const userId = await requireUserId();
-  const hashed = await hashPin(newPin, userId);
-  await upsertProfile({ diary_pin_hash: hashed });
+  await setDiaryPin(newPin);
 }
 
 async function removeDiaryPin(): Promise<void> {
-  await upsertProfile({ diary_pin_hash: null });
+  const userId = await requireUserId();
+  await supabase
+    .from("profiles")
+    .update({ diary_pin_hash: null })
+    .eq("id", userId);
 }
 
 async function getDiaryEntries(pin: string): Promise<DiaryEntry[]> {
@@ -177,7 +217,11 @@ async function getDiaryEntries(pin: string): Promise<DiaryEntry[]> {
     .is("deleted_at", null)
     .order("date", { ascending: false });
   if (error) throw error;
-  return data ?? [];
+
+  return (data ?? []).map((entry) => ({
+    ...entry,
+    mood: (entry.mood && DB_TO_UI_MOOD[entry.mood]) ? (DB_TO_UI_MOOD[entry.mood] as any) : entry.mood,
+  }));
 }
 
 async function saveDiaryEntry(
@@ -185,10 +229,13 @@ async function saveDiaryEntry(
   pin: string,
   body: Partial<DiaryEntry>
 ): Promise<DiaryEntry> {
-  const ok = await verifyDiaryPin(pin);
-  if (!ok) throw new Error("Invalid PIN");
+  if (!pin) throw new Error("Diary is locked. Unlock to save.");
 
   const userId = await requireUserId();
+
+  // Map mood so it never violates the database check constraint
+  const rawMood = body.mood;
+  const dbMood = rawMood ? (UI_TO_DB_MOOD[rawMood] || null) : null;
 
   // Upsert by user_id + date (unique constraint)
   const { data, error } = await supabase
@@ -198,14 +245,19 @@ async function saveDiaryEntry(
         user_id: userId,
         date,
         body: body.body || "",
-        mood: body.mood || null,
+        mood: dbMood as any,
       },
       { onConflict: "user_id,date" }
     )
     .select()
     .single();
+
   if (error) throw error;
-  return data;
+
+  return {
+    ...data,
+    mood: (data.mood && DB_TO_UI_MOOD[data.mood]) ? (DB_TO_UI_MOOD[data.mood] as any) : data.mood,
+  };
 }
 
 // ─── Calendar ───────────────────────────────────────────────────────────────

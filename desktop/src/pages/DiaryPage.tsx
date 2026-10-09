@@ -803,6 +803,7 @@ export default function DiaryPage() {
         setSavedIds((p) => ({ ...p, [date]: false }));
       }, 2000);
     } catch (err: any) {
+      console.error("[Diary] Save failed:", err);
       if (!isLockedRef.current) {
         setSaveErrors((p) => ({ ...p, [date]: err?.message || "Failed to save entry" }));
       }
