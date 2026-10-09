@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import {
-  Plus, Trash2, X,
+  Plus, Trash2, X, AlertCircle,
   Loader2, Popcorn, Key, ShoppingBag,
   Utensils, Coffee, ShoppingCart, Car, Zap, Film, Pill, Tag,
   Receipt
@@ -105,10 +105,7 @@ function AddExpenseModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
+    <div role="dialog" aria-modal="true" aria-label="New Expense Record" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <motion.div
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
@@ -261,6 +258,7 @@ export default function ExpensesPage() {
   const [modalInitial, setModalInitial] = useState<{ amount?: string; category?: string; description?: string } | undefined>(undefined);
   const [filterMonth, setFilterMonth] = useState(dayjs().format("YYYY-MM"));
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
+  const [pageError, setPageError] = useState("");
 
   useEffect(() => {
     loadExpenses();
@@ -268,22 +266,27 @@ export default function ExpensesPage() {
 
   const loadExpenses = async () => {
     setLoading(true);
+    setPageError("");
     try {
       const data = await api.getExpenses();
       setExpenses(data);
-    } catch {
-      // ignore
+    } catch (err: any) {
+      setPageError(err?.message || "Failed to load expenses.");
     } finally {
       setLoading(false);
     }
   };
 
   const deleteExpense = async (id: string) => {
+    const itemToDelete = expenses.find((e) => e.id === id);
+    setExpenses((p) => p.filter((e) => e.id !== id));
+    sound.pop();
     try {
       await api.deleteExpense(id);
-      setExpenses((p) => p.filter((e) => e.id !== id));
-      sound.pop();
-    } catch {}
+    } catch (err: any) {
+      if (itemToDelete) setExpenses((p) => [itemToDelete, ...p]);
+      setPageError(err?.message || "Failed to delete expense entry.");
+    }
   };
 
   const handleCreated = (item: any) => {
@@ -457,6 +460,21 @@ export default function ExpensesPage() {
           />
         )}
       </AnimatePresence>
+
+{pageError && (
+        <div className="mx-8 mt-3 px-4 py-2.5 rounded-none bg-danger/10 border border-danger/20 text-xs font-mono font-medium text-danger flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{pageError}</span>
+          </div>
+          <button
+            onClick={() => setPageError("")}
+            className="px-2 py-0.5 border border-rule text-ink hover:bg-raised transition cursor-pointer text-[11px]"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Desk Top Bar (Ledger Navigation) */}
       <div className="shrink-0 bg-surface border-b border-rule px-8 py-3.5 flex items-center justify-between">

@@ -66,53 +66,76 @@ export const useAuth = create<AuthState>()(
 
       loginWithGoogle: async () => {
         await signInWithGoogle();
-        // OAuth redirects — the session will be picked up by initAuth on return
+        // OAuth redirects - the session will be picked up by initAuth on return
       },
 
       initAuth: async () => {
         set({ isLoading: true });
         try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
-            let profile = await api.getProfile().catch(() => null);
-            if (!profile) {
-              profile = await api.upsertProfile({
-                username: user.user_metadata?.username || user.user_metadata?.full_name || user.email?.split("@")[0] || "user",
-                email: user.email || "",
-              }).catch(() => null);
+          // 1. Check local session from Supabase storage first (works offline)
+          const { data: { session } } = await supabase.auth.getSession();
+
+          if (session?.user) {
+            // We have a cached local session. Attempt live server verification if online
+            try {
+              const { data: { user }, error: userError } = await supabase.auth.getUser();
+              if (user) {
+                let profile = await api.getProfile().catch(() => null);
+                if (!profile) {
+                  profile = await api.upsertProfile({
+                    username: user.user_metadata?.username || user.user_metadata?.full_name || user.email?.split("@")[0] || "user",
+                    email: user.email || "",
+                  }).catch(() => null);
+                }
+
+                set({
+                  supabaseUser: user,
+                  username: profile?.username || user.user_metadata?.username || user.email?.split("@")[0] || "user",
+                  email: user.email || null,
+                  avatarUrl: profile?.avatar_url || user.user_metadata?.avatar_url || null,
+                  isAuthenticated: true,
+                });
+                return;
+              } else if (userError && (userError.status === 401 || userError.status === 403)) {
+                // Token was explicitly revoked or rejected by auth server
+                set({
+                  supabaseUser: null,
+                  username: null,
+                  email: null,
+                  avatarUrl: null,
+                  isAuthenticated: false,
+                });
+                return;
+              }
+            } catch (networkErr) {
+              console.info("[Auth] Network verification failed (offline), maintaining cached session:", networkErr);
             }
 
+            // Offline mode with known valid cached session
             set({
-              supabaseUser: user,
-              username: profile?.username || user.user_metadata?.username || user.email?.split("@")[0] || "user",
-              email: user.email || null,
-              avatarUrl: profile?.avatar_url || user.user_metadata?.avatar_url || null,
+              supabaseUser: session.user,
+              email: session.user.email || null,
               isAuthenticated: true,
             });
           } else {
-            // Check if cached session exists
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.user) {
-              set({
-                supabaseUser: session.user,
-                isAuthenticated: true,
-              });
-            } else {
-              set({
-                supabaseUser: null,
-                username: null,
-                email: null,
-                avatarUrl: null,
-                isAuthenticated: false,
-              });
-            }
+            // No session exists
+            set({
+              supabaseUser: null,
+              username: null,
+              email: null,
+              avatarUrl: null,
+              isAuthenticated: false,
+            });
           }
         } catch (err) {
-          console.warn("[Auth] Network or auth error during initAuth:", err);
-          set({
-            supabaseUser: null,
-            isAuthenticated: false,
-          });
+          console.warn("[Auth] Unexpected error during initAuth:", err);
+          // Preserve local session if present
+          const { data: { session } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+          if (session?.user) {
+            set({ supabaseUser: session.user, isAuthenticated: true });
+          } else {
+            set({ supabaseUser: null, isAuthenticated: false });
+          }
         } finally {
           set({ isLoading: false });
         }
@@ -131,8 +154,16 @@ export const useAuth = create<AuthState>()(
     }),
     {
       name: "clarity-auth",
+      version: 2,
+      migrate: (persistedState: any) => {
+        // Strip legacy isAuthenticated from previous store versions
+        if (persistedState) {
+          delete persistedState.isAuthenticated;
+        }
+        return persistedState;
+      },
       partialize: (state) => ({
-        // Only persist profile metadata — session authentication is verified live via Supabase
+        // Only persist profile metadata - session authentication is verified live via Supabase
         username: state.username,
         email: state.email,
         avatarUrl: state.avatarUrl,

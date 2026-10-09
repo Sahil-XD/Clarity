@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Plus, Trash2, X, CalendarDays,
-  Loader2, Sparkles, Check
+  Loader2, Sparkles, Check, AlertCircle
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
@@ -38,9 +38,7 @@ function NewTaskModal({
     setSaving(true);
     setError("");
     try {
-      const formattedDueAt = dueAt
-        ? (dueAt.includes("T") ? dueAt : `${dueAt}T00:00:00`)
-        : undefined;
+      const formattedDueAt = dueAt ? (dueAt.includes("T") ? dayjs(dueAt).toISOString() : dayjs(dueAt).startOf("day").toISOString()) : undefined;
 
       const task = await api.createTask({
         title: title.trim(),
@@ -59,10 +57,7 @@ function NewTaskModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
+    <div role="dialog" aria-modal="true" aria-label="New Action Item" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <motion.div
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
@@ -169,6 +164,7 @@ export default function TasksPage() {
   const [showModal, setShowModal] = useState(false);
   const [quickTitle, setQuickTitle] = useState("");
   const [quickSaving, setQuickSaving] = useState(false);
+  const [pageError, setPageError] = useState("");
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
 
   useEffect(() => { loadTasks(); }, [pendingOnly]);
@@ -214,11 +210,14 @@ export default function TasksPage() {
 
   const deleteTask = async (id: string) => {
     sound.pop();
+    const taskToDelete = tasks.find((t) => t.id === id);
+    setTasks((prev) => prev.filter((t) => t.id !== id));
     try {
       await api.deleteTask(id);
-      setTasks((prev) => prev.filter((t) => t.id !== id));
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error("Failed to delete task:", err);
+      if (taskToDelete) setTasks((prev) => [taskToDelete, ...prev]);
+      setPageError(err?.message || "Failed to delete task.");
     }
   };
 
@@ -241,8 +240,9 @@ export default function TasksPage() {
       setNewlyAddedId(created.id);
       setQuickTitle("");
       setTimeout(() => setNewlyAddedId(null), 1600);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to quick add task:", err);
+      setPageError(err?.message || "Failed to quick add task.");
     } finally {
       setQuickSaving(false);
     }
@@ -321,6 +321,22 @@ export default function TasksPage() {
             </div>
           )}
 
+          {pageError && (
+            <div className="mb-4 px-4 py-2.5 rounded-none bg-danger/10 border border-danger/20 text-xs font-medium text-danger flex items-center justify-between font-mono">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{pageError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPageError("")}
+                className="px-2 py-0.5 border border-rule text-ink hover:bg-raised transition cursor-pointer text-[11px]"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {/* Quick Task Inline Input (Sharp Ledger Row) */}
           <form
             onSubmit={handleQuickAdd}
@@ -331,7 +347,7 @@ export default function TasksPage() {
               type="text"
               value={quickTitle}
               onChange={(e) => setQuickTitle(e.target.value)}
-              placeholder="Inscribe a new task... (press Enter)"
+              placeholder="Inscribe a new task… (press Enter)"
               className="flex-1 bg-transparent text-xs text-ink placeholder:text-ink-faint outline-none font-sans"
             />
             <button

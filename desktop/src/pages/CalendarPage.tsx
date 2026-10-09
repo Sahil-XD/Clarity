@@ -26,7 +26,6 @@ function AddTaskModal({
   const [description, setDescription] = useState("");
   const [eventDate, setEventDate] = useState(defaultDate);
   const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const ref = useRef<HTMLInputElement>(null);
@@ -44,9 +43,7 @@ function AddTaskModal({
     setSaving(true);
     setError("");
     try {
-      const taskDue = eventDate
-        ? `${eventDate}T${startTime ? `${startTime}:00` : "00:00:00"}`
-        : undefined;
+      const taskDue = eventDate ? (startTime ? dayjs(`${eventDate}T${startTime}`).toISOString() : dayjs(eventDate).startOf("day").toISOString()) : undefined;
 
       const createdTask = await api.createTask({
         title: title.trim(),
@@ -62,7 +59,7 @@ function AddTaskModal({
         event_date: eventDate,
         event_type: "TASK",
         start_at: taskDue || null,
-        end_at: endTime ? `${eventDate}T${endTime}:00` : null,
+        end_at: null,
         remind_at: createdTask.remind_at,
         reminder_sent: createdTask.reminder_sent,
         created_at: createdTask.created_at,
@@ -81,10 +78,7 @@ function AddTaskModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-xs p-4"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
+    <div role="dialog" aria-modal="true" aria-label="New Calendar Task" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-xs p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -137,30 +131,18 @@ function AddTaskModal({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="flex items-center gap-1.5 text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
-                <Clock className="w-3.5 h-3.5" /> Start Time
+          <div>
+              <label htmlFor="calendar-task-time" className="flex items-center gap-1.5 text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
+                <Clock className="w-3.5 h-3.5" /> Scheduled Time (Optional)
               </label>
               <input
+                id="calendar-task-time"
                 type="time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
                 className="morning-input"
               />
             </div>
-            <div>
-              <label className="flex items-center gap-1.5 text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
-                <Clock className="w-3.5 h-3.5" /> End Time
-              </label>
-              <input
-                type="time"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                className="morning-input"
-              />
-            </div>
-          </div>
 
           <div>
             <label className="flex items-center gap-1.5 text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
@@ -169,7 +151,7 @@ function AddTaskModal({
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Add agenda, links or context..."
+              placeholder="Add agenda, links or context…"
               rows={3}
               className="morning-input resize-none"
             />
@@ -250,10 +232,7 @@ function AddNoteModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-xs p-4 select-none"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
+    <div role="dialog" aria-modal="true" aria-label="New Note" className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-xs p-4 select-none" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -341,6 +320,7 @@ export default function CalendarPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [yearHeatmap, setYearHeatmap] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(false);
+  const [pageError, setPageError] = useState("");
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
 
@@ -350,6 +330,7 @@ export default function CalendarPage() {
 
   const loadData = async () => {
     setLoading(true);
+    setPageError("");
     try {
       const effectiveView = tab === "notes" ? "month" : view;
 
@@ -377,8 +358,9 @@ export default function CalendarPage() {
         setAllEvents(evts);
         setTasks(taskList);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setPageError(err?.message || "Failed to sync calendar agenda.");
     } finally {
       setLoading(false);
     }
@@ -388,7 +370,7 @@ export default function CalendarPage() {
   const taskEvents: CalendarEvent[] = tasks
     .filter((t) => Boolean(t.due_at))
     .map((t) => {
-      const datePart = t.due_at ? t.due_at.split("T")[0] : "";
+      const datePart = t.due_at ? dayjs(t.due_at).format("YYYY-MM-DD") : "";
       return {
         id: t.id,
         user_id: t.user_id,
@@ -449,14 +431,14 @@ export default function CalendarPage() {
               <button
                 onClick={() => navigate("prev")}
                 className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-raised text-ink-soft hover:text-ink transition cursor-pointer"
-                title="Previous"
+                title="Previous" aria-label="Previous"
               >
                 <ChevronLeft className="w-4 h-4 stroke-[2]" />
               </button>
               <button
                 onClick={() => navigate("next")}
                 className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-raised text-ink-soft hover:text-ink transition cursor-pointer"
-                title="Next"
+                title="Next" aria-label="Next"
               >
                 <ChevronRight className="w-4 h-4 stroke-[2]" />
               </button>
@@ -557,11 +539,25 @@ export default function CalendarPage() {
       </div>
 
       {/* ── Content Body ───────────────────────────────────────── */}
+      {pageError && (
+        <div className="mx-6 mt-3 px-4 py-2.5 rounded-xl bg-danger/10 border border-danger/20 text-xs font-semibold text-danger flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{pageError}</span>
+          </div>
+          <button
+            onClick={() => loadData()}
+            className="px-2 py-0.5 rounded-lg bg-surface border border-rule text-ink hover:bg-raised transition cursor-pointer text-[11px]"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       <div className="flex-1 overflow-auto relative">
         {loading ? (
           <div className="flex items-center justify-center h-full text-ink-faint gap-2.5">
             <Loader2 className="w-5 h-5 animate-spin text-accent" />
-            <span className="text-sm font-medium">Loading agenda...</span>
+            <span className="text-sm font-medium">Loading agenda…</span>
           </div>
         ) : tab === "notes" ? (
           <NotesFeed
@@ -931,7 +927,7 @@ function DiaryDayCard({
             value={text}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder={`Add a quick note for ${d.format("MMM D")}...`}
+            placeholder={`Add a quick note for ${d.format("MMM D")}…`}
             rows={1}
             className="w-full px-4 py-2.5 rounded-xl bg-surface border border-rule text-ink placeholder:text-ink-faint text-sm leading-relaxed outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition resize-none pr-24 shadow-xs"
             style={{ minHeight: "44px" }}
@@ -988,7 +984,7 @@ function QuickAddNoteModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-xs p-4"
+      role="dialog" aria-modal="true" aria-label="Add Date Note" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-xs p-4"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <motion.div

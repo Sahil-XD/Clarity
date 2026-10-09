@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Plus, Trash2, X,
+  Plus, Trash2, X, AlertCircle,
   Loader2, FolderOpen,
   ArrowRight, ArrowLeft,
 } from "lucide-react";
@@ -69,10 +69,7 @@ function NewProjectModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
+    <div role="dialog" aria-modal="true" aria-label="New Project Docket" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <motion.div
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
@@ -240,7 +237,7 @@ function InlineAddTask({
             setTitle("");
           }
         }}
-        placeholder="Task description... (Enter to save)"
+        placeholder="Task description… (Enter to save)"
         className="w-full px-2.5 py-1.5 rounded-none border border-rule bg-surface text-ink placeholder:text-ink-faint text-xs outline-none focus:border-accent font-sans shadow-none"
       />
       <div className="flex gap-2">
@@ -273,6 +270,7 @@ export default function ProjectsPage() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [showNewProject, setShowNewProject] = useState(false);
   const [newlyAddedTaskId, setNewlyAddedTaskId] = useState<string | null>(null);
+  const [pageError, setPageError] = useState("");
 
   useEffect(() => {
     loadProjects();
@@ -280,6 +278,7 @@ export default function ProjectsPage() {
 
   const loadProjects = async () => {
     setLoading(true);
+    setPageError("");
     try {
       const data = await api.getProjects();
       const withColors = data.map((p: any, i: number) => ({
@@ -288,7 +287,8 @@ export default function ProjectsPage() {
       }));
       setProjects(withColors);
       if (withColors.length > 0) setActiveProjectId(withColors[0].id);
-    } catch {
+    } catch (err: any) {
+      setPageError(err?.message || "Failed to load project dockets.");
     } finally {
       setLoading(false);
     }
@@ -298,7 +298,9 @@ export default function ProjectsPage() {
     try {
       const data = await api.getProjectTasks(projectId);
       setTasks((p) => ({ ...p, [projectId]: data }));
-    } catch {}
+    } catch (err: any) {
+      setPageError(err?.message || "Failed to load project tasks.");
+    }
   };
 
   useEffect(() => {
@@ -310,6 +312,7 @@ export default function ProjectsPage() {
   const moveTask = async (taskId: string, newStatus: TaskStatus) => {
     if (activeProjectId == null) return;
     sound.pop();
+    const prevTasks = tasks[activeProjectId] || [];
     setTasks((prev) => ({
       ...prev,
       [activeProjectId]: (prev[activeProjectId] || []).map((t) =>
@@ -318,23 +321,32 @@ export default function ProjectsPage() {
     }));
     try {
       await api.updateProjectTaskStatus(taskId, newStatus);
-    } catch {}
+    } catch (err: any) {
+      setTasks((prev) => ({ ...prev, [activeProjectId]: prevTasks }));
+      setPageError(err?.message || "Failed to update project task status.");
+    }
   };
 
   const deleteTask = async (taskId: string) => {
     if (activeProjectId == null) return;
     sound.pop();
+    const prevTasks = tasks[activeProjectId] || [];
     setTasks((prev) => ({
       ...prev,
       [activeProjectId]: (prev[activeProjectId] || []).filter((t) => t.id !== taskId),
     }));
     try {
       await api.deleteProjectTask(taskId);
-    } catch {}
+    } catch (err: any) {
+      setTasks((prev) => ({ ...prev, [activeProjectId]: prevTasks }));
+      setPageError(err?.message || "Failed to delete project task.");
+    }
   };
 
   const deleteProject = async (projectId: string) => {
     sound.pop();
+    const prevProjects = [...projects];
+    const prevActive = activeProjectId;
     setProjects((p) => p.filter((pr) => pr.id !== projectId));
     if (activeProjectId === projectId) {
       const remaining = projects.filter((pr) => pr.id !== projectId);
@@ -342,7 +354,11 @@ export default function ProjectsPage() {
     }
     try {
       await api.deleteProject(projectId);
-    } catch {}
+    } catch (err: any) {
+      setProjects(prevProjects);
+      setActiveProjectId(prevActive);
+      setPageError(err?.message || "Failed to delete project docket.");
+    }
   };
 
   const advanceStatus = (current: TaskStatus): TaskStatus => {
@@ -409,10 +425,25 @@ export default function ProjectsPage() {
         </button>
       </div>
 
+      {pageError && (
+        <div className="mx-8 mt-3 px-4 py-2.5 rounded-none bg-danger/10 border border-danger/20 text-xs font-mono font-medium text-danger flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{pageError}</span>
+          </div>
+          <button
+            onClick={() => setPageError("")}
+            className="px-2 py-0.5 border border-rule text-ink hover:bg-raised transition cursor-pointer text-[11px]"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex-1 flex items-center justify-center text-ink-faint gap-2 font-mono text-xs">
           <Loader2 className="w-4 h-4 animate-spin text-ink-soft" />
-          <span>Auditing project dockets...</span>
+          <span>Auditing project dockets…</span>
         </div>
       ) : projects.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">

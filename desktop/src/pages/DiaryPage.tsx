@@ -438,7 +438,7 @@ function LockScreen({
                     className="flex items-center gap-2 text-xs text-ink-faint font-medium"
                   >
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
-                    <span>Decrypting archives...</span>
+                    <span>Verifying passcode…</span>
                   </motion.div>
                 ) : success ? (
                   <motion.div
@@ -447,7 +447,7 @@ function LockScreen({
                     className="flex items-center gap-1.5 text-xs text-done font-bold"
                   >
                     <Sparkle className="w-3.5 h-3.5" />
-                    <span>Vault Unlocked</span>
+                    <span>Journal Unlocked</span>
                   </motion.div>
                 ) : (
                   <p className="text-[11px] text-ink-faint font-mono tracking-tight flex items-center gap-1.5">
@@ -590,7 +590,7 @@ function PasscodeSettingsModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 select-none">
+    <div role="dialog" aria-modal="true" aria-label="Passcode Settings" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 select-none">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -690,7 +690,7 @@ export default function DiaryPage() {
   const [addingDate, setAddingDate] = useState(false);
   const [newDate, setNewDate] = useState(dayjs().format("YYYY-MM-DD"));
   const [promptIdx, setPromptIdx] = useState(0);
-  const [selectedMood, setSelectedMood] = useState<string | null>(null);
+  const saveSeqRef = useRef<Record<string, number>>({});
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimerRef = useRef<any>(null);
@@ -735,18 +735,32 @@ export default function DiaryPage() {
     setTimeout(() => textareaRef.current?.focus(), 100);
   };
 
-  const handleSave = async (date: string, body: string) => {
+  const handleSave = async (date: string, body: string, moodOverride?: DiaryEntry['mood'] | null) => {
+    const seq = (saveSeqRef.current[date] || 0) + 1;
+    saveSeqRef.current[date] = seq;
     setSavingIds((p) => ({ ...p, [date]: true }));
     try {
-      const saved = await api.saveDiaryEntry(date, pin, { body, mood: (selectedMood as DiaryEntry['mood']) || undefined });
-      setEntries((p) => ({ ...p, [date]: saved }));
-      setSavedIds((p) => ({ ...p, [date]: true }));
-      setSaveErrors((p) => ({ ...p, [date]: "" }));
-      setTimeout(() => setSavedIds((p) => ({ ...p, [date]: false })), 2000);
+      const entryForDate = entries[date];
+      const moodToSave = moodOverride !== undefined ? (moodOverride || undefined) : entryForDate?.mood;
+      const saved = await api.saveDiaryEntry(date, pin, { body, mood: moodToSave });
+      if (saveSeqRef.current[date] === seq) {
+        setEntries((p) => ({ ...p, [date]: saved }));
+        setSavedIds((p) => ({ ...p, [date]: true }));
+        setSaveErrors((p) => ({ ...p, [date]: "" }));
+        setTimeout(() => {
+          if (saveSeqRef.current[date] === seq) {
+            setSavedIds((p) => ({ ...p, [date]: false }));
+          }
+        }, 2000);
+      }
     } catch (err: any) {
-      setSaveErrors((p) => ({ ...p, [date]: err?.message || "Failed to save" }));
+      if (saveSeqRef.current[date] === seq) {
+        setSaveErrors((p) => ({ ...p, [date]: err?.message || "Failed to save entry" }));
+      }
     } finally {
-      setSavingIds((p) => ({ ...p, [date]: false }));
+      if (saveSeqRef.current[date] === seq) {
+        setSavingIds((p) => ({ ...p, [date]: false }));
+      }
     }
   };
 
@@ -767,10 +781,25 @@ export default function DiaryPage() {
 
   const selectMoodPill = (mood: string) => {
     sound.pop();
-    const next = mood === selectedMood ? null : mood;
-    setSelectedMood(next);
+    const currentMood = entries[selectedDate]?.mood || null;
+    const next = mood === currentMood ? null : (mood as DiaryEntry['mood']);
+    setEntries((prev) => ({
+      ...prev,
+      [selectedDate]: {
+        ...(prev[selectedDate] || {
+          id: "",
+          user_id: "",
+          date: selectedDate,
+          created_at: "",
+          updated_at: "",
+          deleted_at: null,
+        }),
+        mood: next,
+        body: textareaRef.current ? textareaRef.current.value : (prev[selectedDate]?.body || ""),
+      },
+    }));
     if (textareaRef.current) {
-      handleSave(selectedDate, textareaRef.current.value.trim());
+      handleSave(selectedDate, textareaRef.current.value.trim(), next);
     }
   };
 
@@ -806,6 +835,7 @@ export default function DiaryPage() {
 
   const entry = entries[selectedDate];
   const currentText = entry?.body || "";
+  const currentMood = entry?.mood || null;
   const wordCount = currentText.trim() ? currentText.trim().split(/\s+/).length : 0;
   const readTime = Math.max(1, Math.ceil(wordCount / 200));
 
@@ -968,13 +998,13 @@ export default function DiaryPage() {
                   {wordCount} words • ~{readTime}m read
                 </span>
 
-                <div className="h-8 flex items-center">
+                <div className="h-8 flex items-center" aria-live="polite">
                   <AnimatePresence mode="wait">
                     {savingIds[selectedDate] || isTyping ? (
                       <motion.span key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                         className="flex items-center gap-1.5 text-xs text-accent font-medium bg-accent/10 px-2.5 py-1 rounded-lg border border-accent/20">
                         <span className="w-2 h-2 rounded-full bg-accent animate-ping" />
-                        <span>Autosaving...</span>
+                        <span>Autosaving…</span>
                       </motion.span>
                     ) : savedIds[selectedDate] ? (
                       <motion.span key="saved" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
@@ -1046,7 +1076,7 @@ export default function DiaryPage() {
                       onClick={() => selectMoodPill(m.label)}
                       className={clsx(
                         "flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold border transition-all cursor-pointer",
-                        selectedMood === m.label
+                        currentMood === m.label
                           ? "bg-accent text-white border-accent shadow-xs"
                           : "bg-surface text-ink-soft border-rule hover:border-rule hover:text-ink"
                       )}
@@ -1060,7 +1090,7 @@ export default function DiaryPage() {
 
               {/* Physical Journal Textured Page */}
               <div
-                style={{ '--mood-glow': selectedMood && MOOD_GLOWS[selectedMood] ? MOOD_GLOWS[selectedMood] : 'transparent' } as React.CSSProperties}
+                style={{ '--mood-glow': currentMood && MOOD_GLOWS[currentMood] ? MOOD_GLOWS[currentMood] : 'transparent' } as React.CSSProperties}
                 className="flex-1 overflow-hidden rounded-2xl bg-surface border border-rule p-6 sm:p-8 flex flex-col relative mood-glow transition-all duration-300">
                 {/* Left Margin Accent Line */}
                 <div className="absolute top-0 bottom-0 left-12 sm:left-16 w-px bg-accent/20 pointer-events-none" />
@@ -1069,7 +1099,7 @@ export default function DiaryPage() {
                   ref={textareaRef}
                   defaultValue={currentText}
                   onChange={handleTextChange}
-                  placeholder={`Write your private thoughts for ${dayjs(selectedDate).format("MMMM D")}...`}
+                  placeholder={`Write your private thoughts for ${dayjs(selectedDate).format("MMMM D")}…`}
                   className="w-full h-full bg-transparent outline-none resize-none text-ink font-serif text-base sm:text-lg leading-relaxed placeholder:text-ink-faint pl-10 sm:pl-12 pr-4 border-none focus:ring-0"
                   autoFocus
                 />
