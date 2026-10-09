@@ -113,11 +113,12 @@ async function deleteTask(id: string): Promise<void> {
 // ─── Diary ──────────────────────────────────────────────────────────────────
 
 /**
- * Hash PIN using SHA-256 with Web Crypto API so plaintext PIN is never stored
+ * Hash PIN using salted SHA-256 with Web Crypto API so plaintext PIN is never stored
  */
-async function hashPin(pin: string): Promise<string> {
+async function hashPin(pin: string, salt: string = ""): Promise<string> {
   const encoder = new TextEncoder();
-  const data = encoder.encode(`clarity_vault_${pin.trim()}`);
+  const prefix = salt ? `clarity_vault_${salt}_` : "clarity_vault_";
+  const data = encoder.encode(`${prefix}${pin.trim()}`);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -131,18 +132,27 @@ async function checkDiaryPin(): Promise<boolean> {
 async function verifyDiaryPin(pin: string): Promise<boolean> {
   const profile = await getProfile();
   if (!profile?.diary_pin_hash) return true; // No pin set
-  const hashed = await hashPin(pin);
-  // Compare against hashed PIN or legacy unhashed string for backward compatibility
-  return profile.diary_pin_hash === hashed || profile.diary_pin_hash === pin.trim();
+  const userId = profile.id || (await requireUserId());
+  const saltedHash = await hashPin(pin, userId);
+  const legacyHash = await hashPin(pin, "");
+  if (profile.diary_pin_hash === saltedHash) return true;
+  if (profile.diary_pin_hash === legacyHash || profile.diary_pin_hash === pin.trim()) {
+    // Automatically upgrade legacy hash to user-salted hash
+    await setDiaryPin(pin);
+    return true;
+  }
+  return false;
 }
 
 async function setDiaryPin(pin: string): Promise<void> {
-  const hashed = await hashPin(pin);
+  const userId = await requireUserId();
+  const hashed = await hashPin(pin, userId);
   await upsertProfile({ diary_pin_hash: hashed });
 }
 
 async function resetDiaryPin(newPin: string): Promise<void> {
-  const hashed = await hashPin(newPin);
+  const userId = await requireUserId();
+  const hashed = await hashPin(newPin, userId);
   await upsertProfile({ diary_pin_hash: hashed });
 }
 
@@ -205,20 +215,36 @@ async function getYearHeatmap(year: number): Promise<Record<number, number>> {
   const from = `${year}-01-01`;
   const to = `${year}-12-31`;
 
-  const { data, error } = await supabase
-    .from("calendar_events")
-    .select("event_date")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .gte("event_date", from)
-    .lte("event_date", to);
+  const [eventsRes, tasksRes] = await Promise.all([
+    supabase
+      .from("calendar_events")
+      .select("event_date")
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .gte("event_date", from)
+      .lte("event_date", to),
+    supabase
+      .from("tasks")
+      .select("due_at")
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .gte("due_at", `${year}-01-01T00:00:00`)
+      .lte("due_at", `${year}-12-31T23:59:59`),
+  ]);
 
-  if (error) throw error;
+  if (eventsRes.error) throw eventsRes.error;
+  if (tasksRes.error) throw tasksRes.error;
 
   const heatmap: Record<number, number> = {};
-  (data ?? []).forEach((row) => {
+  (eventsRes.data ?? []).forEach((row) => {
     const month = parseInt(row.event_date.split("-")[1], 10);
     heatmap[month] = (heatmap[month] || 0) + 1;
+  });
+  (tasksRes.data ?? []).forEach((row) => {
+    if (row.due_at) {
+      const month = new Date(row.due_at).getMonth() + 1;
+      heatmap[month] = (heatmap[month] || 0) + 1;
+    }
   });
   return heatmap;
 }

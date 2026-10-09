@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: light;
   /* Light — warm desk paper, not a lightbox (Opus 5 daylight values) */
   --c-ground: #E3E0D6;    /* L* 88.5 — full six points darker than old canvas */
   --c-surface: #F2F0E8;   /* cards, toolbars, sidebar */
@@ -17,6 +18,7 @@
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
   --c-ground: #121519;    /* deep night canvas */
   --c-surface: #1A1E24;   /* cards, sidebar */
   --c-raised: #232830;    /* day cells, inputs */
@@ -51,6 +53,15 @@
 }
 
 @layer base {
+  :focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 2px;
+  }
+
+  dialog, [role="dialog"] {
+    overscroll-behavior: contain;
+  }
+
   body {
     background-color: var(--c-ground);
     color: var(--c-ink);
@@ -69,6 +80,17 @@
   h1, h2, h3, h4, h5, h6 {
     color: var(--c-ink);
     letter-spacing: -0.02em;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
@@ -199,7 +221,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   color: var(--c-ink);
   font-size: 0.875rem;
   outline: none;
-  transition: all 0.16s ease;
+  transition: color 0.16s ease, background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
 .morning-input::placeholder {
   color: var(--c-ink-faint);
@@ -224,7 +246,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   font-weight: 600;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.16s ease, transform 0.16s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.16s ease, color 0.16s ease;
 }
 .morning-btn-primary:hover {
   opacity: 0.92;

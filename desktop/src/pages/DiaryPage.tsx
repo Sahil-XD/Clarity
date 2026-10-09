@@ -691,6 +691,12 @@ export default function DiaryPage() {
   const [newDate, setNewDate] = useState(dayjs().format("YYYY-MM-DD"));
   const [promptIdx, setPromptIdx] = useState(0);
   const [editorText, setEditorText] = useState("");
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+  const editorTextRef = useRef(editorText);
+  editorTextRef.current = editorText;
+  const isLockedRef = useRef(isLocked);
+  isLockedRef.current = isLocked;
   const saveQueueRef = useRef<Record<string, {
     inFlight: boolean;
     pending?: { body: string; mood?: DiaryEntry['mood'] | null };
@@ -704,7 +710,30 @@ export default function DiaryPage() {
   const buildDefaultDates = () =>
     Array.from({ length: 14 }, (_, i) => dayjs().subtract(i, "day").format("YYYY-MM-DD"));
 
+  const handleLockDiary = () => {
+    sound.pageTurn();
+    isLockedRef.current = true;
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
+    for (const key of Object.keys(saveQueueRef.current)) {
+      if (saveQueueRef.current[key]) {
+        saveQueueRef.current[key].pending = undefined;
+      }
+    }
+    saveQueueRef.current = {};
+    setIsTyping(false);
+    setEditorText("");
+    editorTextRef.current = "";
+    setPin("");
+    setEntries({});
+    entriesRef.current = {};
+    setIsLocked(true);
+  };
+
   const handleUnlocked = (unlockedPin: string, fetchedEntries: DiaryEntry[]) => {
+    isLockedRef.current = false;
     setPin(unlockedPin);
     const map: Record<string, DiaryEntry> = {};
     fetchedEntries.forEach((e) => { map[e.date] = e; });
@@ -725,7 +754,7 @@ export default function DiaryPage() {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
       setIsTyping(false);
-      handleSave(typingDateRef.current, editorText.trim());
+      handleSave(typingDateRef.current, editorText.trim(), entries[typingDateRef.current]?.mood);
     }
     if (!dates.includes(newDate)) {
       const updated = [...new Set([...dates, newDate])].sort((a, b) => (a > b ? -1 : 1));
@@ -739,14 +768,19 @@ export default function DiaryPage() {
   };
 
   const handleSave = async (date: string, body: string, moodOverride?: DiaryEntry['mood'] | null) => {
+    if (isLockedRef.current || !pin) return;
+
     if (!saveQueueRef.current[date]) {
       saveQueueRef.current[date] = { inFlight: false };
     }
     const q = saveQueueRef.current[date];
 
-    // If a request is already running for this date, queue this latest payload
+    // If a request is already running for this date, merge and queue this latest payload
     if (q.inFlight) {
-      q.pending = { body, mood: moodOverride };
+      q.pending = {
+        body,
+        mood: moodOverride !== undefined ? moodOverride : (q.pending?.mood !== undefined ? q.pending.mood : entriesRef.current[date]?.mood),
+      };
       return;
     }
 
@@ -754,20 +788,31 @@ export default function DiaryPage() {
     setSavingIds((p) => ({ ...p, [date]: true }));
 
     try {
-      const entryForDate = entries[date];
-      const moodToSave = moodOverride !== undefined ? (moodOverride || undefined) : entryForDate?.mood;
+      if (isLockedRef.current || !pin) return;
+      const moodToSave = moodOverride !== undefined ? (moodOverride || undefined) : entriesRef.current[date]?.mood;
       const saved = await api.saveDiaryEntry(date, pin, { body, mood: moodToSave });
-      setEntries((p) => ({ ...p, [date]: saved }));
+      if (isLockedRef.current) return;
+      setEntries((p) => {
+        const next = { ...p, [date]: saved };
+        entriesRef.current = next;
+        return next;
+      });
       setSavedIds((p) => ({ ...p, [date]: true }));
       setSaveErrors((p) => ({ ...p, [date]: "" }));
       setTimeout(() => {
         setSavedIds((p) => ({ ...p, [date]: false }));
       }, 2000);
     } catch (err: any) {
-      setSaveErrors((p) => ({ ...p, [date]: err?.message || "Failed to save entry" }));
+      if (!isLockedRef.current) {
+        setSaveErrors((p) => ({ ...p, [date]: err?.message || "Failed to save entry" }));
+      }
     } finally {
       q.inFlight = false;
       setSavingIds((p) => ({ ...p, [date]: false }));
+      if (isLockedRef.current || !pin) {
+        q.pending = undefined;
+        return;
+      }
       if (q.pending) {
         const next = q.pending;
         q.pending = undefined;
@@ -792,35 +837,40 @@ export default function DiaryPage() {
 
   const selectMoodPill = (mood: string) => {
     sound.pop();
-    const currentMood = entries[selectedDate]?.mood || null;
+    const currentMood = entriesRef.current[selectedDate]?.mood || null;
     const next = mood === currentMood ? null : (mood as DiaryEntry['mood']);
-    setEntries((prev) => ({
-      ...prev,
-      [selectedDate]: {
-        ...(prev[selectedDate] || {
-          id: "",
-          user_id: "",
-          date: selectedDate,
-          created_at: "",
-          updated_at: "",
-          deleted_at: null,
-        }),
-        mood: next,
-        body: textareaRef.current ? textareaRef.current.value : (prev[selectedDate]?.body || ""),
-      },
-    }));
-    if (textareaRef.current) {
-      handleSave(selectedDate, textareaRef.current.value.trim(), next);
-    }
+    setEntries((prev) => {
+      const updated = {
+        ...prev,
+        [selectedDate]: {
+          ...(prev[selectedDate] || {
+            id: "",
+            user_id: "",
+            date: selectedDate,
+            created_at: "",
+            updated_at: "",
+            deleted_at: null,
+          }),
+          mood: next,
+          body: editorTextRef.current || (prev[selectedDate]?.body || ""),
+        },
+      };
+      entriesRef.current = updated;
+      return updated;
+    });
+    handleSave(selectedDate, editorTextRef.current.trim(), next);
   };
 
   const handleTextChange = (val: string) => {
+    editorTextRef.current = val;
     setIsTyping(true);
     typingDateRef.current = selectedDate;
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => {
+      if (isLockedRef.current) return;
       setIsTyping(false);
-      handleSave(typingDateRef.current, val.trim());
+      const targetDate = typingDateRef.current;
+      handleSave(targetDate, editorTextRef.current.trim(), entriesRef.current[targetDate]?.mood);
     }, 1500);
   };
 
@@ -831,7 +881,7 @@ export default function DiaryPage() {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
       setIsTyping(false);
-      handleSave(typingDateRef.current, editorText.trim());
+      handleSave(typingDateRef.current, editorText.trim(), entries[typingDateRef.current]?.mood);
     }
     sound.pageTurn();
     setSelectedDate(date);
@@ -890,7 +940,7 @@ export default function DiaryPage() {
             </button>
             <button
               title="Lock diary"
-              onClick={() => { sound.pageTurn(); setIsLocked(true); setPin(""); setEntries({}); }}
+              onClick={handleLockDiary}
               className="p-1.5 rounded-lg hover:bg-accent/10 text-ink-faint hover:text-accent transition-colors cursor-pointer"
             >
               <Lock className="w-4 h-4 stroke-[1.8]" />
@@ -1023,7 +1073,7 @@ export default function DiaryPage() {
                         className="flex items-center gap-1.5 text-xs text-danger font-semibold bg-danger/10 px-2.5 py-1 rounded-lg border border-danger/20"
                         title={saveErrors[selectedDate]}>
                         <AlertCircle className="w-3.5 h-3.5" />
-                        <span>Save failed · Retrying</span>
+                        <span>Save failed</span><button type="button" onClick={() => handleSave(selectedDate, editorText.trim(), entries[selectedDate]?.mood)} className="ml-1 underline font-medium hover:text-danger/80 cursor-pointer">Retry</button>
                       </motion.span>
                     ) : (
                       <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}

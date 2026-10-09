@@ -328,13 +328,22 @@ export default function TasksPage() {
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{pageError}</span>
               </div>
-              <button
-                type="button"
-                onClick={() => setPageError("")}
-                className="px-2 py-0.5 border border-rule text-ink hover:bg-raised transition cursor-pointer text-[11px]"
-              >
-                Dismiss
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => loadTasks()}
+                  className="px-2 py-0.5 border border-rule text-ink hover:bg-raised transition cursor-pointer text-[11px]"
+                >
+                  Retry
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPageError("")}
+                  className="px-2 py-0.5 border border-rule text-ink hover:bg-raised transition cursor-pointer text-[11px]"
+                >
+                  Dismiss
+                </button>
+              </div>
             </div>
           )}
 

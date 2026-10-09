@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 import { sound } from "@/lib/sound";
 import { clsx } from "clsx";
 import dayjs from "dayjs";
@@ -262,6 +263,15 @@ export default function ExpensesPage() {
 
   useEffect(() => {
     loadExpenses();
+    supabase.auth.getUser().then(({ data }) => {
+      const cloudBudget = data?.user?.user_metadata?.monthly_budget;
+      if (typeof cloudBudget === "number" && cloudBudget > 0) {
+        setMonthlyBudget(cloudBudget);
+        try {
+          localStorage.setItem("clarity_monthly_budget", String(cloudBudget));
+        } catch {}
+      }
+    }).catch(() => {});
   }, []);
 
   const loadExpenses = async () => {
@@ -326,12 +336,19 @@ export default function ExpensesPage() {
   const [editingBudget, setEditingBudget] = useState(false);
   const [tempBudgetInput, setTempBudgetInput] = useState("");
 
-  const handleSaveBudget = (newVal: number) => {
+  const handleSaveBudget = async (newVal: number) => {
     if (newVal > 0) {
       setMonthlyBudget(newVal);
       try {
         localStorage.setItem("clarity_monthly_budget", String(newVal));
       } catch {}
+      try {
+        await supabase.auth.updateUser({
+          data: { monthly_budget: newVal },
+        });
+      } catch (err) {
+        console.warn("Could not sync budget to user account metadata:", err);
+      }
     }
     setEditingBudget(false);
   };
@@ -812,7 +829,7 @@ export default function ExpensesPage() {
 
                                   <button
                                     onClick={() => deleteExpense(expense.id)}
-                                    className="opacity-0 group-hover:opacity-100 p-1 text-ink-faint hover:text-accent rounded-none transition-all active:scale-90 cursor-pointer border border-transparent hover:border-rule"
+                                    className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 p-1 text-ink-faint hover:text-accent rounded-none transition-all active:scale-90 cursor-pointer border border-transparent hover:border-rule"
                                     title="Delete entry"
                                     aria-label="Delete entry"
                                   >

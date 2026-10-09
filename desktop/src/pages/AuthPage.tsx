@@ -182,7 +182,7 @@ export default function AuthPage() {
                       initial={{ opacity: 0, y: -6 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0 }}
-                      className="flex items-center gap-2 p-3 text-danger bg-danger/10 rounded-2xl text-xs font-semibold border border-danger/20"
+                      role="alert" aria-live="polite" className="flex items-center gap-2 p-3 text-danger bg-danger/10 rounded-2xl text-xs font-semibold border border-danger/20"
                     >
                       <AlertCircle className="w-4 h-4 flex-shrink-0" />
                       <span>{error}</span>
@@ -200,7 +200,7 @@ export default function AuthPage() {
                       transition={{ duration: 0.2 }}
                       className="overflow-hidden space-y-1.5"
                     >
-                      <label className="block text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
+                      <label htmlFor="auth-username" className="block text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
                         Username
                       </label>
                       <div className="flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-ground border border-rule focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15 focus-within:bg-raised transition-all group">
@@ -208,12 +208,15 @@ export default function AuthPage() {
                           <User className="w-4 h-4" />
                         </div>
                         <input
+                          id="auth-username"
+                          name="username"
                           type="text"
                           value={username}
                           onChange={(e) => setUsername(e.target.value)}
                           placeholder="e.g. sahil"
+                          autoComplete="username"
                           required={!isLogin}
-                          className="w-full bg-transparent text-sm font-medium text-ink placeholder:text-ink-faint outline-none border-none p-0 focus:ring-0 font-sans"
+                          className="w-full bg-transparent text-sm font-medium text-ink placeholder:text-ink-faint outline-none border-none p-0 font-sans"
                         />
                       </div>
                     </motion.div>
@@ -222,7 +225,7 @@ export default function AuthPage() {
 
                 {/* Email Input */}
                 <div>
-                  <label className="block text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
+                  <label htmlFor="auth-email" className="block text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
                     Email Address
                   </label>
                   <div className="flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-ground border border-rule focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15 focus-within:bg-raised transition-all group">
@@ -230,20 +233,22 @@ export default function AuthPage() {
                       <Mail className="w-4 h-4" />
                     </div>
                     <input
+                      id="auth-email"
+                      name="email"
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="you@example.com"
+                      autoComplete="email"
                       required
-                      autoFocus
-                      className="w-full bg-transparent text-sm font-medium text-ink placeholder:text-ink-faint outline-none border-none p-0 focus:ring-0 font-sans"
+                      className="w-full bg-transparent text-sm font-medium text-ink placeholder:text-ink-faint outline-none border-none p-0 font-sans"
                     />
                   </div>
                 </div>
 
                 {/* Password Input with Show/Hide Toggle */}
                 <div>
-                  <label className="block text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
+                  <label htmlFor="auth-password" className="block text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
                     Password
                   </label>
                   <div className="flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-ground border border-rule focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15 focus-within:bg-raised transition-all group">
@@ -251,19 +256,22 @@ export default function AuthPage() {
                       <Lock className="w-4 h-4" />
                     </div>
                     <input
+                      id="auth-password"
+                      name="password"
                       type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
+                      autoComplete={isLogin ? "current-password" : "new-password"}
                       required
-                      className="w-full bg-transparent text-sm font-semibold text-ink placeholder:text-ink-faint outline-none border-none p-0 focus:ring-0 tracking-wide font-mono"
+                      className="w-full bg-transparent text-sm font-semibold text-ink placeholder:text-ink-faint outline-none border-none p-0 tracking-wide font-mono"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      tabIndex={-1}
                       className="p-1 rounded-lg text-ink-faint hover:text-ink transition-colors cursor-pointer flex-shrink-0"
                       title={showPassword ? "Hide password" : "Show password"}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -307,7 +315,7 @@ export default function AuthPage() {
                       onClick={handleGoogleLogin}
                       className="w-full max-w-[300px] flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-full bg-raised border border-rule hover:border-ink/20 text-ink text-xs font-semibold shadow-xs transition-all cursor-pointer"
                     >
-                      <svg className="w-4 h-4" viewBox="0 0 24 24">
+                      <svg aria-hidden="true" className="w-4 h-4" viewBox="0 0 24 24">
                         <path
                           fill="#4285F4"
                           d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.9c2.28-2.1 3.645-5.2 3.645-9.15z"

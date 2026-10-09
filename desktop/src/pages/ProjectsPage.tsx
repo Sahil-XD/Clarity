@@ -310,35 +310,37 @@ export default function ProjectsPage() {
   const currentTasks = activeProjectId != null ? tasks[activeProjectId] || [] : [];
 
   const moveTask = async (taskId: string, newStatus: TaskStatus) => {
-    if (activeProjectId == null) return;
+    const targetProjectId = activeProjectId;
+    if (targetProjectId == null) return;
     sound.pop();
-    const prevTasks = tasks[activeProjectId] || [];
+    const prevTasks = tasks[targetProjectId] || [];
     setTasks((prev) => ({
       ...prev,
-      [activeProjectId]: (prev[activeProjectId] || []).map((t) =>
+      [targetProjectId]: (prev[targetProjectId] || []).map((t) =>
         t.id === taskId ? { ...t, status: newStatus } : t
       ),
     }));
     try {
       await api.updateProjectTaskStatus(taskId, newStatus);
     } catch (err: any) {
-      setTasks((prev) => ({ ...prev, [activeProjectId]: prevTasks }));
+      setTasks((prev) => ({ ...prev, [targetProjectId]: prevTasks }));
       setPageError(err?.message || "Failed to update project task status.");
     }
   };
 
   const deleteTask = async (taskId: string) => {
-    if (activeProjectId == null) return;
+    const targetProjectId = activeProjectId;
+    if (targetProjectId == null) return;
     sound.pop();
-    const prevTasks = tasks[activeProjectId] || [];
+    const prevTasks = tasks[targetProjectId] || [];
     setTasks((prev) => ({
       ...prev,
-      [activeProjectId]: (prev[activeProjectId] || []).filter((t) => t.id !== taskId),
+      [targetProjectId]: (prev[targetProjectId] || []).filter((t) => t.id !== taskId),
     }));
     try {
       await api.deleteProjectTask(taskId);
     } catch (err: any) {
-      setTasks((prev) => ({ ...prev, [activeProjectId]: prevTasks }));
+      setTasks((prev) => ({ ...prev, [targetProjectId]: prevTasks }));
       setPageError(err?.message || "Failed to delete project task.");
     }
   };
@@ -356,7 +358,8 @@ export default function ProjectsPage() {
       await api.deleteProject(projectId);
     } catch (err: any) {
       setProjects(prevProjects);
-      setActiveProjectId(prevActive);
+      // Only restore previous active project if user hasn't selected another project
+      setActiveProjectId((curr) => (curr === null ? prevActive : curr));
       setPageError(err?.message || "Failed to delete project docket.");
     }
   };
@@ -431,12 +434,20 @@ export default function ProjectsPage() {
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{pageError}</span>
           </div>
-          <button
-            onClick={() => setPageError("")}
-            className="px-2 py-0.5 border border-rule text-ink hover:bg-raised transition cursor-pointer text-[11px]"
-          >
-            Dismiss
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => loadProjects()}
+              className="px-2 py-0.5 border border-rule text-ink hover:bg-raised transition cursor-pointer text-[11px]"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => setPageError("")}
+              className="px-2 py-0.5 border border-rule text-ink hover:bg-raised transition cursor-pointer text-[11px]"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 
@@ -630,7 +641,7 @@ export default function ProjectsPage() {
                                     </p>
 
                                     {/* Column Advance / Retreat controls */}
-                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                                       {column.id !== "TODO" && (
                                         <button
                                           onClick={() => moveTask(task.id, retreatStatus(task.status))}
@@ -667,9 +678,9 @@ export default function ProjectsPage() {
 
                                     <button
                                       onClick={() => deleteTask(task.id)}
-                                      className="opacity-0 group-hover:opacity-100 p-1 text-ink-faint hover:text-danger hover:bg-danger/10 border border-transparent hover:border-danger/20 rounded-none transition cursor-pointer"
-                                      title="Delete task"
+                                      className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 p-1 text-ink-faint hover:text-danger hover:bg-danger/10 border border-transparent hover:border-danger/20 rounded-none transition cursor-pointer"
                                       aria-label="Delete task"
+                                      title="Delete task"
                                     >
                                       <Trash2 className="w-3 h-3 stroke-[1.8]" />
                                     </button>
