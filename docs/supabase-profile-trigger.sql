@@ -1,4 +1,4 @@
-﻿-- Clarity Supabase Profile Automation Trigger
+-- Clarity Supabase Profile Automation Trigger
 -- Run this in Supabase SQL Editor (SQL Editor -> New Query -> Run)
 -- Solves RLS issue where client-side profile creation fails during signup
 
