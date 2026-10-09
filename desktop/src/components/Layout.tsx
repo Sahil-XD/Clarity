@@ -57,13 +57,13 @@ export default function Layout() {
   return (
     <div className="flex h-screen overflow-hidden bg-ground text-ink select-none">
       {/* ── Minimalist Stationery Sidebar ───────────────────────────── */}
-      <aside className="w-64 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-r border-rule flex flex-col justify-between z-20 relative transition-colors duration-200">
+      <aside className="w-[280px] flex-shrink-0 bg-surface/90 backdrop-blur-xl border-r border-rule flex flex-col justify-between z-20 relative transition-colors duration-200">
         <div>
           {/* Brand Monogram Header */}
           <div className="px-5 pt-7 pb-4">
             <div className="flex items-center justify-between mb-4">
               <ClarityLogo size="md" theme={theme === "dark" ? "dark" : "outline"} shape="squircle" />
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5 flex-shrink-0">
                 <button
                   onClick={handleToggleTheme}
                   title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}

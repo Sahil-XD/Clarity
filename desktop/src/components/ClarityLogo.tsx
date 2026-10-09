@@ -26,7 +26,7 @@ export const ClarityLogo: React.FC<ClarityLogoProps> = ({
   // Dimension tokens
   const dimensions = {
     sm: { px: 28, text: 'text-base', subText: 'text-[8.5px]', gap: 'gap-2.5', stroke: 2.6 },
-    md: { px: 38, text: 'text-xl', subText: 'text-[9.5px]', gap: 'gap-3.5', stroke: 2.9 },
+    md: { px: 38, text: 'text-xl', subText: 'text-[9.5px]', gap: 'gap-3', stroke: 2.9 },
     lg: { px: 48, text: 'text-2xl', subText: 'text-[11px]', gap: 'gap-4', stroke: 3.2 },
     xl: { px: 60, text: 'text-3xl', subText: 'text-[12px]', gap: 'gap-4.5', stroke: 3.6 },
   }[size];
