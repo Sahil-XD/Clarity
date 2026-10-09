@@ -53,37 +53,16 @@ export async function signInWithGoogle() {
     provider: 'google',
     options: {
       redirectTo: window.location.origin,
-      skipBrowserRedirect: true,
     },
   });
 
   if (error) {
-    console.error('[Supabase] Google OAuth setup error:', error);
+    console.error('[Supabase] Google OAuth error:', error);
     throw error;
   }
 
   if (data?.url) {
-    // Pre-flight check: Verify if Google provider is actually enabled in the Supabase project
-    try {
-      const check = await fetch(data.url);
-      if (!check.ok) {
-        const body = await check.json().catch(() => null);
-        if (body?.msg?.includes('provider is not enabled') || body?.error_code === 'validation_failed') {
-          throw new Error(
-            'Google Sign-In is not enabled in your Supabase project (rbhtqvysfkxhcsmvejws). Go to Supabase Dashboard > Authentication > Providers > Google, toggle it ON, and add your Client ID & Secret.'
-          );
-        }
-      }
-    } catch (fetchErr: any) {
-      if (fetchErr.message?.includes('not enabled')) {
-        throw fetchErr;
-      }
-      // If network/CORS restricts preflight check, proceed with redirect
-    }
-
-    // Google provider is enabled: proceed to Google sign-in
     window.location.href = data.url;
-    return data;
   }
 
   return data;
