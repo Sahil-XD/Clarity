@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import {
-  Plus, Trash2, X, LayoutGrid,
-  CheckCircle2, Loader2, FolderOpen,
-  ChevronRight, ArrowRight, ArrowLeft,
+  Plus, Trash2, X,
+  Loader2, FolderOpen,
+  ArrowRight, ArrowLeft,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";

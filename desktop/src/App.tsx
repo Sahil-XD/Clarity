@@ -22,7 +22,7 @@ function App() {
 
     // Listen for auth state changes (login, logout, token refresh, OAuth redirect)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (event, _session) => {
         if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
           await initAuth();
         } else if (event === "SIGNED_OUT") {

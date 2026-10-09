@@ -950,6 +950,7 @@ function DiaryDayCard({
             className="w-full px-4 py-2.5 rounded-xl bg-surface border border-rule text-ink placeholder:text-ink-faint text-sm leading-relaxed outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition resize-none pr-24 shadow-xs"
             style={{ minHeight: "44px" }}
           />
+          {saveError && <p className="text-xs text-danger mt-1">{saveError}</p>}
           {!text.trim() && (
             <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none flex items-center gap-1">
               <kbd className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-raised border border-rule text-[10px] font-bold text-ink-faint leading-none">Ctrl+Enter ↵</kbd>

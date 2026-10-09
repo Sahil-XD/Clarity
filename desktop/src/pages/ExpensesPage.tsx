@@ -90,7 +90,7 @@ function AddExpenseModal({
       const item = await api.createExpense({
         amount: amt,
         category,
-        description: description.trim() || undefined,
+        description: description.trim() || null,
         date,
         expense_type: "EXPENSE",
       });

@@ -1,11 +1,11 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import dayjs from "dayjs";
 import {
   Lock, Unlock, Key, BookOpen, AlertCircle, Loader2,
   Plus, ChevronRight, Pencil, CalendarDays, Check,
-  Bold, Italic, List, Sparkles, Shuffle, Smile,
-  RotateCcw, Delete, ShieldAlert, ShieldCheck, Settings, X, Trash2,
-  CornerDownLeft, Shield, Sparkle
+  Sparkles, Shuffle, Smile,
+  RotateCcw, Delete, Settings, X, Trash2,
+  Sparkle
 } from "lucide-react";
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { api } from "@/lib/api";
@@ -70,8 +70,6 @@ function LockScreen({
 
   const rotateX = useTransform(mouseY, [-0.5, 0.5], ["12deg", "-12deg"]);
   const rotateY = useTransform(mouseX, [-0.5, 0.5], ["-12deg", "12deg"]);
-  const glareX = useTransform(mouseX, [-0.5, 0.5], ["0%", "100%"]);
-  const glareY = useTransform(mouseY, [-0.5, 0.5], ["0%", "100%"]);
 
   // Mouse ambient lighting
   const [coords, setCoords] = useState({ x: 0, y: 0 });
@@ -537,7 +535,7 @@ function LockScreen({
 
 // ─── Passcode Settings Modal (Inside unlocked diary) ─────────────────────────
 function PasscodeSettingsModal({
-  currentPin,
+  currentPin: _currentPin,
   onClose,
   onPinChanged,
 }: {
@@ -730,7 +728,7 @@ export default function DiaryPage() {
   const handleSave = async (date: string, body: string) => {
     setSavingIds((p) => ({ ...p, [date]: true }));
     try {
-      const saved = await api.saveDiaryEntry(date, pin, { body, mood: selectedMood || undefined });
+      const saved = await api.saveDiaryEntry(date, pin, { body, mood: (selectedMood as DiaryEntry['mood']) || undefined });
       setEntries((p) => ({ ...p, [date]: saved }));
       setSavedIds((p) => ({ ...p, [date]: true }));
       setSaveErrors((p) => ({ ...p, [date]: "" }));

@@ -42,41 +42,33 @@ Studios behind **Utsubo**, **Rolls-Royce**, and **Apple** use a fundamentally di
 
 ---
 
-## 4. The 5-Phase Cinematic Opening Sequence
+## 4. The Cinematic Opening Sequence (Optic Focus Pull: Blurry to Visible)
+
+> **Core Concept:** A clean, minimalist focus pull that visually embodies the very concept of *Clarity*. No long mottos, no multi-phase speeches—just the **Emblem + Name "CLARITY"** snapping from deep atmospheric lens blur into crisp, crystalline focus.
 
 ```mermaid
 graph LR
-    A[Phase 1: Pitch Void] --> B[Phase 2: Laser Path Tracing]
-    B --> C[Phase 3: Ignition & Bloom]
-    C --> D[Phase 4: Brand Manifesto]
-    D --> E[Phase 5: Iris Dissolve to Workspace]
+    A[Atmospheric Defocus / Blur] --> B[Optic Pull to Sharp Focus] --> C[Elegant Fade to Workspace]
 ```
 
-### Phase 1: The Pitch Void (0.0s – 0.6s)
-* **Visual:** Absolute matte black/deep obsidian background (`#05070a`).
-* **Atmosphere:** An ultra-subtle ambient specular radial beacon at the center, setting the stage without clutter.
-* **Audio Cue:** Sub-bass rumble / low-frequency pulse (optional / subtle).
+### Stage 1: The Deep Lens Blur (0.0s – 0.8s)
+* **Visual:** Clean warm background matching the default light palette (`#E3E0D6` / `#F2F0E8`).
+* **Optics:** The Clarity emblem and typography are submerged in a heavy optical depth-of-field blur (`filter: blur(28px)`, scale: `0.94`, opacity: `0.2`).
+* **Concept:** Represents mental noise, chaos, and unfocused thoughts before entering the app.
 
-### Phase 2: Vector Laser Path Tracing (0.6s – 1.8s)
-* **Visual:** The Clarity 'C' logo and inner diamond facets are drawn using mathematical vector line tracing (`stroke-dasharray` / `stroke-dashoffset` interpolation).
-* **Styling:** Ultra-fine 1.5px stroke with a glowing cyan/ice-blue neon comet leading the stroke path.
-* **Physics:** Decelerating luxury curve: `cubic-bezier(0.25, 1, 0.5, 1)`.
+### Stage 2: The Focus Pull to Razor Sharpness (0.8s – 2.0s)
+* **Optics:** The camera focal plane rapidly and smoothly pulls forward with heavy luxury spring easing (`stiffness: 140, damping: 24`):
+  * Blur resolves continuously: `28px -> 0px`.
+  * Scale breathes forward: `0.94 -> 1.0`.
+  * Opacity locks to full: `1.0`.
+* **Visual Elements:**
+  * **The Clarity Emblem:** High-precision geometric facets snap into razor-sharp lines.
+  * **The Wordmark:** **CLARITY** in crisp serif/geometric typography with subtle tracking expansion (`letter-spacing: 0.22em -> 0.12em`).
+  * Pure simplicity: **Just Logo + Name "Clarity"** (no mottos or extra text).
 
-### Phase 3: Ignition & Specular Bloom (1.8s – 2.4s)
-* **Visual:** The moment the vector loop closes, an intense high-exposure flash/bloom sparks at the focal vertex.
-* **Effect:** Radial light rays scatter outward; faceted glass refractions illuminate the inner core of the Clarity emblem.
-* **Transition:** The thin stroke fills smoothly into a metallic/glassmorphic finished emblem.
-
-### Phase 4: Typographic Manifesto Reveal (2.4s – 3.6s)
-* **Visual:** Clean, modern geometric typography emerges beneath the mark.
-* **Motion:** Staggered character reveal with vertical clip-path unmasking (`translateY: 20px -> 0px`, blur: `8px -> 0px`).
-* **Text:**
-  > **CLARITY**  
-  > *Silence the Noise. Master Your Craft.*
-
-### Phase 5: Cinematic Iris Dissolve (3.6s – 4.2s)
-* **Visual:** The logo smoothly scales up with slight depth-of-field blur as an iris mask expands outward to seamlessly reveal the user's dashboard/workspace.
-* **Zero UI Disruption:** The underlying dashboard is already pre-mounted underneath; no re-render, zero layout flicker.
+### Stage 3: Seamless Dissolve into Workspace (2.0s – 2.5s)
+* **Visual:** The emblem and wordmark soften and fade out (`opacity: 1 -> 0`, slight upward drift `translateY: -8px`), revealing the pre-mounted light theme dashboard underneath.
+* **Zero UI Disruption:** Instant, zero-layout-shift transition.
 
 ---
 

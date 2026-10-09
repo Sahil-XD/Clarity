@@ -15,7 +15,7 @@ export default function Layout() {
   const location = useLocation();
   const [muted, setMuted] = useState(sound.isMuted());
   const [theme, setTheme] = useState<"light" | "dark">(() => {
-    return (document.documentElement.getAttribute("data-theme") as "light" | "dark") || "dark";
+    return (document.documentElement.getAttribute("data-theme") as "light" | "dark") || "light";
   });
 
   useEffect(() => {
