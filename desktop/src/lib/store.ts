@@ -96,8 +96,11 @@ export const useAuth = create<AuthState>()(
                   isAuthenticated: true,
                 });
                 return;
-              } else if (userError && (userError.status === 401 || userError.status === 403)) {
-                // Token was explicitly revoked or rejected by auth server
+              }
+
+              if (userError) {
+                // Confirmed invalid session: auth server explicitly rejected token/session
+                console.warn("[Auth] Server rejected session token:", userError.message);
                 set({
                   supabaseUser: null,
                   username: null,
@@ -107,16 +110,34 @@ export const useAuth = create<AuthState>()(
                 });
                 return;
               }
-            } catch (networkErr) {
-              console.info("[Auth] Network verification failed (offline), maintaining cached session:", networkErr);
-            }
+            } catch (networkErr: any) {
+              // Distinguish network unavailability (offline) vs other failures
+              const isNetworkIssue =
+                (typeof navigator !== "undefined" && !navigator.onLine) ||
+                networkErr?.name === "TypeError" ||
+                /fetch|network|offline|failed to fetch/i.test(networkErr?.message || "");
 
-            // Offline mode with known valid cached session
-            set({
-              supabaseUser: session.user,
-              email: session.user.email || null,
-              isAuthenticated: true,
-            });
+              if (isNetworkIssue) {
+                console.info("[Auth] Network unavailable (offline), maintaining cached session");
+                set({
+                  supabaseUser: session.user,
+                  email: session.user.email || null,
+                  isAuthenticated: true,
+                });
+                return;
+              }
+
+              // Unknown failure: clear auth for safety
+              console.warn("[Auth] Unknown error verifying user session:", networkErr);
+              set({
+                supabaseUser: null,
+                username: null,
+                email: null,
+                avatarUrl: null,
+                isAuthenticated: false,
+              });
+              return;
+            }
           } else {
             // No session exists
             set({

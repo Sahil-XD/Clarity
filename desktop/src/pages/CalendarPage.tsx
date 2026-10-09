@@ -540,7 +540,7 @@ export default function CalendarPage() {
 
       {/* ── Content Body ───────────────────────────────────────── */}
       {pageError && (
-        <div className="mx-6 mt-3 px-4 py-2.5 rounded-xl bg-danger/10 border border-danger/20 text-xs font-semibold text-danger flex items-center justify-between">
+        <div role="alert" aria-live="polite" className="mx-6 mt-3 px-4 py-2.5 rounded-xl bg-danger/10 border border-danger/20 text-xs font-semibold text-danger flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{pageError}</span>

@@ -690,7 +690,11 @@ export default function DiaryPage() {
   const [addingDate, setAddingDate] = useState(false);
   const [newDate, setNewDate] = useState(dayjs().format("YYYY-MM-DD"));
   const [promptIdx, setPromptIdx] = useState(0);
-  const saveSeqRef = useRef<Record<string, number>>({});
+  const [editorText, setEditorText] = useState("");
+  const saveQueueRef = useRef<Record<string, {
+    inFlight: boolean;
+    pending?: { body: string; mood?: DiaryEntry['mood'] | null };
+  }>>({});
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimerRef = useRef<any>(null);
@@ -705,6 +709,7 @@ export default function DiaryPage() {
     const map: Record<string, DiaryEntry> = {};
     fetchedEntries.forEach((e) => { map[e.date] = e; });
     setEntries(map);
+    setEditorText(map[selectedDate]?.body || "");
 
     const defaults = buildDefaultDates();
     const extraDates = fetchedEntries
@@ -720,9 +725,7 @@ export default function DiaryPage() {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
       setIsTyping(false);
-      if (textareaRef.current) {
-        handleSave(typingDateRef.current, textareaRef.current.value.trim());
-      }
+      handleSave(typingDateRef.current, editorText.trim());
     }
     if (!dates.includes(newDate)) {
       const updated = [...new Set([...dates, newDate])].sort((a, b) => (a > b ? -1 : 1));
@@ -730,36 +733,45 @@ export default function DiaryPage() {
     }
     setSelectedDate(newDate);
     typingDateRef.current = newDate;
+    setEditorText(entries[newDate]?.body || "");
     setAddingDate(false);
     sound.pageTurn();
-    setTimeout(() => textareaRef.current?.focus(), 100);
   };
 
   const handleSave = async (date: string, body: string, moodOverride?: DiaryEntry['mood'] | null) => {
-    const seq = (saveSeqRef.current[date] || 0) + 1;
-    saveSeqRef.current[date] = seq;
+    if (!saveQueueRef.current[date]) {
+      saveQueueRef.current[date] = { inFlight: false };
+    }
+    const q = saveQueueRef.current[date];
+
+    // If a request is already running for this date, queue this latest payload
+    if (q.inFlight) {
+      q.pending = { body, mood: moodOverride };
+      return;
+    }
+
+    q.inFlight = true;
     setSavingIds((p) => ({ ...p, [date]: true }));
+
     try {
       const entryForDate = entries[date];
       const moodToSave = moodOverride !== undefined ? (moodOverride || undefined) : entryForDate?.mood;
       const saved = await api.saveDiaryEntry(date, pin, { body, mood: moodToSave });
-      if (saveSeqRef.current[date] === seq) {
-        setEntries((p) => ({ ...p, [date]: saved }));
-        setSavedIds((p) => ({ ...p, [date]: true }));
-        setSaveErrors((p) => ({ ...p, [date]: "" }));
-        setTimeout(() => {
-          if (saveSeqRef.current[date] === seq) {
-            setSavedIds((p) => ({ ...p, [date]: false }));
-          }
-        }, 2000);
-      }
+      setEntries((p) => ({ ...p, [date]: saved }));
+      setSavedIds((p) => ({ ...p, [date]: true }));
+      setSaveErrors((p) => ({ ...p, [date]: "" }));
+      setTimeout(() => {
+        setSavedIds((p) => ({ ...p, [date]: false }));
+      }, 2000);
     } catch (err: any) {
-      if (saveSeqRef.current[date] === seq) {
-        setSaveErrors((p) => ({ ...p, [date]: err?.message || "Failed to save entry" }));
-      }
+      setSaveErrors((p) => ({ ...p, [date]: err?.message || "Failed to save entry" }));
     } finally {
-      if (saveSeqRef.current[date] === seq) {
-        setSavingIds((p) => ({ ...p, [date]: false }));
+      q.inFlight = false;
+      setSavingIds((p) => ({ ...p, [date]: false }));
+      if (q.pending) {
+        const next = q.pending;
+        q.pending = undefined;
+        handleSave(date, next.body, next.mood);
       }
     }
   };
@@ -771,12 +783,11 @@ export default function DiaryPage() {
 
   const insertPrompt = () => {
     sound.pop();
-    if (!textareaRef.current) return;
     const p = DAILY_PROMPTS[promptIdx];
-    const current = textareaRef.current.value.trim();
-    textareaRef.current.value = current ? `${current}\n\n✨ *${p}*\n` : `✨ *${p}*\n`;
-    textareaRef.current.focus();
-    handleSave(selectedDate, textareaRef.current.value.trim());
+    const current = editorText.trim();
+    const nextVal = current ? `${current}\n\n✨ *${p}*\n` : `✨ *${p}*\n`;
+    setEditorText(nextVal);
+    handleSave(selectedDate, nextVal.trim());
   };
 
   const selectMoodPill = (mood: string) => {
@@ -803,15 +814,13 @@ export default function DiaryPage() {
     }
   };
 
-  const handleTextChange = () => {
+  const handleTextChange = (val: string) => {
     setIsTyping(true);
     typingDateRef.current = selectedDate;
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => {
       setIsTyping(false);
-      if (textareaRef.current) {
-        handleSave(typingDateRef.current, textareaRef.current.value.trim());
-      }
+      handleSave(typingDateRef.current, val.trim());
     }, 1500);
   };
 
@@ -822,21 +831,19 @@ export default function DiaryPage() {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
       setIsTyping(false);
-      if (textareaRef.current) {
-        handleSave(typingDateRef.current, textareaRef.current.value.trim());
-      }
+      handleSave(typingDateRef.current, editorText.trim());
     }
     sound.pageTurn();
     setSelectedDate(date);
     typingDateRef.current = date;
+    setEditorText(entries[date]?.body || "");
   };
 
   if (isLocked) return <LockScreen onUnlocked={handleUnlocked} />;
 
   const entry = entries[selectedDate];
-  const currentText = entry?.body || "";
   const currentMood = entry?.mood || null;
-  const wordCount = currentText.trim() ? currentText.trim().split(/\s+/).length : 0;
+  const wordCount = editorText.trim() ? editorText.trim().split(/\s+/).length : 0;
   const readTime = Math.max(1, Math.ceil(wordCount / 200));
 
   return (
@@ -1091,16 +1098,20 @@ export default function DiaryPage() {
               {/* Physical Journal Textured Page */}
               <div
                 style={{ '--mood-glow': currentMood && MOOD_GLOWS[currentMood] ? MOOD_GLOWS[currentMood] : 'transparent' } as React.CSSProperties}
-                className="flex-1 overflow-hidden rounded-2xl bg-surface border border-rule p-6 sm:p-8 flex flex-col relative mood-glow transition-all duration-300">
+                className="flex-1 overflow-hidden rounded-2xl bg-surface border border-rule p-6 sm:p-8 flex flex-col relative mood-glow transition-[border-color,box-shadow,background-color] duration-300">
                 {/* Left Margin Accent Line */}
                 <div className="absolute top-0 bottom-0 left-12 sm:left-16 w-px bg-accent/20 pointer-events-none" />
 
                 <textarea
+                  key={selectedDate}
                   ref={textareaRef}
-                  defaultValue={currentText}
-                  onChange={handleTextChange}
+                  value={editorText}
+                  onChange={(e) => {
+                    setEditorText(e.target.value);
+                    handleTextChange(e.target.value);
+                  }}
                   placeholder={`Write your private thoughts for ${dayjs(selectedDate).format("MMMM D")}…`}
-                  className="w-full h-full bg-transparent outline-none resize-none text-ink font-serif text-base sm:text-lg leading-relaxed placeholder:text-ink-faint pl-10 sm:pl-12 pr-4 border-none focus:ring-0"
+                  className="w-full h-full bg-transparent outline-none resize-none text-ink font-serif text-base sm:text-lg leading-relaxed placeholder:text-ink-faint pl-10 sm:pl-12 pr-4 border-none focus:ring-1 focus:ring-accent/25 rounded-xl transition-[border-color,box-shadow]"
                   autoFocus
                 />
               </div>

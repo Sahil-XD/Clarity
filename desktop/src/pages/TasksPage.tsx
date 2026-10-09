@@ -202,9 +202,10 @@ export default function TasksPage() {
           setTasks((prev) => prev.filter((t) => t.id !== task.id));
         }, 300);
       }
-    } catch {
+    } catch (err: any) {
       // Revert on failure
       setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, completed: task.completed } : t)));
+      setPageError(err?.message || "Failed to update task status. Change reverted.");
     }
   };
 
@@ -322,7 +323,7 @@ export default function TasksPage() {
           )}
 
           {pageError && (
-            <div className="mb-4 px-4 py-2.5 rounded-none bg-danger/10 border border-danger/20 text-xs font-medium text-danger flex items-center justify-between font-mono">
+            <div role="alert" aria-live="polite" className="mb-4 px-4 py-2.5 rounded-none bg-danger/10 border border-danger/20 text-xs font-medium text-danger flex items-center justify-between font-mono">
               <div className="flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{pageError}</span>
