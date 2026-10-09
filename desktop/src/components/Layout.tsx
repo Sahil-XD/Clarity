@@ -62,7 +62,15 @@ export default function Layout() {
           {/* Brand Monogram Header */}
           <div className="px-5 pt-7 pb-4">
             <div className="flex items-center justify-between mb-4">
-              <ClarityLogo size="md" theme={theme === "dark" ? "dark" : "outline"} shape="squircle" />
+              <div
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('clarity:replay-intro'));
+                }}
+                className="cursor-pointer transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
+                title="Replay opening animation (Ctrl+Shift+O)"
+              >
+                <ClarityLogo size="md" theme={theme === "dark" ? "dark" : "outline"} shape="squircle" />
+              </div>
               <div className="flex items-center gap-0.5 flex-shrink-0">
                 <button
                   onClick={handleToggleTheme}

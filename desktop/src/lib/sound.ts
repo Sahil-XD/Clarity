@@ -41,15 +41,17 @@ class SoundEngine {
   }
 
   // 15ms tactile organic pop (checkboxes, mood chips, buttons)
-  public pop() {
+  public pop(pitch: number = 1) {
     const ctx = this.getContext();
     if (!ctx) return;
     try {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'triangle';
-      osc.frequency.setValueAtTime(650, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(180, ctx.currentTime + 0.025);
+      const baseFreq = 650 * pitch;
+      const endFreq = 180 * pitch;
+      osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(endFreq, ctx.currentTime + 0.025);
       
       gain.gain.setValueAtTime(0.045, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.025);
