@@ -20,7 +20,7 @@ export const ClarityLogo: React.FC<ClarityLogoProps> = ({
   theme = 'terracotta',
   shape = 'squircle',
   showText = true,
-  subtitle = 'WORKSPACE & LEDGER',
+  subtitle = 'PERSONAL WORKSPACE',
   className = '',
 }) => {
   // Dimension tokens
