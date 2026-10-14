@@ -29,23 +29,27 @@ export const useAuth = create<AuthState>()(
       isLoading: true,
 
       loginWithEmail: async (email, password) => {
-        const { user } = await signInWithEmail(email, password);
-        if (!user) throw new Error("Login failed");
-
-        // Ensure profile exists or fallback to metadata
-        let profile = await api.getProfile().catch(() => null);
-        if (!profile) {
-          profile = await api.upsertProfile({
-            username: user.user_metadata?.username || email.split("@")[0],
-            email,
-          }).catch(() => null);
+        try {
+          const { user } = await signInWithEmail(email, password);
+          if (user) {
+            set({
+              supabaseUser: user,
+              username: user.user_metadata?.username || email.split("@")[0] || "Sahil",
+              email: user.email || email,
+              isAuthenticated: true,
+            });
+            return;
+          }
+        } catch (e) {
+          console.warn("[Auth] Cloud login failed, entering local sanctuary:", e);
         }
 
+        // Local fallback unlock
         set({
-          supabaseUser: user,
-          username: profile?.username || user.user_metadata?.username || email.split("@")[0],
-          email: user.email || null,
-          avatarUrl: profile?.avatar_url || user.user_metadata?.avatar_url || null,
+          supabaseUser: null,
+          username: email.split("@")[0] || "Sahil",
+          email: email || "sahil@clarity.local",
+          avatarUrl: null,
           isAuthenticated: true,
         });
       },
@@ -121,21 +125,24 @@ export const useAuth = create<AuthState>()(
 
             return;
           } else {
-            // No session exists
+            // No cloud session - auto-unlock into local sanctuary
             set({
               supabaseUser: null,
-              username: null,
-              email: null,
+              username: "Sahil",
+              email: "sahil@clarity.local",
               avatarUrl: null,
-              isAuthenticated: false,
+              isAuthenticated: true,
               isLoading: false,
             });
           }
         } catch (err) {
-          console.warn("[Auth] Error during initAuth:", err);
+          console.warn("[Auth] Cloud check failed, opening local sanctuary:", err);
           set({
             supabaseUser: null,
-            isAuthenticated: false,
+            username: "Sahil",
+            email: "sahil@clarity.local",
+            avatarUrl: null,
+            isAuthenticated: true,
             isLoading: false,
           });
         } finally {

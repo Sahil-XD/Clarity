@@ -275,8 +275,8 @@ export default function ExpensesPage() {
     }).catch(() => {});
   }, []);
 
-  const loadExpenses = async () => {
-    setLoading(true);
+  const loadExpenses = async (silent = false) => {
+    if (!silent) setLoading(true);
     setPageError("");
     try {
       const data = await api.getExpenses();

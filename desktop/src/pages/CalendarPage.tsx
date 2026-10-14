@@ -218,7 +218,7 @@ function AddNoteModal({
     try {
       const created = await api.createCalendarEvent({
         title: text.trim(),
-        description: undefined,
+        description: null,
         event_date: eventDate,
         event_type: "NOTE",
       });
@@ -723,7 +723,7 @@ function DiaryDayCard({
 
   const handleSaveEdit = async () => {
     if (!editId) return;
-    await api.updateCalendarEvent(editId, editText.trim());
+    await api.updateCalendarEvent(editId, { title: editText.trim() });
     setEditId(null);
     onReload();
   };
@@ -751,7 +751,7 @@ function DiaryDayCard({
     try {
       const created = await api.createCalendarEvent({
         title: trimmed,
-        description: undefined,
+        description: null,
         event_date: date,
         event_type: "NOTE",
       });

@@ -1,4 +1,4 @@
-// Tactile Synthesized Audio Engine for Clarity
+﻿// Tactile Synthesized Audio Engine for Clarity
 // Uses browser Web Audio API - Zero external files, zero latency, zero bandwidth
 
 class SoundEngine {
@@ -6,7 +6,6 @@ class SoundEngine {
   private muted: boolean = false;
 
   constructor() {
-    // Check user preference in localStorage
     try {
       this.muted = localStorage.getItem('clarity_sound_muted') === 'true';
     } catch {
@@ -23,7 +22,7 @@ class SoundEngine {
       }
     }
     if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      this.ctx.resume().catch(() => {});
     }
     return this.ctx;
   }
@@ -40,7 +39,30 @@ class SoundEngine {
     return this.muted;
   }
 
-  // 15ms tactile organic pop (checkboxes, mood chips, buttons)
+  // Tactile paper / mechanical key click (used on buttons, Enter key, quick inscribe)
+  public click(pitch: number = 1) {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      const baseFreq = 950 * pitch;
+      const endFreq = 300 * pitch;
+      osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(endFreq, ctx.currentTime + 0.015);
+
+      gain.gain.setValueAtTime(0.04, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.015);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.015);
+    } catch {}
+  }
+
+  // 15ms tactile organic pop (checkboxes, mood chips, navigation tags)
   public pop(pitch: number = 1) {
     const ctx = this.getContext();
     if (!ctx) return;
@@ -52,15 +74,20 @@ class SoundEngine {
       const endFreq = 180 * pitch;
       osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
       osc.frequency.exponentialRampToValueAtTime(endFreq, ctx.currentTime + 0.025);
-      
+
       gain.gain.setValueAtTime(0.045, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.025);
-      
+
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
       osc.stop(ctx.currentTime + 0.025);
     } catch {}
+  }
+
+  // Subtle tap
+  public tap(pitch: number = 1) {
+    this.click(pitch * 1.1);
   }
 
   // Paper turn / gentle navigation swoosh
@@ -73,10 +100,10 @@ class SoundEngine {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(320, ctx.currentTime);
       osc.frequency.exponentialRampToValueAtTime(140, ctx.currentTime + 0.04);
-      
+
       gain.gain.setValueAtTime(0.03, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.04);
-      
+
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
@@ -95,10 +122,10 @@ class SoundEngine {
         const gain = ctx.createGain();
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, now + i * 0.06);
-        
+
         gain.gain.setValueAtTime(0.04, now + i * 0.06);
         gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.35);
-        
+
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(now + i * 0.06);
@@ -106,6 +133,25 @@ class SoundEngine {
       });
     } catch {}
   }
+
+  public success() {
+    this.chime();
+  }
 }
 
-export const sound = new SoundEngine();
+const engineInstance = new SoundEngine();
+
+// Proxy wraps sound engine so any undefined sound method call safely defaults to no-op instead of throwing TypeError
+export const sound: SoundEngine & Record<string, any> = new Proxy(engineInstance, {
+  get(target, prop, receiver) {
+    if (prop in target) {
+      const val = Reflect.get(target, prop, receiver);
+      if (typeof val === 'function') {
+        return val.bind(target);
+      }
+      return val;
+    }
+    // Return a safe no-op callable function for any unforeseen sound method
+    return () => {};
+  },
+});

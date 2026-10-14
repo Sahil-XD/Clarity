@@ -20,15 +20,7 @@ export default function AuthPage() {
 
   const { loginWithEmail, registerWithEmail, loginWithGoogle } = useAuth();
 
-  const handleMinimize = () => {
-    sound.click();
-    windowControls.minimize();
-  };
 
-  const handleClose = () => {
-    sound.click();
-    windowControls.close();
-  };
 
   // 3D Tilt Parallax
   const cardRef = useRef<HTMLDivElement>(null);

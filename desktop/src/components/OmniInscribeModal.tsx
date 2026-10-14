@@ -1,9 +1,9 @@
-﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   CheckSquare, DollarSign, BookOpen, Calendar, FolderKanban,
-  Search, Plus, ArrowRight, CornerDownLeft, X, Sparkles
+  CornerDownLeft, X, Sparkles
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { sound } from "@/lib/sound";

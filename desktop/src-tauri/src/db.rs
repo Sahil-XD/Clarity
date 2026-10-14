@@ -152,4 +152,10 @@ fn init_tables(conn: &Connection) {
         )",
         [],
     );
+
+    // Ensure default local user exists for offline desktop operations
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO users (id, username, email, password) VALUES (1, 'Sahil', 'sahil@clarity.local', 'local_pass')",
+        [],
+    );
 }

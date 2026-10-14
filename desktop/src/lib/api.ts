@@ -1,5 +1,6 @@
-﻿import { supabase } from "./supabase";
+import { invoke } from "@tauri-apps/api/core";
 import { dataCache } from "./dataCache";
+import { localDb } from "./localDb";
 import { encryptVaultText, decryptVaultText } from "./encryption";
 import type {
   Task,
@@ -8,6 +9,7 @@ import type {
   DiaryMood,
   CalendarEvent,
   Expense,
+  ExpenseType,
   Project,
   ProjectTask,
   ProjectTaskStatus,
@@ -15,599 +17,282 @@ import type {
 } from "./types";
 
 /**
- * In-memory cached user ID to eliminate redundant auth network trips
+ * Checks whether the application is currently running inside Tauri v2 desktop shell.
  */
-let cachedUserId: string | null = null;
+export const isTauri = (): boolean =>
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
 
-if (typeof window !== "undefined") {
-  supabase.auth.onAuthStateChange((_, session) => {
-    cachedUserId = session?.user?.id ?? null;
-  });
-}
+const LOCAL_USER_ID = "1";
 
-/**
- * Get the current authenticated user's ID, or throw.
- */
-async function requireUserId(): Promise<string> {
-  if (cachedUserId) return cachedUserId;
-
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session?.user) {
-    cachedUserId = session.user.id;
-    return cachedUserId;
-  }
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (user) {
-    cachedUserId = user.id;
-    return cachedUserId;
-  }
-
-  throw new Error("Not authenticated");
-}
-
-function withTimeout<T>(
-  promise: PromiseLike<T>,
-  ms = 3500,
-  errorMsg = "Network request timed out. Please check your connection."
-): Promise<T> {
-  return Promise.race([
-    Promise.resolve(promise),
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(errorMsg)), ms)
-    ),
-  ]);
-}
-
-// ── Profile ──────────────────────────────────────────────────────────────────
+// ==============================================================================
+// Profiles
+// ==============================================================================
 
 async function getProfile(): Promise<Profile | null> {
-  const userId = await requireUserId();
-  const query = supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", userId)
-    .single();
-  const { data, error } = await withTimeout(query);
-  if (error && error.code !== "PGRST116") throw error; // PGRST116 = no rows
-  return data;
+  return localDb.getProfile();
 }
 
 async function upsertProfile(profile: Partial<Profile>): Promise<Profile> {
-  const userId = await requireUserId();
-  const { data, error } = await withTimeout(
-    supabase
-      .from("profiles")
-      .upsert({ id: userId, ...profile }, { onConflict: "id" })
-      .select()
-      .single()
-  );
-  if (error) throw error;
-  return data;
+  return localDb.upsertProfile(profile);
 }
 
-// ── Tasks ────────────────────────────────────────────────────────────────────
+// ==============================================================================
+// Tasks (Local-First via Tauri SQLite, with graceful offline localDb fallback)
+// ==============================================================================
 
 async function getTasks(pendingOnly = false): Promise<Task[]> {
-  const userId = await requireUserId();
-  let query = supabase
-    .from("tasks")
-    .select("*")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false });
-
-  if (pendingOnly) {
-    query = query.eq("completed", false);
+  if (isTauri()) {
+    try {
+      const list = await invoke<any[]>("get_tasks", {
+        userId: 1,
+        pendingOnly,
+      });
+      const mapped: Task[] = list.map((t) => ({
+        id: String(t.id),
+        user_id: LOCAL_USER_ID,
+        title: t.title,
+        description: t.description || null,
+        completed: Boolean(t.completed),
+        status: (t.status as TaskStatus) || (t.completed ? "DONE" : "TODO"),
+        project_id: t.projectId ? String(t.projectId) : null,
+        due_at: t.dueAt || null,
+        remind_at: t.remindAt || null,
+        reminder_sent: Boolean(t.reminderSent),
+        created_at: t.createdAt || new Date().toISOString(),
+        updated_at: t.updatedAt || new Date().toISOString(),
+        deleted_at: null,
+      }));
+      dataCache.set("tasks", mapped);
+      return mapped;
+    } catch (e) {
+      console.warn("[Tauri IPC] get_tasks error, falling back to localDb:", e);
+    }
   }
 
-  const { data, error } = await withTimeout(query);
-  if (error) throw error;
-  return (data ?? []).map((t) => ({
-    ...t,
-    status: (t.status as TaskStatus) || (t.completed ? "DONE" : "TODO"),
-  }));
+  // LocalDb (0ms response, persists in localStorage)
+  const tasks = localDb.getTasks(pendingOnly);
+  dataCache.set("tasks", tasks);
+  return tasks;
 }
 
 async function createTask(task: Partial<Task>): Promise<Task> {
-  const userId = await requireUserId();
+  const title = task.title?.trim() || "Untitled Task";
+  const desc = task.description?.trim() || null;
   const status: TaskStatus = task.status || (task.completed ? "DONE" : "TODO");
-  const completed = task.completed !== undefined ? task.completed : status === "DONE";
 
-  const { data, error } = await withTimeout(
-    supabase
-      .from("tasks")
-      .insert({
-        user_id: userId,
-        title: task.title,
-        description: task.description || null,
-        completed,
+  if (isTauri()) {
+    try {
+      const t = await invoke<any>("create_task", {
+        userId: 1,
+        title,
+        description: desc,
+        dueAt: task.due_at || null,
+      });
+
+      if (task.completed || status === "DONE") {
+        await invoke("update_task", { id: t.id, completed: true }).catch(() => {});
+      }
+
+      const created: Task = {
+        id: String(t.id),
+        user_id: LOCAL_USER_ID,
+        title: t.title,
+        description: t.description || null,
+        completed: Boolean(task.completed) || status === "DONE",
         status,
         project_id: task.project_id || null,
-        due_at: task.due_at || null,
+        due_at: t.dueAt || null,
         remind_at: task.remind_at || null,
-        reminder_sent: task.reminder_sent || false,
-      })
-      .select()
-      .single()
-  );
-  if (error) throw error;
-  return {
-    ...data,
-    status: (data.status as TaskStatus) || (data.completed ? "DONE" : "TODO"),
-  };
+        reminder_sent: false,
+        created_at: t.createdAt || new Date().toISOString(),
+        updated_at: t.updatedAt || new Date().toISOString(),
+        deleted_at: null,
+      };
+
+      dataCache.invalidate("tasks");
+      return created;
+    } catch (e) {
+      console.warn("[Tauri IPC] create_task error, falling back to localDb:", e);
+    }
+  }
+
+  const created = localDb.createTask({
+    title,
+    description: desc,
+    completed: task.completed,
+    status,
+    project_id: task.project_id || null,
+    due_at: task.due_at || null,
+    remind_at: task.remind_at || null,
+  });
+  dataCache.invalidate("tasks");
+  return created;
 }
 
 async function updateTask(id: string, patch: Partial<Task>): Promise<Task> {
-  const updates: Record<string, unknown> = {};
-  if (patch.title !== undefined) updates.title = patch.title;
-  if (patch.description !== undefined) updates.description = patch.description;
-  if (patch.project_id !== undefined) updates.project_id = patch.project_id;
-  if (patch.due_at !== undefined) updates.due_at = patch.due_at;
-  if (patch.remind_at !== undefined) updates.remind_at = patch.remind_at;
-  if (patch.reminder_sent !== undefined) updates.reminder_sent = patch.reminder_sent;
+  const numericId = parseInt(id, 10);
 
-  if (patch.completed !== undefined) {
-    updates.completed = patch.completed;
-    if (patch.status === undefined) {
-      updates.status = patch.completed ? "DONE" : "TODO";
+  if (isTauri() && !isNaN(numericId)) {
+    try {
+      const completedVal =
+        patch.completed !== undefined
+          ? patch.completed
+          : patch.status
+          ? patch.status === "DONE"
+          : null;
+
+      const t = await invoke<any>("update_task", {
+        id: numericId,
+        title: patch.title !== undefined ? patch.title : null,
+        description: patch.description !== undefined ? patch.description : null,
+        completed: completedVal,
+        dueAt: patch.due_at !== undefined ? patch.due_at : null,
+      });
+
+      dataCache.invalidate("tasks");
+      return {
+        id: String(t.id),
+        user_id: LOCAL_USER_ID,
+        title: t.title,
+        description: t.description || null,
+        completed: Boolean(t.completed),
+        status: (t.status as TaskStatus) || (t.completed ? "DONE" : "TODO"),
+        project_id:
+          patch.project_id !== undefined
+            ? patch.project_id
+            : t.projectId
+            ? String(t.projectId)
+            : null,
+        due_at: t.dueAt || null,
+        remind_at: patch.remind_at !== undefined ? patch.remind_at : null,
+        reminder_sent: patch.reminder_sent !== undefined ? patch.reminder_sent : false,
+        created_at: t.createdAt || new Date().toISOString(),
+        updated_at: t.updatedAt || new Date().toISOString(),
+        deleted_at: null,
+      };
+    } catch (e) {
+      console.warn("[Tauri IPC] update_task error, falling back to localDb:", e);
     }
   }
-  if (patch.status !== undefined) {
-    updates.status = patch.status;
-    if (patch.completed === undefined) {
-      updates.completed = patch.status === "DONE";
-    }
-  }
 
-  const { data, error } = await withTimeout(
-    supabase
-      .from("tasks")
-      .update(updates)
-      .eq("id", id)
-      .select()
-      .single()
-  );
-  if (error) throw error;
-  return {
-    ...data,
-    status: (data.status as TaskStatus) || (data.completed ? "DONE" : "TODO"),
-  };
+  const updated = localDb.updateTask(id, patch);
+  dataCache.invalidate("tasks");
+  return updated;
 }
 
 async function deleteTask(id: string): Promise<void> {
-  const now = new Date().toISOString();
-  const { error } = await withTimeout(
-    supabase
-      .from("tasks")
-      .update({ deleted_at: now })
-      .eq("id", id)
-  );
-  if (error) throw error;
-}
-
-// ── Diary & Private Vault ────────────────────────────────────────────────────
-
-/**
- * Hash PIN using salted SHA-256 with Web Crypto API so plaintext PIN is never stored
- */
-async function hashPin(pin: string, salt: string = ""): Promise<string> {
-  const encoder = new TextEncoder();
-  const prefix = salt ? `clarity_vault_${salt}_` : "clarity_vault_";
-  const data = encoder.encode(`${prefix}${pin.trim()}`);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function checkDiaryPin(): Promise<boolean> {
-  const profile = await getProfile();
-  return !!profile?.diary_pin_hash;
-}
-
-async function verifyDiaryPin(pin: string): Promise<boolean> {
-  const profile = await getProfile();
-  if (!profile?.diary_pin_hash) return true; // No pin set
-  const userId = profile.id || (await requireUserId());
-  const saltedHash = await hashPin(pin, userId);
-  const legacyHash = await hashPin(pin, "");
-  if (profile.diary_pin_hash === saltedHash) return true;
-  if (profile.diary_pin_hash === legacyHash || profile.diary_pin_hash === pin.trim()) {
-    setDiaryPin(pin).catch((err) => console.warn("Could not upgrade PIN hash:", err));
-    return true;
-  }
-  return false;
-}
-
-async function setDiaryPin(pin: string): Promise<void> {
-  const userId = await requireUserId();
-  const hashed = await hashPin(pin, userId);
-  const { data: updated, error } = await withTimeout(
-    supabase
-      .from("profiles")
-      .update({ diary_pin_hash: hashed })
-      .eq("id", userId)
-      .select()
-  );
-  if (error || !updated || updated.length === 0) {
-    const { data: { user } } = await supabase.auth.getUser();
-    await withTimeout(
-      supabase.from("profiles").upsert(
-        {
-          id: userId,
-          diary_pin_hash: hashed,
-          email: user?.email || "",
-          username: user?.user_metadata?.username || user?.email?.split("@")[0] || "user",
-        },
-        { onConflict: "id" }
-      )
-    );
-  }
-}
-
-async function resetDiaryPin(newPin: string): Promise<void> {
-  await setDiaryPin(newPin);
-}
-
-async function removeDiaryPin(): Promise<void> {
-  const userId = await requireUserId();
-  await withTimeout(
-    supabase
-      .from("profiles")
-      .update({ diary_pin_hash: null })
-      .eq("id", userId)
-  );
-}
-
-async function getDiaryEntries(pin: string): Promise<DiaryEntry[]> {
-  const hasPin = await checkDiaryPin();
-  if (hasPin) {
-    const ok = await verifyDiaryPin(pin);
-    if (!ok) throw new Error("Invalid PIN");
-  } else if (!pin) {
-    throw new Error("Diary PIN not set");
-  }
-
-  const userId = await requireUserId();
-  const query = supabase
-    .from("diary_entries")
-    .select("*")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .order("date", { ascending: false });
-  const { data, error } = await withTimeout(query);
-  if (error) throw error;
-
-  // Decrypt each entry in memory using AES-256-GCM
-  const entries: DiaryEntry[] = [];
-  for (const entry of data ?? []) {
-    let decryptedBody = entry.body || "";
+  const numericId = parseInt(id, 10);
+  if (isTauri() && !isNaN(numericId)) {
     try {
-      decryptedBody = await decryptVaultText(entry.body || "", pin, userId);
+      await invoke("delete_task", { id: numericId });
+      dataCache.invalidate("tasks");
+      return;
     } catch (e) {
-      console.warn(`Could not decrypt entry for date ${entry.date}:`, e);
+      console.warn("[Tauri IPC] delete_task error, falling back to localDb:", e);
     }
-
-    entries.push({
-      ...entry,
-      body: decryptedBody,
-      mood: (entry.mood as DiaryMood) || null,
-    });
   }
 
-  return entries;
+  localDb.deleteTask(id);
+  dataCache.invalidate("tasks");
 }
 
-async function saveDiaryEntry(
-  date: string,
-  pin: string,
-  body: Partial<DiaryEntry>
-): Promise<DiaryEntry> {
-  if (!pin) throw new Error("Diary is locked. Unlock to save.");
-
-  const userId = await requireUserId();
-
-  // Encrypt body using AES-256-GCM before writing to Supabase / SQLite
-  const rawBody = body.body || "";
-  const encryptedBody = await encryptVaultText(rawBody, pin, userId);
-
-  // Upsert by user_id + date (unique constraint)
-  const { data, error } = await withTimeout(
-    supabase
-      .from("diary_entries")
-      .upsert(
-        {
-          user_id: userId,
-          date,
-          body: encryptedBody,
-          mood: (body.mood as any) || null,
-        },
-        { onConflict: "user_id,date" }
-      )
-      .select()
-      .single()
-  );
-
-  if (error) throw error;
-
-  return {
-    ...data,
-    body: rawBody, // Return decrypted in-memory plaintext to active UI
-    mood: (data.mood as DiaryMood) || null,
-  };
-}
-
-// ── Calendar ─────────────────────────────────────────────────────────────────
-
-async function getYearHeatmap(year: number): Promise<Record<number, number>> {
-  const userId = await requireUserId();
-  const from = `${year}-01-01`;
-  const to = `${year}-12-31`;
-
-  const [eventsRes, tasksRes] = await Promise.all([
-    withTimeout(
-      supabase
-        .from("calendar_events")
-        .select("event_date")
-        .eq("user_id", userId)
-        .is("deleted_at", null)
-        .gte("event_date", from)
-        .lte("event_date", to)
-    ),
-    withTimeout(
-      supabase
-        .from("tasks")
-        .select("due_at")
-        .eq("user_id", userId)
-        .is("deleted_at", null)
-        .gte("due_at", `${year}-01-01T00:00:00`)
-        .lte("due_at", `${year}-12-31T23:59:59`)
-    ),
-  ]);
-
-  if (eventsRes.error) throw eventsRes.error;
-  if (tasksRes.error) throw tasksRes.error;
-
-  const heatmap: Record<number, number> = {};
-  (eventsRes.data ?? []).forEach((row) => {
-    const month = parseInt(row.event_date.split("-")[1], 10);
-    heatmap[month] = (heatmap[month] || 0) + 1;
-  });
-  (tasksRes.data ?? []).forEach((row) => {
-    if (row.due_at) {
-      const month = new Date(row.due_at).getMonth() + 1;
-      heatmap[month] = (heatmap[month] || 0) + 1;
-    }
-  });
-  return heatmap;
-}
-
-async function getCalendarDay(date: string): Promise<CalendarEvent[]> {
-  const userId = await requireUserId();
-  const query = supabase
-    .from("calendar_events")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("event_date", date)
-    .is("deleted_at", null)
-    .order("start_at", { ascending: true });
-  const { data, error } = await withTimeout(query);
-  if (error) throw error;
-  return data ?? [];
-}
-
-async function getCalendarRange(
-  from: string,
-  to: string
-): Promise<CalendarEvent[]> {
-  const userId = await requireUserId();
-  const query = supabase
-    .from("calendar_events")
-    .select("*")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .gte("event_date", from)
-    .lte("event_date", to)
-    .order("event_date", { ascending: true });
-  const { data, error } = await withTimeout(query);
-  if (error) throw error;
-  return data ?? [];
-}
-
-async function createCalendarEvent(
-  event: Partial<CalendarEvent>
-): Promise<CalendarEvent> {
-  const userId = await requireUserId();
-  const { data, error } = await withTimeout(
-    supabase
-      .from("calendar_events")
-      .insert({
-        user_id: userId,
-        title: event.title,
-        description: event.description || null,
-        event_date: event.event_date,
-        start_at: event.start_at || null,
-        end_at: event.end_at || null,
-        event_type: event.event_type || "NOTE",
-        remind_at: event.remind_at || null,
-        reminder_sent: event.reminder_sent || false,
-      })
-      .select()
-      .single()
-  );
-  if (error) throw error;
-  return data;
-}
-
-async function updateCalendarEvent(
-  id: string,
-  patch: Partial<CalendarEvent> | string
-): Promise<void> {
-  const updates = typeof patch === "string" ? { title: patch } : patch;
-  const { error } = await withTimeout(
-    supabase
-      .from("calendar_events")
-      .update(updates)
-      .eq("id", id)
-  );
-  if (error) throw error;
-}
-
-async function deleteCalendarEvent(id: string): Promise<void> {
-  const { error } = await withTimeout(
-    supabase
-      .from("calendar_events")
-      .update({ deleted_at: new Date().toISOString() })
-      .eq("id", id)
-  );
-  if (error) throw error;
-}
-
-// ── Expenses ─────────────────────────────────────────────────────────────────
-
-async function getExpenses(): Promise<Expense[]> {
-  const userId = await requireUserId();
-  const query = supabase
-    .from("expenses")
-    .select("*")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .order("date", { ascending: false });
-  const { data, error } = await withTimeout(query);
-  if (error) throw error;
-  return data ?? [];
-}
-
-async function createExpense(
-  expense: Omit<Expense, "id" | "created_at" | "updated_at" | "deleted_at" | "user_id">
-): Promise<Expense> {
-  const userId = await requireUserId();
-  const { data, error } = await withTimeout(
-    supabase
-      .from("expenses")
-      .insert({
-        user_id: userId,
-        amount: expense.amount,
-        category: expense.category,
-        description: expense.description || null,
-        date: expense.date,
-        expense_type: expense.expense_type,
-      })
-      .select()
-      .single()
-  );
-  if (error) throw error;
-  return data;
-}
-
-async function deleteExpense(id: string): Promise<void> {
-  const { error } = await withTimeout(
-    supabase
-      .from("expenses")
-      .update({ deleted_at: new Date().toISOString() })
-      .eq("id", id)
-  );
-  if (error) throw error;
-}
-
-// ── Projects ─────────────────────────────────────────────────────────────────
+// ==============================================================================
+// Projects & Project Tasks
+// ==============================================================================
 
 async function getProjects(): Promise<Project[]> {
-  const cached = dataCache.get<Project[]>("projects");
-  try {
-    const userId = await requireUserId();
-    const query = supabase
-      .from("projects")
-      .select("*")
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false });
-    const { data, error } = await withTimeout(query, 3500);
-    if (!error && data) {
-      dataCache.set("projects", data);
-      return data;
+  if (isTauri()) {
+    try {
+      const list = await invoke<any[]>("get_projects", { userId: 1 });
+      const mapped = list.map((p) => ({
+        id: String(p.id),
+        user_id: LOCAL_USER_ID,
+        title: p.title,
+        description: p.description || null,
+        created_at: p.createdAt || new Date().toISOString(),
+        updated_at: p.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      }));
+      dataCache.set("projects", mapped);
+      return mapped;
+    } catch (e) {
+      console.warn("[Tauri IPC] get_projects error, falling back to localDb:", e);
     }
-  } catch (err) {
-    if (cached) return cached;
-    console.warn("getProjects remote fetch failed, using fallback:", err);
-    return [];
   }
-  return cached ?? [];
+
+  const projects = localDb.getProjects();
+  dataCache.set("projects", projects);
+  return projects;
 }
 
 async function createProject(
   project: Pick<Project, "title"> & { description?: string | null }
 ): Promise<Project> {
-  const userId = await requireUserId();
-  const { data, error } = await withTimeout(
-    supabase
-      .from("projects")
-      .insert({
-        user_id: userId,
-        title: project.title,
-        description: project.description || null,
-      })
-      .select()
-      .single()
-  );
-  if (error) throw error;
-  return data;
+  if (isTauri()) {
+    try {
+      const p = await invoke<any>("create_project", {
+        userId: 1,
+        title: project.title.trim(),
+        description: project.description?.trim() || null,
+      });
+      dataCache.invalidate("projects");
+      return {
+        id: String(p.id),
+        user_id: LOCAL_USER_ID,
+        title: p.title,
+        description: p.description || null,
+        created_at: p.createdAt || new Date().toISOString(),
+        updated_at: p.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      };
+    } catch (e) {
+      console.warn("[Tauri IPC] create_project error, falling back to localDb:", e);
+    }
+  }
+
+  const created = localDb.createProject(project);
+  dataCache.invalidate("projects");
+  return created;
 }
 
 async function deleteProject(id: string): Promise<void> {
-  const { error } = await withTimeout(
-    supabase
-      .from("projects")
-      .update({ deleted_at: new Date().toISOString() })
-      .eq("id", id)
-  );
-  if (error) throw error;
+  const numericId = parseInt(id, 10);
+  if (isTauri() && !isNaN(numericId)) {
+    try {
+      await invoke("delete_project", { id: numericId });
+      dataCache.invalidate("projects");
+      return;
+    } catch (e) {
+      console.warn("[Tauri IPC] delete_project error, falling back to localDb:", e);
+    }
+  }
+
+  localDb.deleteProject(id);
+  dataCache.invalidate("projects");
 }
 
 async function getProjectTasks(projectId: string): Promise<ProjectTask[]> {
-  // 1. Query unified tasks table bound to project_id first
-  try {
-    const { data: unifiedTasks } = await withTimeout(
-      supabase
-        .from("tasks")
-        .select("*")
-        .eq("project_id", projectId)
-        .is("deleted_at", null)
-        .order("created_at", { ascending: true }),
-      3500
-    );
-
-    if (unifiedTasks && unifiedTasks.length > 0) {
-      return unifiedTasks.map((t) => ({
-        id: t.id,
-        project_id: t.project_id || projectId,
+  const numericProjId = parseInt(projectId, 10);
+  if (isTauri() && !isNaN(numericProjId)) {
+    try {
+      const list = await invoke<any[]>("get_project_tasks", { projectId: numericProjId });
+      return list.map((t) => ({
+        id: String(t.id),
+        project_id: projectId,
         title: t.title,
-        description: t.description,
-        status: (t.status as ProjectTaskStatus) || (t.completed ? "DONE" : "TODO"),
-        created_at: t.created_at,
-        updated_at: t.updated_at,
-        deleted_at: t.deleted_at,
+        description: t.description || null,
+        status: (t.status as ProjectTaskStatus) || "TODO",
+        created_at: t.createdAt || new Date().toISOString(),
+        updated_at: t.createdAt || new Date().toISOString(),
+        deleted_at: null,
       }));
+    } catch (e) {
+      console.warn("[Tauri IPC] get_project_tasks error, falling back to localDb:", e);
     }
-  } catch (e) {
-    console.warn("Unified tasks query:", e);
   }
 
-  // 2. Fallback to legacy project_tasks table safely without throwing
-  try {
-    const query = supabase
-      .from("project_tasks")
-      .select("*")
-      .eq("project_id", projectId)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: true });
-    const { data, error } = await withTimeout(query, 3500);
-    if (!error && data) return data;
-  } catch {
-    // Both tables returned nothing or errored
-  }
-
-  return [];
+  return localDb.getProjectTasks(projectId);
 }
 
 async function createProjectTask(
@@ -616,101 +301,459 @@ async function createProjectTask(
     status?: ProjectTaskStatus;
   }
 ): Promise<ProjectTask> {
-  const status: TaskStatus = (task.status as TaskStatus) || "TODO";
-  const userId = await requireUserId();
-
-  // Create in unified tasks table so it appears in both Tasks and Projects
-  const { data, error } = await withTimeout(
-    supabase
-      .from("tasks")
-      .insert({
-        user_id: userId,
-        project_id: task.project_id,
+  const numericProjId = parseInt(task.project_id, 10);
+  if (isTauri() && !isNaN(numericProjId)) {
+    try {
+      const t = await invoke<any>("create_project_task", {
+        projectId: numericProjId,
         title: task.title,
         description: task.description || null,
-        status,
-        completed: status === "DONE",
-      })
-      .select()
-      .single()
-  );
-
-  if (error) {
-    // Fallback to legacy project_tasks
-    const { data: legacy, error: legacyErr } = await withTimeout(
-      supabase
-        .from("project_tasks")
-        .insert({
-          project_id: task.project_id,
-          title: task.title,
-          description: task.description || null,
-          status: task.status ?? "TODO",
-        })
-        .select()
-        .single()
-    );
-    if (legacyErr) throw legacyErr;
-    return legacy;
+        status: task.status || "TODO",
+      });
+      return {
+        id: String(t.id),
+        project_id: task.project_id,
+        title: t.title,
+        description: t.description || null,
+        status: (t.status as ProjectTaskStatus) || "TODO",
+        created_at: t.createdAt || new Date().toISOString(),
+        updated_at: t.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      };
+    } catch (e) {
+      console.warn("[Tauri IPC] create_project_task error, falling back to localDb:", e);
+    }
   }
 
-  return {
-    id: data.id,
-    project_id: data.project_id || task.project_id,
-    title: data.title,
-    description: data.description,
-    status: (data.status as ProjectTaskStatus) || (data.completed ? "DONE" : "TODO"),
-    created_at: data.created_at,
-    updated_at: data.updated_at,
-    deleted_at: data.deleted_at,
-  };
+  return localDb.createProjectTask({
+    projectId: task.project_id,
+    title: task.title,
+    description: task.description || null,
+    status: task.status || "TODO",
+  });
 }
 
-async function updateProjectTaskStatus(
-  id: string,
-  status: ProjectTaskStatus
-): Promise<void> {
-  const completed = status === "DONE";
-  // Try unified tasks first
-  const { error } = await withTimeout(
-    supabase
-      .from("tasks")
-      .update({ status, completed })
-      .eq("id", id)
-  );
-
-  // Also update legacy project_tasks table if it existed there
-  if (error) {
-    await withTimeout(
-      supabase
-        .from("project_tasks")
-        .update({ status })
-        .eq("id", id)
-    );
+async function updateProjectTaskStatus(id: string, status: ProjectTaskStatus): Promise<void> {
+  const numericId = parseInt(id, 10);
+  if (isTauri() && !isNaN(numericId)) {
+    try {
+      await invoke("update_project_task_status", { id: numericId, status });
+      return;
+    } catch (e) {
+      console.warn("[Tauri IPC] update_project_task_status error, falling back to localDb:", e);
+    }
   }
+
+  localDb.updateProjectTaskStatus(id, status);
 }
 
 async function deleteProjectTask(id: string): Promise<void> {
-  const now = new Date().toISOString();
-  await Promise.allSettled([
-    withTimeout(
-      supabase
-        .from("tasks")
-        .update({ deleted_at: now })
-        .eq("id", id)
-    ),
-    withTimeout(
-      supabase
-        .from("project_tasks")
-        .update({ deleted_at: now })
-        .eq("id", id)
-    ),
-  ]);
+  const numericId = parseInt(id, 10);
+  if (isTauri() && !isNaN(numericId)) {
+    try {
+      await invoke("delete_project_task", { id: numericId });
+      return;
+    } catch (e) {
+      console.warn("[Tauri IPC] delete_project_task error, falling back to localDb:", e);
+    }
+  }
+
+  localDb.deleteProjectTask(id);
 }
 
-// ── Export as api object ─────────────────────────────────────────────────────
+// ==============================================================================
+// Expenses
+// ==============================================================================
+
+async function getExpenses(): Promise<Expense[]> {
+  if (isTauri()) {
+    try {
+      const list = await invoke<any[]>("get_expenses", { userId: 1 });
+      const mapped = list.map((e) => ({
+        id: String(e.id),
+        user_id: LOCAL_USER_ID,
+        amount: Number(e.amount),
+        category: e.category,
+        description: e.description || null,
+        date: e.date,
+        expense_type: (e.expenseType as ExpenseType) || "EXPENSE",
+        created_at: e.createdAt || new Date().toISOString(),
+        updated_at: e.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      }));
+      dataCache.set("expenses", mapped);
+      return mapped;
+    } catch (e) {
+      console.warn("[Tauri IPC] get_expenses error, falling back to localDb:", e);
+    }
+  }
+
+  const exp = localDb.getExpenses();
+  dataCache.set("expenses", exp);
+  return exp;
+}
+
+async function createExpense(
+  expense: Omit<Expense, "id" | "user_id" | "created_at" | "updated_at" | "deleted_at">
+): Promise<Expense> {
+  if (isTauri()) {
+    try {
+      const e = await invoke<any>("create_expense", {
+        userId: 1,
+        amount: Number(expense.amount),
+        category: expense.category,
+        description: expense.description || null,
+        date: expense.date,
+        expenseType: expense.expense_type,
+      });
+      dataCache.invalidate("expenses");
+      return {
+        id: String(e.id),
+        user_id: LOCAL_USER_ID,
+        amount: Number(e.amount),
+        category: e.category,
+        description: e.description || null,
+        date: e.date,
+        expense_type: (e.expenseType as ExpenseType) || "EXPENSE",
+        created_at: e.createdAt || new Date().toISOString(),
+        updated_at: e.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      };
+    } catch (err) {
+      console.warn("[Tauri IPC] create_expense error, falling back to localDb:", err);
+    }
+  }
+
+  const created = localDb.createExpense(expense);
+  dataCache.invalidate("expenses");
+  return created;
+}
+
+async function deleteExpense(id: string): Promise<void> {
+  const numericId = parseInt(id, 10);
+  if (isTauri() && !isNaN(numericId)) {
+    try {
+      await invoke("delete_expense", { id: numericId });
+      dataCache.invalidate("expenses");
+      return;
+    } catch (e) {
+      console.warn("[Tauri IPC] delete_expense error, falling back to localDb:", e);
+    }
+  }
+
+  localDb.deleteExpense(id);
+  dataCache.invalidate("expenses");
+}
+
+// ==============================================================================
+// Calendar
+// ==============================================================================
+
+async function getCalendarDay(date: string): Promise<CalendarEvent[]> {
+  if (isTauri()) {
+    try {
+      const list = await invoke<any[]>("get_calendar_day", { userId: 1, date });
+      return list.map((c) => ({
+        id: String(c.id),
+        user_id: LOCAL_USER_ID,
+        title: c.title,
+        description: c.description || null,
+        event_date: c.eventDate || date,
+        start_at: c.startAt || null,
+        end_at: c.endAt || null,
+        event_type: (c.type as "TASK" | "NOTE") || "NOTE",
+        remind_at: c.remindAt || null,
+        reminder_sent: Boolean(c.reminderSent),
+        created_at: c.createdAt || new Date().toISOString(),
+        updated_at: c.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      }));
+    } catch (e) {
+      console.warn("[Tauri IPC] get_calendar_day error, falling back to localDb:", e);
+    }
+  }
+
+  return localDb.getCalendarDay(date);
+}
+
+async function getCalendarRange(from: string, to: string): Promise<CalendarEvent[]> {
+  if (isTauri()) {
+    try {
+      const list = await invoke<any[]>("get_calendar_range", { userId: 1, from, to });
+      return list.map((c) => ({
+        id: String(c.id),
+        user_id: LOCAL_USER_ID,
+        title: c.title,
+        description: c.description || null,
+        event_date: c.eventDate,
+        start_at: c.startAt || null,
+        end_at: c.endAt || null,
+        event_type: (c.type as "TASK" | "NOTE") || "NOTE",
+        remind_at: c.remindAt || null,
+        reminder_sent: Boolean(c.reminderSent),
+        created_at: c.createdAt || new Date().toISOString(),
+        updated_at: c.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      }));
+    } catch (e) {
+      console.warn("[Tauri IPC] get_calendar_range error, falling back to localDb:", e);
+    }
+  }
+
+  return localDb.getCalendarRange(from, to);
+}
+
+async function getYearHeatmap(year: number): Promise<Record<number, number>> {
+  if (isTauri()) {
+    try {
+      const map = await invoke<Record<number, number>>("get_year_heatmap", { userId: 1, year });
+      return map || {};
+    } catch (e) {
+      console.warn("[Tauri IPC] get_year_heatmap error, falling back to localDb:", e);
+    }
+  }
+
+  return localDb.getYearHeatmap(year);
+}
+
+async function createCalendarEvent(
+  event: Partial<CalendarEvent> & Pick<CalendarEvent, "title" | "event_date">
+): Promise<CalendarEvent> {
+  if (isTauri()) {
+    try {
+      const c = await invoke<any>("create_calendar_event", {
+        userId: 1,
+        title: event.title,
+        description: event.description || null,
+        eventDate: event.event_date,
+        startAt: event.start_at || null,
+        endAt: event.end_at || null,
+        eventType: event.event_type || "NOTE",
+      });
+      return {
+        id: String(c.id),
+        user_id: LOCAL_USER_ID,
+        title: c.title,
+        description: c.description || null,
+        event_date: c.eventDate,
+        start_at: c.startAt || null,
+        end_at: c.endAt || null,
+        event_type: (c.type as "TASK" | "NOTE") || "NOTE",
+        remind_at: null,
+        reminder_sent: false,
+        created_at: c.createdAt || new Date().toISOString(),
+        updated_at: c.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      };
+    } catch (e) {
+      console.warn("[Tauri IPC] create_calendar_event error, falling back to localDb:", e);
+    }
+  }
+
+  return localDb.createCalendarEvent({
+    title: event.title,
+    description: event.description || null,
+    event_date: event.event_date,
+    start_at: event.start_at || null,
+    end_at: event.end_at || null,
+    event_type: event.event_type || "NOTE",
+  });
+}
+
+async function updateCalendarEvent(
+  id: string,
+  patch: Partial<
+    Omit<
+      CalendarEvent,
+      "id" | "user_id" | "created_at" | "updated_at" | "deleted_at" | "completed"
+    >
+  >
+): Promise<CalendarEvent> {
+  const numericId = parseInt(id, 10);
+  if (isTauri() && !isNaN(numericId) && patch.title) {
+    try {
+      await invoke("update_calendar_event", { id: numericId, title: patch.title });
+    } catch (e) {
+      console.warn("[Tauri IPC] update_calendar_event error:", e);
+    }
+  }
+
+  return localDb.updateCalendarEvent(id, patch);
+}
+
+async function deleteCalendarEvent(id: string): Promise<void> {
+  const numericId = parseInt(id, 10);
+  if (isTauri() && !isNaN(numericId)) {
+    try {
+      await invoke("delete_calendar_event", { id: numericId });
+      return;
+    } catch (e) {
+      console.warn("[Tauri IPC] delete_calendar_event error:", e);
+    }
+  }
+
+  localDb.deleteCalendarEvent(id);
+}
+
+// ==============================================================================
+// Diary & Vault (AES-256-GCM Encrypted)
+// ==============================================================================
+
+async function checkDiaryPin(): Promise<boolean> {
+  if (isTauri()) {
+    try {
+      return await invoke<boolean>("check_diary_pin", { userId: 1 });
+    } catch (e) {
+      console.warn("[Tauri IPC] check_diary_pin error:", e);
+    }
+  }
+
+  return localDb.checkDiaryPin();
+}
+
+async function verifyDiaryPin(pin: string): Promise<boolean> {
+  if (isTauri()) {
+    try {
+      return await invoke<boolean>("verify_diary_pin", { userId: 1, pin: pin.trim() });
+    } catch (e) {
+      console.warn("[Tauri IPC] verify_diary_pin error:", e);
+    }
+  }
+
+  return localDb.verifyDiaryPin(pin);
+}
+
+async function setDiaryPin(pin: string): Promise<void> {
+  if (isTauri()) {
+    try {
+      await invoke("set_diary_pin", { userId: 1, pin: pin.trim() });
+    } catch (e) {
+      console.warn("[Tauri IPC] set_diary_pin error:", e);
+    }
+  }
+  localDb.setDiaryPin(pin);
+}
+
+async function resetDiaryPin(newPin: string): Promise<void> {
+  return setDiaryPin(newPin);
+}
+
+async function removeDiaryPin(): Promise<void> {
+  if (isTauri()) {
+    try {
+      await invoke("remove_diary_pin", { userId: 1 });
+    } catch (e) {
+      console.warn("[Tauri IPC] remove_diary_pin error:", e);
+    }
+  }
+  localDb.removeDiaryPin();
+}
+
+async function getDiaryEntries(pin: string): Promise<DiaryEntry[]> {
+  if (isTauri()) {
+    try {
+      const list = await invoke<any[]>("get_diary_entries", { userId: 1 });
+      const entries: DiaryEntry[] = [];
+      for (const entry of list) {
+        let decryptedBody = entry.body || "";
+        if (pin) {
+          try {
+            decryptedBody = await decryptVaultText(entry.body || "", pin, LOCAL_USER_ID);
+          } catch (e) {
+            console.warn("Vault decrypt warning:", e);
+          }
+        }
+        entries.push({
+          id: String(entry.id),
+          user_id: LOCAL_USER_ID,
+          date: entry.date,
+          body: decryptedBody,
+          mood: (entry.mood as DiaryMood) || null,
+          created_at: entry.createdAt || new Date().toISOString(),
+          updated_at: entry.updatedAt || new Date().toISOString(),
+          deleted_at: null,
+        });
+      }
+      return entries;
+    } catch (e) {
+      console.warn("[Tauri IPC] get_diary_entries error:", e);
+    }
+  }
+
+  const entries = localDb.getDiaryEntries();
+  const decrypted: DiaryEntry[] = [];
+  for (const entry of entries) {
+    let body = entry.body || "";
+    if (pin) {
+      try {
+        body = await decryptVaultText(entry.body || "", pin, LOCAL_USER_ID);
+      } catch {}
+    }
+    decrypted.push({ ...entry, body });
+  }
+  return decrypted;
+}
+
+async function saveDiaryEntry(
+  date: string,
+  pin: string,
+  body: Partial<DiaryEntry>
+): Promise<DiaryEntry> {
+  const rawBody = body.body || "";
+  let encryptedBody = rawBody;
+
+  if (pin) {
+    try {
+      encryptedBody = await encryptVaultText(rawBody, pin, LOCAL_USER_ID);
+    } catch (e) {
+      console.warn("Vault encrypt error:", e);
+    }
+  }
+
+  if (isTauri()) {
+    try {
+      const entry = await invoke<any>("save_diary_entry", {
+        userId: 1,
+        date,
+        body: encryptedBody,
+        mood: body.mood || null,
+      });
+
+      return {
+        id: String(entry.id),
+        user_id: LOCAL_USER_ID,
+        date: entry.date,
+        body: rawBody,
+        mood: (entry.mood as DiaryMood) || null,
+        created_at: entry.createdAt || new Date().toISOString(),
+        updated_at: entry.updatedAt || new Date().toISOString(),
+        deleted_at: null,
+      };
+    } catch (e) {
+      console.warn("[Tauri IPC] save_diary_entry error:", e);
+    }
+  }
+
+  // Local storage save
+  localDb.saveDiaryEntry(date, { ...body, body: encryptedBody });
+  return {
+    id: String(Date.now()),
+    user_id: LOCAL_USER_ID,
+    date,
+    body: rawBody,
+    mood: body.mood || null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    deleted_at: null,
+  };
+}
+
+// ==============================================================================
+// Public API Export
+// ==============================================================================
 
 export const api = {
-  // Profile
+  // Profiles
   getProfile,
   upsertProfile,
   // Tasks

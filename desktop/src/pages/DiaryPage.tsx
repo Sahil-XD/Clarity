@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import dayjs from "dayjs";
 import {
-  Lock, Unlock, Key, BookOpen, AlertCircle, Loader2,
+  Lock, Unlock, Key, BookOpen, AlertCircle,
   Plus, ChevronRight, Pencil, CalendarDays, Check,
   Sparkles, Shuffle, Smile,
-  RotateCcw, Delete, Settings, X, Trash2,
-  Sparkle, FileText, ChevronDown, ChevronUp, DollarSign, CheckSquare
+  Settings, X,
+  FileText, DollarSign, CheckSquare
 } from "lucide-react";
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { api } from "@/lib/api";
@@ -13,7 +13,7 @@ import { sound } from "@/lib/sound";
 import { dataCache } from "@/lib/dataCache";
 import type { DiaryEntry, DiaryMood, Task, Expense } from "@/lib/types";
 import { clsx } from "clsx";
-import { ClarityLogo } from "@/components/ClarityLogo";
+
 
 // Curated daily reflection prompts for personal mindfulness
 const DAILY_PROMPTS = [
@@ -66,9 +66,9 @@ function LockScreen({
   const [resetStep, setResetStep] = useState<1 | 2>(1);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [hasPin, setHasPin] = useState<boolean | null>(null);
+  // hasPin
   const [success, setSuccess] = useState(false);
-  const [keyParticles, setKeyParticles] = useState<{ id: number; key: string }[]>([]);
+  
   const [activeKey, setActiveKey] = useState<string | null>(null);
 
   const mouseX = useMotionValue(0);
@@ -84,12 +84,12 @@ function LockScreen({
     api.checkDiaryPin()
       .then((exists) => {
         if (!mounted) return;
-        setHasPin(exists);
+        // exists
         if (!exists) setMode("setup");
       })
       .catch(() => {
         if (!mounted) return;
-        setHasPin(false);
+        // false
         setMode("setup");
       });
     return () => { mounted = false; };
@@ -109,11 +109,11 @@ function LockScreen({
     mouseY.set(0);
   };
 
-  const spawnParticle = (k: string) => {
-    const id = Date.now() + Math.random();
-    setKeyParticles((p) => [...p.slice(-4), { id, key: k }]);
+  const spawnParticle = (_k: string) => {
+    // const id = Date.now();
+    
     setTimeout(() => {
-      setKeyParticles((p) => p.filter((item) => item.id !== id));
+      
     }, 600);
   };
 

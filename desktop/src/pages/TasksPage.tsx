@@ -1,9 +1,9 @@
-﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Plus, Trash2, CalendarDays, Bell, FolderKanban,
-  Check, AlertCircle, X, ChevronRight, Clock, Sparkles
+  Check, AlertCircle, X
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import { sound } from "@/lib/sound";
 import { dataCache } from "@/lib/dataCache";
