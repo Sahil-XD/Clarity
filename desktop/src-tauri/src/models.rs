@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+﻿use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -17,7 +17,11 @@ pub struct Task {
     pub title: String,
     pub description: Option<String>,
     pub completed: bool,
+    pub status: Option<String>,
+    pub project_id: Option<String>,
     pub due_at: Option<String>,
+    pub remind_at: Option<String>,
+    pub reminder_sent: Option<bool>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -44,6 +48,8 @@ pub struct CalendarEvent {
     pub end_at: Option<String>,
     #[serde(rename = "type")]
     pub event_type: String,
+    pub remind_at: Option<String>,
+    pub reminder_sent: Option<bool>,
     pub created_at: String,
 }
 
@@ -85,4 +91,3 @@ pub struct ProjectTask {
     pub status: String,
     pub created_at: String,
 }
-

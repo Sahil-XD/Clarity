@@ -1,4 +1,4 @@
-export interface Profile {
+﻿export interface Profile {
   id: string; // UUID, matches auth.users.id
   username: string;
   email: string;
@@ -8,12 +8,16 @@ export interface Profile {
   updated_at: string;
 }
 
+export type TaskStatus = "TODO" | "IN_PROGRESS" | "DONE";
+
 export interface Task {
   id: string;
   user_id: string;
   title: string;
   description: string | null;
   completed: boolean;
+  status?: TaskStatus;
+  project_id?: string | null;
   due_at: string | null;
   remind_at: string | null;
   reminder_sent: boolean;
@@ -22,12 +26,20 @@ export interface Task {
   deleted_at: string | null;
 }
 
+export type DiaryMood =
+  | "Energized"
+  | "Peaceful"
+  | "Productive"
+  | "Chilled"
+  | "Tired"
+  | "Thoughtful";
+
 export interface DiaryEntry {
   id: string;
   user_id: string;
   date: string; // YYYY-MM-DD
   body: string;
-  mood: "HAPPY" | "NEUTRAL" | "SAD" | "ANXIOUS" | "EXCITED" | null;
+  mood: DiaryMood | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

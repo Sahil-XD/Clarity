@@ -1,7 +1,10 @@
 ﻿import { supabase } from "./supabase";
+import { encryptVaultText, decryptVaultText } from "./encryption";
 import type {
   Task,
+  TaskStatus,
   DiaryEntry,
+  DiaryMood,
   CalendarEvent,
   Expense,
   Project,
@@ -11,42 +14,36 @@ import type {
 } from "./types";
 
 /**
+ * In-memory cached user ID to eliminate redundant auth network trips
+ */
+let cachedUserId: string | null = null;
+
+if (typeof window !== "undefined") {
+  supabase.auth.onAuthStateChange((_, session) => {
+    cachedUserId = session?.user?.id ?? null;
+  });
+}
+
+/**
  * Get the current authenticated user's ID, or throw.
  */
 async function requireUserId(): Promise<string> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (user) return user.id;
+  if (cachedUserId) return cachedUserId;
 
   const { data: { session } } = await supabase.auth.getSession();
-  if (session?.user) return session.user.id;
+  if (session?.user) {
+    cachedUserId = session.user.id;
+    return cachedUserId;
+  }
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) {
+    cachedUserId = user.id;
+    return cachedUserId;
+  }
 
   throw new Error("Not authenticated");
 }
-
-// ─── Profile ────────────────────────────────────────────────────────────────
-
-async function getProfile(): Promise<Profile | null> {
-  const userId = await requireUserId();
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", userId)
-    .single();
-  if (error && error.code !== "PGRST116") throw error; // PGRST116 = no rows
-  return data;
-}
-
-async function upsertProfile(profile: Partial<Profile>): Promise<Profile> {
-  const userId = await requireUserId();
-  const { data, error } = await supabase
-    .from("profiles")
-    .upsert({ id: userId, ...profile }, { onConflict: "id" })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
-}
-
 
 function withTimeout<T>(
   promise: PromiseLike<T>,
@@ -61,7 +58,34 @@ function withTimeout<T>(
   ]);
 }
 
-// ─── Tasks ──────────────────────────────────────────────────────────────────
+// ── Profile ──────────────────────────────────────────────────────────────────
+
+async function getProfile(): Promise<Profile | null> {
+  const userId = await requireUserId();
+  const query = supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", userId)
+    .single();
+  const { data, error } = await withTimeout(query);
+  if (error && error.code !== "PGRST116") throw error; // PGRST116 = no rows
+  return data;
+}
+
+async function upsertProfile(profile: Partial<Profile>): Promise<Profile> {
+  const userId = await requireUserId();
+  const { data, error } = await withTimeout(
+    supabase
+      .from("profiles")
+      .upsert({ id: userId, ...profile }, { onConflict: "id" })
+      .select()
+      .single()
+  );
+  if (error) throw error;
+  return data;
+}
+
+// ── Tasks ────────────────────────────────────────────────────────────────────
 
 async function getTasks(pendingOnly = false): Promise<Task[]> {
   const userId = await requireUserId();
@@ -78,75 +102,90 @@ async function getTasks(pendingOnly = false): Promise<Task[]> {
 
   const { data, error } = await withTimeout(query);
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []).map((t) => ({
+    ...t,
+    status: (t.status as TaskStatus) || (t.completed ? "DONE" : "TODO"),
+  }));
 }
 
 async function createTask(task: Partial<Task>): Promise<Task> {
   const userId = await requireUserId();
-  const { data, error } = await supabase
-    .from("tasks")
-    .insert({
-      user_id: userId,
-      title: task.title,
-      description: task.description || null,
-      due_at: task.due_at || null,
-      completed: false,
-    })
-    .select()
-    .single();
+  const status: TaskStatus = task.status || (task.completed ? "DONE" : "TODO");
+  const completed = task.completed !== undefined ? task.completed : status === "DONE";
+
+  const { data, error } = await withTimeout(
+    supabase
+      .from("tasks")
+      .insert({
+        user_id: userId,
+        title: task.title,
+        description: task.description || null,
+        completed,
+        status,
+        project_id: task.project_id || null,
+        due_at: task.due_at || null,
+        remind_at: task.remind_at || null,
+        reminder_sent: task.reminder_sent || false,
+      })
+      .select()
+      .single()
+  );
   if (error) throw error;
-  return data;
+  return {
+    ...data,
+    status: (data.status as TaskStatus) || (data.completed ? "DONE" : "TODO"),
+  };
 }
 
 async function updateTask(id: string, patch: Partial<Task>): Promise<Task> {
   const updates: Record<string, unknown> = {};
   if (patch.title !== undefined) updates.title = patch.title;
   if (patch.description !== undefined) updates.description = patch.description;
-  if (patch.completed !== undefined) updates.completed = patch.completed;
+  if (patch.project_id !== undefined) updates.project_id = patch.project_id;
   if (patch.due_at !== undefined) updates.due_at = patch.due_at;
+  if (patch.remind_at !== undefined) updates.remind_at = patch.remind_at;
+  if (patch.reminder_sent !== undefined) updates.reminder_sent = patch.reminder_sent;
 
-  const { data, error } = await supabase
-    .from("tasks")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
+  if (patch.completed !== undefined) {
+    updates.completed = patch.completed;
+    if (patch.status === undefined) {
+      updates.status = patch.completed ? "DONE" : "TODO";
+    }
+  }
+  if (patch.status !== undefined) {
+    updates.status = patch.status;
+    if (patch.completed === undefined) {
+      updates.completed = patch.status === "DONE";
+    }
+  }
+
+  const { data, error } = await withTimeout(
+    supabase
+      .from("tasks")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single()
+  );
   if (error) throw error;
-  return data;
+  return {
+    ...data,
+    status: (data.status as TaskStatus) || (data.completed ? "DONE" : "TODO"),
+  };
 }
 
 async function deleteTask(id: string): Promise<void> {
-  // Soft delete
-  const { error } = await supabase
-    .from("tasks")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
+  const now = new Date().toISOString();
+  const { error } = await withTimeout(
+    supabase
+      .from("tasks")
+      .update({ deleted_at: now })
+      .eq("id", id)
+  );
   if (error) throw error;
 }
 
-// ─── Diary ────────────────────────────────────────────────────────────────
-
-const UI_TO_DB_MOOD: Record<string, string> = {
-  Energized: "EXCITED",
-  Peaceful: "HAPPY",
-  Productive: "HAPPY",
-  Chilled: "NEUTRAL",
-  Thoughtful: "NEUTRAL",
-  Tired: "SAD",
-  HAPPY: "HAPPY",
-  NEUTRAL: "NEUTRAL",
-  SAD: "SAD",
-  ANXIOUS: "ANXIOUS",
-  EXCITED: "EXCITED",
-};
-
-const DB_TO_UI_MOOD: Record<string, string> = {
-  EXCITED: "Energized",
-  HAPPY: "Peaceful",
-  NEUTRAL: "Chilled",
-  SAD: "Tired",
-  ANXIOUS: "Thoughtful",
-};
+// ── Diary & Private Vault ────────────────────────────────────────────────────
 
 /**
  * Hash PIN using salted SHA-256 with Web Crypto API so plaintext PIN is never stored
@@ -173,7 +212,6 @@ async function verifyDiaryPin(pin: string): Promise<boolean> {
   const legacyHash = await hashPin(pin, "");
   if (profile.diary_pin_hash === saltedHash) return true;
   if (profile.diary_pin_hash === legacyHash || profile.diary_pin_hash === pin.trim()) {
-    // Attempt non-blocking upgrade to user-salted hash
     setDiaryPin(pin).catch((err) => console.warn("Could not upgrade PIN hash:", err));
     return true;
   }
@@ -183,21 +221,25 @@ async function verifyDiaryPin(pin: string): Promise<boolean> {
 async function setDiaryPin(pin: string): Promise<void> {
   const userId = await requireUserId();
   const hashed = await hashPin(pin, userId);
-  const { data: updated, error } = await supabase
-    .from("profiles")
-    .update({ diary_pin_hash: hashed })
-    .eq("id", userId)
-    .select();
+  const { data: updated, error } = await withTimeout(
+    supabase
+      .from("profiles")
+      .update({ diary_pin_hash: hashed })
+      .eq("id", userId)
+      .select()
+  );
   if (error || !updated || updated.length === 0) {
     const { data: { user } } = await supabase.auth.getUser();
-    await supabase.from("profiles").upsert(
-      {
-        id: userId,
-        diary_pin_hash: hashed,
-        email: user?.email || "",
-        username: user?.user_metadata?.username || user?.email?.split("@")[0] || "user",
-      },
-      { onConflict: "id" }
+    await withTimeout(
+      supabase.from("profiles").upsert(
+        {
+          id: userId,
+          diary_pin_hash: hashed,
+          email: user?.email || "",
+          username: user?.user_metadata?.username || user?.email?.split("@")[0] || "user",
+        },
+        { onConflict: "id" }
+      )
     );
   }
 }
@@ -208,10 +250,12 @@ async function resetDiaryPin(newPin: string): Promise<void> {
 
 async function removeDiaryPin(): Promise<void> {
   const userId = await requireUserId();
-  await supabase
-    .from("profiles")
-    .update({ diary_pin_hash: null })
-    .eq("id", userId);
+  await withTimeout(
+    supabase
+      .from("profiles")
+      .update({ diary_pin_hash: null })
+      .eq("id", userId)
+  );
 }
 
 async function getDiaryEntries(pin: string): Promise<DiaryEntry[]> {
@@ -224,18 +268,33 @@ async function getDiaryEntries(pin: string): Promise<DiaryEntry[]> {
   }
 
   const userId = await requireUserId();
-  const { data, error } = await supabase
+  const query = supabase
     .from("diary_entries")
     .select("*")
     .eq("user_id", userId)
     .is("deleted_at", null)
     .order("date", { ascending: false });
+  const { data, error } = await withTimeout(query);
   if (error) throw error;
 
-  return (data ?? []).map((entry) => ({
-    ...entry,
-    mood: (entry.mood && DB_TO_UI_MOOD[entry.mood]) ? (DB_TO_UI_MOOD[entry.mood] as any) : entry.mood,
-  }));
+  // Decrypt each entry in memory using AES-256-GCM
+  const entries: DiaryEntry[] = [];
+  for (const entry of data ?? []) {
+    let decryptedBody = entry.body || "";
+    try {
+      decryptedBody = await decryptVaultText(entry.body || "", pin, userId);
+    } catch (e) {
+      console.warn(`Could not decrypt entry for date ${entry.date}:`, e);
+    }
+
+    entries.push({
+      ...entry,
+      body: decryptedBody,
+      mood: (entry.mood as DiaryMood) || null,
+    });
+  }
+
+  return entries;
 }
 
 async function saveDiaryEntry(
@@ -247,34 +306,37 @@ async function saveDiaryEntry(
 
   const userId = await requireUserId();
 
-  // Map mood so it never violates the database check constraint
-  const rawMood = body.mood;
-  const dbMood = rawMood ? (UI_TO_DB_MOOD[rawMood] || null) : null;
+  // Encrypt body using AES-256-GCM before writing to Supabase / SQLite
+  const rawBody = body.body || "";
+  const encryptedBody = await encryptVaultText(rawBody, pin, userId);
 
   // Upsert by user_id + date (unique constraint)
-  const { data, error } = await supabase
-    .from("diary_entries")
-    .upsert(
-      {
-        user_id: userId,
-        date,
-        body: body.body || "",
-        mood: dbMood as any,
-      },
-      { onConflict: "user_id,date" }
-    )
-    .select()
-    .single();
+  const { data, error } = await withTimeout(
+    supabase
+      .from("diary_entries")
+      .upsert(
+        {
+          user_id: userId,
+          date,
+          body: encryptedBody,
+          mood: (body.mood as any) || null,
+        },
+        { onConflict: "user_id,date" }
+      )
+      .select()
+      .single()
+  );
 
   if (error) throw error;
 
   return {
     ...data,
-    mood: (data.mood && DB_TO_UI_MOOD[data.mood]) ? (DB_TO_UI_MOOD[data.mood] as any) : data.mood,
+    body: rawBody, // Return decrypted in-memory plaintext to active UI
+    mood: (data.mood as DiaryMood) || null,
   };
 }
 
-// ─── Calendar ───────────────────────────────────────────────────────────────
+// ── Calendar ─────────────────────────────────────────────────────────────────
 
 async function getYearHeatmap(year: number): Promise<Record<number, number>> {
   const userId = await requireUserId();
@@ -282,20 +344,24 @@ async function getYearHeatmap(year: number): Promise<Record<number, number>> {
   const to = `${year}-12-31`;
 
   const [eventsRes, tasksRes] = await Promise.all([
-    supabase
-      .from("calendar_events")
-      .select("event_date")
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .gte("event_date", from)
-      .lte("event_date", to),
-    supabase
-      .from("tasks")
-      .select("due_at")
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .gte("due_at", `${year}-01-01T00:00:00`)
-      .lte("due_at", `${year}-12-31T23:59:59`),
+    withTimeout(
+      supabase
+        .from("calendar_events")
+        .select("event_date")
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .gte("event_date", from)
+        .lte("event_date", to)
+    ),
+    withTimeout(
+      supabase
+        .from("tasks")
+        .select("due_at")
+        .eq("user_id", userId)
+        .is("deleted_at", null)
+        .gte("due_at", `${year}-01-01T00:00:00`)
+        .lte("due_at", `${year}-12-31T23:59:59`)
+    ),
   ]);
 
   if (eventsRes.error) throw eventsRes.error;
@@ -317,13 +383,14 @@ async function getYearHeatmap(year: number): Promise<Record<number, number>> {
 
 async function getCalendarDay(date: string): Promise<CalendarEvent[]> {
   const userId = await requireUserId();
-  const { data, error } = await supabase
+  const query = supabase
     .from("calendar_events")
     .select("*")
     .eq("user_id", userId)
     .eq("event_date", date)
     .is("deleted_at", null)
     .order("start_at", { ascending: true });
+  const { data, error } = await withTimeout(query);
   if (error) throw error;
   return data ?? [];
 }
@@ -350,43 +417,52 @@ async function createCalendarEvent(
   event: Partial<CalendarEvent>
 ): Promise<CalendarEvent> {
   const userId = await requireUserId();
-  const { data, error } = await supabase
-    .from("calendar_events")
-    .insert({
-      user_id: userId,
-      title: event.title,
-      description: event.description || null,
-      event_date: event.event_date,
-      start_at: event.start_at || null,
-      end_at: event.end_at || null,
-      event_type: event.event_type || "NOTE",
-    })
-    .select()
-    .single();
+  const { data, error } = await withTimeout(
+    supabase
+      .from("calendar_events")
+      .insert({
+        user_id: userId,
+        title: event.title,
+        description: event.description || null,
+        event_date: event.event_date,
+        start_at: event.start_at || null,
+        end_at: event.end_at || null,
+        event_type: event.event_type || "NOTE",
+        remind_at: event.remind_at || null,
+        reminder_sent: event.reminder_sent || false,
+      })
+      .select()
+      .single()
+  );
   if (error) throw error;
   return data;
 }
 
 async function updateCalendarEvent(
   id: string,
-  title: string
+  patch: Partial<CalendarEvent> | string
 ): Promise<void> {
-  const { error } = await supabase
-    .from("calendar_events")
-    .update({ title })
-    .eq("id", id);
+  const updates = typeof patch === "string" ? { title: patch } : patch;
+  const { error } = await withTimeout(
+    supabase
+      .from("calendar_events")
+      .update(updates)
+      .eq("id", id)
+  );
   if (error) throw error;
 }
 
 async function deleteCalendarEvent(id: string): Promise<void> {
-  const { error } = await supabase
-    .from("calendar_events")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
+  const { error } = await withTimeout(
+    supabase
+      .from("calendar_events")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", id)
+  );
   if (error) throw error;
 }
 
-// ─── Expenses ───────────────────────────────────────────────────────────────
+// ── Expenses ─────────────────────────────────────────────────────────────────
 
 async function getExpenses(): Promise<Expense[]> {
   const userId = await requireUserId();
@@ -405,31 +481,35 @@ async function createExpense(
   expense: Omit<Expense, "id" | "created_at" | "updated_at" | "deleted_at" | "user_id">
 ): Promise<Expense> {
   const userId = await requireUserId();
-  const { data, error } = await supabase
-    .from("expenses")
-    .insert({
-      user_id: userId,
-      amount: expense.amount,
-      category: expense.category,
-      description: expense.description || null,
-      date: expense.date,
-      expense_type: expense.expense_type,
-    })
-    .select()
-    .single();
+  const { data, error } = await withTimeout(
+    supabase
+      .from("expenses")
+      .insert({
+        user_id: userId,
+        amount: expense.amount,
+        category: expense.category,
+        description: expense.description || null,
+        date: expense.date,
+        expense_type: expense.expense_type,
+      })
+      .select()
+      .single()
+  );
   if (error) throw error;
   return data;
 }
 
 async function deleteExpense(id: string): Promise<void> {
-  const { error } = await supabase
-    .from("expenses")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
+  const { error } = await withTimeout(
+    supabase
+      .from("expenses")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", id)
+  );
   if (error) throw error;
 }
 
-// ─── Projects ───────────────────────────────────────────────────────────────
+// ── Projects ─────────────────────────────────────────────────────────────────
 
 async function getProjects(): Promise<Project[]> {
   const userId = await requireUserId();
@@ -448,28 +528,56 @@ async function createProject(
   project: Pick<Project, "title"> & { description?: string | null }
 ): Promise<Project> {
   const userId = await requireUserId();
-  const { data, error } = await supabase
-    .from("projects")
-    .insert({
-      user_id: userId,
-      title: project.title,
-      description: project.description || null,
-    })
-    .select()
-    .single();
+  const { data, error } = await withTimeout(
+    supabase
+      .from("projects")
+      .insert({
+        user_id: userId,
+        title: project.title,
+        description: project.description || null,
+      })
+      .select()
+      .single()
+  );
   if (error) throw error;
   return data;
 }
 
 async function deleteProject(id: string): Promise<void> {
-  const { error } = await supabase
-    .from("projects")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
+  const { error } = await withTimeout(
+    supabase
+      .from("projects")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", id)
+  );
   if (error) throw error;
 }
 
 async function getProjectTasks(projectId: string): Promise<ProjectTask[]> {
+  // Query unified tasks table bound to project_id first
+  const { data: unifiedTasks } = await withTimeout(
+    supabase
+      .from("tasks")
+      .select("*")
+      .eq("project_id", projectId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true })
+  ).catch(() => ({ data: null }));
+
+  if (unifiedTasks && unifiedTasks.length > 0) {
+    return unifiedTasks.map((t) => ({
+      id: t.id,
+      project_id: t.project_id || projectId,
+      title: t.title,
+      description: t.description,
+      status: (t.status as ProjectTaskStatus) || (t.completed ? "DONE" : "TODO"),
+      created_at: t.created_at,
+      updated_at: t.updated_at,
+      deleted_at: t.deleted_at,
+    }));
+  }
+
+  // Fallback to legacy project_tasks table
   const query = supabase
     .from("project_tasks")
     .select("*")
@@ -487,40 +595,98 @@ async function createProjectTask(
     status?: ProjectTaskStatus;
   }
 ): Promise<ProjectTask> {
-  const { data, error } = await supabase
-    .from("project_tasks")
-    .insert({
-      project_id: task.project_id,
-      title: task.title,
-      description: task.description || null,
-      status: task.status ?? "TODO",
-    })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+  const status: TaskStatus = (task.status as TaskStatus) || "TODO";
+  const userId = await requireUserId();
+
+  // Create in unified tasks table so it appears in both Tasks and Projects
+  const { data, error } = await withTimeout(
+    supabase
+      .from("tasks")
+      .insert({
+        user_id: userId,
+        project_id: task.project_id,
+        title: task.title,
+        description: task.description || null,
+        status,
+        completed: status === "DONE",
+      })
+      .select()
+      .single()
+  );
+
+  if (error) {
+    // Fallback to legacy project_tasks
+    const { data: legacy, error: legacyErr } = await withTimeout(
+      supabase
+        .from("project_tasks")
+        .insert({
+          project_id: task.project_id,
+          title: task.title,
+          description: task.description || null,
+          status: task.status ?? "TODO",
+        })
+        .select()
+        .single()
+    );
+    if (legacyErr) throw legacyErr;
+    return legacy;
+  }
+
+  return {
+    id: data.id,
+    project_id: data.project_id || task.project_id,
+    title: data.title,
+    description: data.description,
+    status: (data.status as ProjectTaskStatus) || (data.completed ? "DONE" : "TODO"),
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+    deleted_at: data.deleted_at,
+  };
 }
 
 async function updateProjectTaskStatus(
   id: string,
   status: ProjectTaskStatus
 ): Promise<void> {
-  const { error } = await supabase
-    .from("project_tasks")
-    .update({ status })
-    .eq("id", id);
-  if (error) throw error;
+  const completed = status === "DONE";
+  // Try unified tasks first
+  const { error } = await withTimeout(
+    supabase
+      .from("tasks")
+      .update({ status, completed })
+      .eq("id", id)
+  );
+
+  // Also update legacy project_tasks table if it existed there
+  if (error) {
+    await withTimeout(
+      supabase
+        .from("project_tasks")
+        .update({ status })
+        .eq("id", id)
+    );
+  }
 }
 
 async function deleteProjectTask(id: string): Promise<void> {
-  const { error } = await supabase
-    .from("project_tasks")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) throw error;
+  const now = new Date().toISOString();
+  await Promise.allSettled([
+    withTimeout(
+      supabase
+        .from("tasks")
+        .update({ deleted_at: now })
+        .eq("id", id)
+    ),
+    withTimeout(
+      supabase
+        .from("project_tasks")
+        .update({ deleted_at: now })
+        .eq("id", id)
+    ),
+  ]);
 }
 
-// ─── Export as api object ───────────────────────────────────────────────────
+// ── Export as api object ─────────────────────────────────────────────────────
 
 export const api = {
   // Profile
@@ -531,7 +697,7 @@ export const api = {
   createTask,
   updateTask,
   deleteTask,
-  // Diary
+  // Diary & Vault
   checkDiaryPin,
   verifyDiaryPin,
   setDiaryPin,

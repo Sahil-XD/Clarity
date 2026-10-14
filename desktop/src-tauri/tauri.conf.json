@@ -13,12 +13,13 @@
     "windows": [
       {
         "title": "Clarity",
+        "label": "main",
         "width": 1200,
         "height": 800,
         "minWidth": 900,
         "minHeight": 600,
         "resizable": true,
-        "decorations": true,
+        "decorations": false,
         "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
       }
     ],

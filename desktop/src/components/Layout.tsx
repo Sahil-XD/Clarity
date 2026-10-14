@@ -1,19 +1,23 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import {
   Calendar, BookOpen, CheckSquare, DollarSign, FolderKanban,
-  LogOut, Volume2, VolumeX, Sun, Moon
+  LogOut, Volume2, VolumeX, Sun, Moon, Minus, Square, X, Sparkles
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/lib/store";
 import { sound } from "@/lib/sound";
+import { startReminderService, stopReminderService } from "@/lib/reminderService";
+import { OmniInscribeModal } from "./OmniInscribeModal";
 import { clsx } from "clsx";
 import { ClarityLogo } from "./ClarityLogo";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export default function Layout() {
   const { username, avatarUrl, logout } = useAuth();
   const location = useLocation();
   const [muted, setMuted] = useState(sound.isMuted());
+  const [isOmniOpen, setIsOmniOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     return (document.documentElement.getAttribute("data-theme") as "light" | "dark") || "light";
   });
@@ -22,6 +26,51 @@ export default function Layout() {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("clarity_theme", theme);
   }, [theme]);
+
+  // Start background reminder service
+  useEffect(() => {
+    startReminderService();
+    return () => stopReminderService();
+  }, []);
+
+  // Listen for custom omni event
+  useEffect(() => {
+    const handleOpenOmni = () => setIsOmniOpen(true);
+    window.addEventListener("clarity:open-omni", handleOpenOmni);
+    return () => window.removeEventListener("clarity:open-omni", handleOpenOmni);
+  }, []);
+
+  // Window titlebar handlers (Tauri v2)
+  const appWindow = typeof window !== "undefined" && ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+    ? getCurrentWindow()
+    : null;
+
+  const handleMinimize = async () => {
+    sound.click();
+    try {
+      await appWindow?.minimize();
+    } catch (e) {
+      console.warn("Minimize error:", e);
+    }
+  };
+
+  const handleToggleMaximize = async () => {
+    sound.click();
+    try {
+      await appWindow?.toggleMaximize();
+    } catch (e) {
+      console.warn("Toggle maximize error:", e);
+    }
+  };
+
+  const handleClose = async () => {
+    sound.click();
+    try {
+      await appWindow?.close();
+    } catch (e) {
+      console.warn("Close error:", e);
+    }
+  };
 
   const handleToggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
@@ -55,146 +104,207 @@ export default function Layout() {
   const userInitial = (username || "U").charAt(0).toUpperCase();
 
   return (
-    <div className="flex h-screen overflow-hidden bg-ground text-ink select-none">
-      {/* ── Minimalist Stationery Sidebar ───────────────────────────── */}
-      <aside className="w-[280px] flex-shrink-0 bg-surface/90 backdrop-blur-xl border-r border-rule flex flex-col justify-between z-20 relative transition-colors duration-200">
-        <div>
-          {/* Brand Monogram Header */}
-          <div className="px-5 pt-7 pb-4">
-            <div className="flex items-center justify-between mb-4">
-              <div
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent('clarity:replay-intro'));
-                }}
-                className="cursor-pointer transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
-                title="Replay opening animation (Ctrl+Shift+O)"
-              >
-                <ClarityLogo size="md" theme={theme === "dark" ? "dark" : "outline"} shape="squircle" />
-              </div>
-              <div className="flex items-center gap-0.5 flex-shrink-0">
-                <button
-                  onClick={handleToggleTheme}
-                  title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
-                  className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-raised transition-colors cursor-pointer"
-                >
-                  {theme === "dark" ? (
-                    <Sun className="w-4 h-4 text-warn" />
-                  ) : (
-                    <Moon className="w-4 h-4 text-ink" />
-                  )}
-                </button>
-                <button
-                  onClick={handleToggleMute}
-                  title={muted ? "Unmute tactile audio" : "Mute tactile audio"}
-                  className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-raised transition-colors cursor-pointer"
-                >
-                  {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-ink-soft" />}
-                </button>
-              </div>
-            </div>
-
-            {/* User Profile Stationery Chip */}
-            <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-raised border border-rule transition-colors">
-              {avatarUrl ? (
-                <img
-                  src={avatarUrl}
-                  alt={username || 'User'}
-                  className="w-7 h-7 rounded-lg object-cover flex-shrink-0"
-                  referrerPolicy="no-referrer"
-                />
-              ) : (
-                <div className="w-7 h-7 rounded-lg bg-ink text-ground flex items-center justify-center text-xs font-bold flex-shrink-0">
-                  {userInitial}
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="text-[10.5px] font-medium text-ink-faint leading-tight">
-                  {greeting()}
-                </p>
-                <p className="text-[13px] font-bold text-ink truncate font-sans">
-                  {username || "Guest"}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Navigation Links with Magnetic Glider */}
-          <nav className="px-3 py-2 space-y-1 overflow-y-auto relative">
-            {links.map((link) => (
-              <NavLink
-                key={link.to}
-                to={link.to}
-                onClick={() => sound.pageTurn()}
-                className={({ isActive }) =>
-                  clsx(
-                    "relative flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-colors duration-150 group text-[13.5px] font-semibold cursor-pointer z-10",
-                    isActive
-                      ? "text-ink"
-                      : "text-ink-soft hover:text-ink"
-                  )
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    {/* Magnetic Gliding Active Pill */}
-                    {isActive && (
-                      <motion.div
-                        layoutId="activeNavPill"
-                        transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                        className="absolute inset-0 bg-raised rounded-xl border border-rule -z-10 shadow-xs"
-                      />
-                    )}
-
-                    <link.icon
-                      className={clsx(
-                        "w-4.5 h-4.5 flex-shrink-0 transition-colors duration-200",
-                        isActive
-                          ? "text-accent stroke-[2.2]"
-                          : "text-ink-faint group-hover:text-ink stroke-[1.8]"
-                      )}
-                    />
-                    <span className="relative z-10">{link.label}</span>
-                    {isActive && (
-                      <motion.span
-                        layoutId="activeNavDot"
-                        transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                        className="ml-auto w-1.5 h-1.5 rounded-full bg-accent z-10"
-                      />
-                    )}
-                  </>
-                )}
-              </NavLink>
-            ))}
-          </nav>
+    <div className="flex flex-col h-screen overflow-hidden bg-ground text-ink select-none font-sans">
+      {/* ── Custom Frameless Window Title Bar (32px, Warm Paper) ────────────────── */}
+      <header
+        data-tauri-drag-region
+        className="h-8 flex-shrink-0 bg-surface/95 border-b border-rule flex items-center justify-between px-3 z-40 select-none cursor-default"
+      >
+        {/* Left: Monospace Status & Logo */}
+        <div data-tauri-drag-region className="flex items-center gap-2">
+          <span className="font-mono text-[10.5px] text-ink-faint tracking-wider uppercase font-semibold flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent inline-block animate-pulse" />
+            Clarity <span className="text-ink-soft/40">//</span> Personal Ledger
+          </span>
         </div>
 
-        {/* Sidebar Footer: Clean Sign Out */}
-        <div className="p-3 border-t border-rule">
+        {/* Center: Draggable Spacer */}
+        <div data-tauri-drag-region className="flex-1 h-full cursor-default" />
+
+        {/* Right: Omni-Inscribe Trigger & Window Controls */}
+        <div className="flex items-center gap-1">
           <button
-            onClick={logout}
-            className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl w-full text-[13px] font-semibold text-ink-soft hover:bg-danger/10 hover:text-danger transition-colors group cursor-pointer"
+            type="button"
+            onClick={() => setIsOmniOpen(true)}
+            title="Open Omni-Inscribe (Ctrl+K)"
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono text-ink-faint hover:text-ink hover:bg-raised transition-colors mr-2 cursor-pointer"
           >
-            <LogOut className="w-4 h-4 transition-transform group-hover:-translate-x-0.5 stroke-[1.8]" />
-            <span>Sign Out</span>
+            <Sparkles className="w-3 h-3 text-accent" />
+            <kbd className="text-[10px] bg-ground border border-rule px-1 rounded shadow-2xs">Ctrl+K</kbd>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleMinimize}
+            aria-label="Minimize"
+            className="w-7 h-6 rounded flex items-center justify-center text-ink-faint hover:text-ink hover:bg-raised transition-colors cursor-pointer"
+          >
+            <Minus className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleToggleMaximize}
+            aria-label="Maximize"
+            className="w-7 h-6 rounded flex items-center justify-center text-ink-faint hover:text-ink hover:bg-raised transition-colors cursor-pointer"
+          >
+            <Square className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onClick={handleClose}
+            aria-label="Close"
+            className="w-7 h-6 rounded flex items-center justify-center text-ink-faint hover:bg-accent hover:text-white transition-colors cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
-      </aside>
+      </header>
 
-      {/* ── Main Workspace with Smooth Page Deck Transitions ────────── */}
-      <main className="flex-1 relative overflow-auto bg-ground">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={location.pathname}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-            className="h-full"
-          >
-            <Outlet />
-          </motion.div>
-        </AnimatePresence>
-      </main>
+      {/* ── Main Application Body ──────────────────────────────────────────────── */}
+      <div className="flex-1 min-h-0 flex overflow-hidden">
+        {/* Minimalist Stationery Sidebar */}
+        <aside className="w-[280px] flex-shrink-0 bg-surface/90 backdrop-blur-xl border-r border-rule flex flex-col justify-between z-20 relative transition-colors duration-200">
+          <div>
+            {/* Brand Monogram Header */}
+            <div className="px-5 pt-6 pb-4">
+              <div className="flex items-center justify-between mb-4">
+                <div
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent('clarity:replay-intro'));
+                  }}
+                  className="cursor-pointer transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
+                  title="Replay opening animation (Ctrl+Shift+O)"
+                >
+                  <ClarityLogo size="md" theme={theme === "dark" ? "dark" : "outline"} shape="squircle" />
+                </div>
+                <div className="flex items-center gap-0.5 flex-shrink-0">
+                  <button
+                    onClick={handleToggleTheme}
+                    title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                    className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-raised transition-colors cursor-pointer"
+                  >
+                    {theme === "dark" ? (
+                      <Sun className="w-4 h-4 text-warn" />
+                    ) : (
+                      <Moon className="w-4 h-4 text-ink" />
+                    )}
+                  </button>
+                  <button
+                    onClick={handleToggleMute}
+                    title={muted ? "Unmute tactile audio" : "Mute tactile audio"}
+                    className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-raised transition-colors cursor-pointer"
+                  >
+                    {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-ink-soft" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* User Profile Stationery Chip */}
+              <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-raised border border-rule transition-colors">
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt={username || 'User'}
+                    className="w-7 h-7 rounded-lg object-cover flex-shrink-0"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-7 h-7 rounded-lg bg-ink text-ground flex items-center justify-center text-xs font-bold flex-shrink-0">
+                    {userInitial}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10.5px] font-medium text-ink-faint leading-tight">
+                    {greeting()}
+                  </p>
+                  <p className="text-[13px] font-bold text-ink truncate font-sans">
+                    {username || "Guest"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Navigation Links with Magnetic Glider */}
+            <nav className="px-3 py-2 space-y-1 overflow-y-auto relative">
+              {links.map((link) => (
+                <NavLink
+                  key={link.to}
+                  to={link.to}
+                  onClick={() => sound.pageTurn()}
+                  className={({ isActive }) =>
+                    clsx(
+                      "relative flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-colors duration-150 group text-[13.5px] font-semibold cursor-pointer z-10",
+                      isActive
+                        ? "text-ink"
+                        : "text-ink-soft hover:text-ink"
+                    )
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      {/* Magnetic Gliding Active Pill */}
+                      {isActive && (
+                        <motion.div
+                          layoutId="activeNavPill"
+                          transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                          className="absolute inset-0 bg-raised rounded-xl border border-rule -z-10 shadow-xs"
+                        />
+                      )}
+
+                      <link.icon
+                        className={clsx(
+                          "w-4.5 h-4.5 flex-shrink-0 transition-colors duration-200",
+                          isActive
+                            ? "text-accent stroke-[2.2]"
+                            : "text-ink-faint group-hover:text-ink stroke-[1.8]"
+                        )}
+                      />
+                      <span className="relative z-10">{link.label}</span>
+                      {isActive && (
+                        <motion.span
+                          layoutId="activeNavDot"
+                          transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                          className="ml-auto w-1.5 h-1.5 rounded-full bg-accent z-10"
+                        />
+                      )}
+                    </>
+                  )}
+                </NavLink>
+              ))}
+            </nav>
+          </div>
+
+          {/* Sidebar Footer: Clean Sign Out */}
+          <div className="p-3 border-t border-rule">
+            <button
+              onClick={logout}
+              className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl w-full text-[13px] font-semibold text-ink-soft hover:bg-danger/10 hover:text-danger transition-colors group cursor-pointer"
+            >
+              <LogOut className="w-4 h-4 transition-transform group-hover:-translate-x-0.5 stroke-[1.8]" />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        </aside>
+
+        {/* Main Workspace with Smooth Page Deck Transitions */}
+        <main className="flex-1 relative overflow-auto bg-ground">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+              className="h-full"
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
+        </main>
+      </div>
+
+      {/* Global Omni-Inscribe Modal */}
+      <OmniInscribeModal isOpen={isOmniOpen} onClose={() => setIsOmniOpen(false)} />
     </div>
   );
 }

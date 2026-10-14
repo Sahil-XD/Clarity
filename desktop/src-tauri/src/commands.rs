@@ -2,7 +2,7 @@ use rusqlite::params;
 use crate::db::get_db;
 use crate::models::*;
 
-// ─── Auth ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[tauri::command]
 pub fn register(username: String, email: String, password: String) -> Result<AuthResponse, String> {
@@ -121,7 +121,7 @@ pub fn ensure_supabase_user(supabase_id: String, email: String, username: String
     Ok(AuthResponse { user_id: id, username: clean_user })
 }
 
-// ─── Tasks ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Tasks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[tauri::command]
 pub fn get_tasks(user_id: i64, pending_only: bool) -> Result<Vec<Task>, String> {
@@ -139,6 +139,10 @@ pub fn get_tasks(user_id: i64, pending_only: bool) -> Result<Vec<Task>, String> 
             description: row.get(2)?,
             completed: row.get::<_, i32>(3)? != 0,
             due_at: row.get(4)?,
+            status: Some(if row.get::<_, i32>(3)? != 0 { "DONE".to_string() } else { "TODO".to_string() }),
+            project_id: None,
+            remind_at: None,
+            reminder_sent: Some(false),
             created_at: row.get(5)?,
             updated_at: row.get(6)?,
         })
@@ -166,6 +170,10 @@ pub fn create_task(user_id: i64, title: String, description: Option<String>, due
             description: row.get(2)?,
             completed: row.get::<_, i32>(3)? != 0,
             due_at: row.get(4)?,
+            status: Some(if row.get::<_, i32>(3)? != 0 { "DONE".to_string() } else { "TODO".to_string() }),
+            project_id: None,
+            remind_at: None,
+            reminder_sent: Some(false),
             created_at: row.get(5)?,
             updated_at: row.get(6)?,
         })
@@ -203,6 +211,10 @@ pub fn update_task(id: i64, title: Option<String>, description: Option<String>, 
             description: row.get(2)?,
             completed: row.get::<_, i32>(3)? != 0,
             due_at: row.get(4)?,
+            status: Some(if row.get::<_, i32>(3)? != 0 { "DONE".to_string() } else { "TODO".to_string() }),
+            project_id: None,
+            remind_at: None,
+            reminder_sent: Some(false),
             created_at: row.get(5)?,
             updated_at: row.get(6)?,
         })
@@ -230,7 +242,7 @@ pub fn delete_task(id: i64) -> Result<(), String> {
     Ok(())
 }
 
-// ─── Diary ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Diary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[tauri::command]
 pub fn set_diary_pin(user_id: i64, pin: String) -> Result<(), String> {
@@ -330,7 +342,7 @@ pub fn save_diary_entry(user_id: i64, date: String, body: String, mood: Option<S
     }).map_err(|e| e.to_string())
 }
 
-// ─── Calendar ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Calendar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[tauri::command]
 pub fn get_calendar_day(user_id: i64, date: String) -> Result<Vec<CalendarEvent>, String> {
@@ -347,6 +359,8 @@ pub fn get_calendar_day(user_id: i64, date: String) -> Result<Vec<CalendarEvent>
             start_at: row.get(4)?,
             end_at: row.get(5)?,
             event_type: row.get(6)?,
+            remind_at: None,
+            reminder_sent: Some(false),
             created_at: row.get(7)?,
         })
     }).map_err(|e| e.to_string())?
@@ -370,6 +384,8 @@ pub fn get_calendar_range(user_id: i64, from: String, to: String) -> Result<Vec<
             start_at: row.get(4)?,
             end_at: row.get(5)?,
             event_type: row.get(6)?,
+            remind_at: None,
+            reminder_sent: Some(false),
             created_at: row.get(7)?,
         })
     }).map_err(|e| e.to_string())?
@@ -426,6 +442,8 @@ pub fn create_calendar_event(
             start_at: row.get(4)?,
             end_at: row.get(5)?,
             event_type: row.get(6)?,
+            remind_at: None,
+            reminder_sent: Some(false),
             created_at: row.get(7)?,
         })
     }).map_err(|e| e.to_string())
@@ -464,7 +482,7 @@ pub fn update_calendar_event(id: i64, title: String) -> Result<(), String> {
     Ok(())
 }
 
-// ─── Expenses ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Expenses â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[tauri::command]
 pub fn get_expenses(user_id: i64) -> Result<Vec<Expense>, String> {
@@ -526,7 +544,7 @@ pub fn delete_expense(id: i64) -> Result<(), String> {
     Ok(())
 }
 
-// ─── Projects ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Projects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[tauri::command]
 pub fn get_projects(user_id: i64) -> Result<Vec<Project>, String> {

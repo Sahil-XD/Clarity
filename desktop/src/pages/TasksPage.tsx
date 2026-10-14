@@ -1,382 +1,291 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import {
-  Plus, Trash2, X, CalendarDays,
-  Loader2, Sparkles, Check, AlertCircle
+  Plus, Trash2, CalendarDays, Bell, FolderKanban,
+  Check, AlertCircle, X, ChevronRight, Clock, Sparkles
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import { sound } from "@/lib/sound";
-import type { Task } from "@/lib/types";
+import { dataCache } from "@/lib/dataCache";
+import type { Task, Project, TaskStatus } from "@/lib/types";
 import { clsx } from "clsx";
 import dayjs from "dayjs";
 
-// ─── New Task Modal (Disciplined Ledger Voucher) ──────────────────────────────
-function NewTaskModal({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void;
-  onCreated: (t: Task) => void;
-}) {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [dueAt, setDueAt] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const ref = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    ref.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) { setError("Task title is required."); return; }
-    setSaving(true);
-    setError("");
-    try {
-      const formattedDueAt = dueAt ? (dueAt.includes("T") ? dayjs(dueAt).toISOString() : dayjs(dueAt).startOf("day").toISOString()) : undefined;
-
-      const task = await api.createTask({
-        title: title.trim(),
-        description: description.trim() || undefined,
-        due_at: formattedDueAt,
-      });
-
-      sound.pop();
-      onCreated(task);
-      onClose();
-    } catch (err: any) {
-      setError(err.message || "Failed to create task.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div role="dialog" aria-modal="true" aria-label="New Action Item" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <motion.div
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 6 }}
-        transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-md bg-surface rounded-none border border-rule shadow-none overflow-hidden"
-      >
-        {/* Top Vermilion Margin Rule */}
-        <div className="h-0.5 bg-accent w-full" />
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 bg-surface border-b border-rule">
-          <div>
-            <h2 className="text-base font-bold text-ink tracking-tight font-serif">
-              New Action Item
-            </h2>
-            <p className="text-[11px] text-ink-faint font-mono uppercase tracking-wider mt-0.5">
-              Task docket · ledger record
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-none text-ink-faint hover:text-ink hover:bg-raised transition cursor-pointer border border-rule hover:border-ink-soft"
-            aria-label="Close"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div>
-            <label className="block text-[11px] font-mono font-medium text-ink-soft uppercase tracking-wider mb-1">
-              Task Title *
-            </label>
-            <input
-              ref={ref}
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Audit quarterly invoices, run 5km, draft memo"
-              className="w-full px-3 py-2 rounded-none border border-rule bg-ground text-ink placeholder:text-ink-faint text-xs outline-none focus:border-accent transition font-sans shadow-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-mono font-medium text-ink-soft uppercase tracking-wider mb-1">
-              Particulars / Notes (Optional)
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Context or instructions..."
-              rows={2}
-              className="w-full px-3 py-2 rounded-none border border-rule bg-ground text-ink placeholder:text-ink-faint text-xs outline-none focus:border-accent transition font-sans resize-none shadow-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-mono font-medium text-ink-soft uppercase tracking-wider mb-1">
-              Due Date &amp; Time (Optional)
-            </label>
-            <input
-              type="datetime-local"
-              value={dueAt}
-              onChange={(e) => setDueAt(e.target.value)}
-              className="w-full px-3 py-1.5 rounded-none border border-rule bg-ground text-ink text-xs font-mono outline-none focus:border-accent transition shadow-none"
-            />
-          </div>
-
-          {error && (
-            <p className="text-xs text-danger font-medium bg-danger/10 p-2 rounded-none border border-danger/20 font-mono">
-              {error}
-            </p>
-          )}
-
-          <div className="flex gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2 rounded-none border border-rule text-xs font-mono font-medium text-ink-soft hover:bg-raised hover:text-ink transition active:scale-[0.98] cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 py-2 rounded-none bg-accent text-white text-xs font-mono font-semibold hover:opacity-90 transition flex items-center justify-center gap-1.5 active:scale-[0.98] cursor-pointer disabled:opacity-50 shadow-none"
-            >
-              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5 stroke-[2.2]" />}
-              Record Item
-            </button>
-          </div>
-        </form>
-      </motion.div>
-    </div>
-  );
-}
-
-// ─── Main Tasks Page (Tight Ruled List) ──────────────────────────────────────
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    return dataCache.get<Task[]>("tasks") || [];
+  });
+  const [loading, setLoading] = useState(() => !dataCache.get<Task[]>("tasks"));
+  const [error, setError] = useState("");
   const [pendingOnly, setPendingOnly] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [showModal, setShowModal] = useState(false);
   const [quickTitle, setQuickTitle] = useState("");
   const [quickSaving, setQuickSaving] = useState(false);
-  const [pageError, setPageError] = useState("");
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
+  
+  // Master-Detail selection
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>(() => {
+    return dataCache.get<Project[]>("projects") || [];
+  });
 
-  useEffect(() => { loadTasks(); }, [pendingOnly]);
+  // Inspector form state
+  const [inspectorTitle, setInspectorTitle] = useState("");
+  const [inspectorDesc, setInspectorDesc] = useState("");
+  const [inspectorDue, setInspectorDue] = useState("");
+  const [inspectorRemind, setInspectorRemind] = useState("");
+  const [inspectorProject, setInspectorProject] = useState<string>("");
+  const [inspectorStatus, setInspectorStatus] = useState<TaskStatus>("TODO");
+  const [inspectorSaving, setInspectorSaving] = useState(false);
 
-  const loadTasks = async () => {
-    setLoading(true);
+  const quickInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch with SWR
+  const fetchTasks = async (silent = false) => {
+    if (!silent && !dataCache.get<Task[]>("tasks")) {
+      setLoading(true);
+    }
     try {
-      const data = await api.getTasks(pendingOnly);
-      setTasks(data);
+      const [fetchedTasks, fetchedProjects] = await Promise.all([
+        api.getTasks(),
+        api.getProjects().catch(() => []),
+      ]);
+      setTasks(fetchedTasks);
+      setProjects(fetchedProjects);
+      dataCache.set("tasks", fetchedTasks);
+      dataCache.set("projects", fetchedProjects);
+      setError("");
+    } catch (err: any) {
+      if (!silent) setError(err.message || "Failed to load tasks.");
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleComplete = async (task: Task) => {
-    sound.pop();
-    const willBeCompleted = !task.completed;
+  useEffect(() => {
+    fetchTasks(tasks.length > 0);
+  }, []);
 
-    // Optimistic update
-    setTasks((prev) =>
-      prev.map((t) => (t.id === task.id ? { ...t, completed: willBeCompleted } : t))
+  // Keyboard shortcut 'N' focuses inline input
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        sound.click();
+        quickInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Sync inspector when selected task changes
+  const selectedTask = tasks.find((t) => t.id === selectedTaskId) || null;
+  useEffect(() => {
+    if (selectedTask) {
+      setInspectorTitle(selectedTask.title);
+      setInspectorDesc(selectedTask.description || "");
+      setInspectorDue(selectedTask.due_at ? dayjs(selectedTask.due_at).format("YYYY-MM-DD") : "");
+      setInspectorRemind(selectedTask.remind_at ? dayjs(selectedTask.remind_at).format("YYYY-MM-DDTHH:mm") : "");
+      setInspectorProject(selectedTask.project_id || "");
+      setInspectorStatus((selectedTask.status as TaskStatus) || (selectedTask.completed ? "DONE" : "TODO"));
+    }
+  }, [selectedTaskId]);
+
+  const toggleComplete = async (task: Task) => {
+    const nextCompleted = !task.completed;
+    const nextStatus: TaskStatus = nextCompleted ? "DONE" : "TODO";
+
+    if (nextCompleted) {
+      sound.chime();
+    } else {
+      sound.pop();
+    }
+
+    // Optimistic local update
+    const updated = tasks.map((t) =>
+      t.id === task.id ? { ...t, completed: nextCompleted, status: nextStatus } : t
     );
+    setTasks(updated);
+    dataCache.set("tasks", updated);
 
     try {
-      await api.updateTask(task.id, { completed: willBeCompleted });
-
-      const updatedTotal = tasks.length;
-      const updatedDone = tasks.filter((t) => (t.id === task.id ? willBeCompleted : t.completed)).length;
-      if (willBeCompleted && updatedDone === updatedTotal && updatedTotal > 0) {
-        sound.chime();
-      }
-
-      if (pendingOnly && willBeCompleted) {
-        setTimeout(() => {
-          setTasks((prev) => prev.filter((t) => t.id !== task.id));
-        }, 300);
-      }
-    } catch (err: any) {
-      // Revert on failure
-      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, completed: task.completed } : t)));
-      setPageError(err?.message || "Failed to update task status. Change reverted.");
+      await api.updateTask(task.id, { completed: nextCompleted, status: nextStatus });
+    } catch {
+      // Rollback on network failure
+      setTasks(tasks);
+      dataCache.set("tasks", tasks);
+      setError("Failed to update task state.");
     }
   };
 
   const deleteTask = async (id: string) => {
-    sound.pop();
-    const taskToDelete = tasks.find((t) => t.id === id);
-    setTasks((prev) => prev.filter((t) => t.id !== id));
+    sound.click();
+    const updated = tasks.filter((t) => t.id !== id);
+    setTasks(updated);
+    dataCache.set("tasks", updated);
+    if (selectedTaskId === id) setSelectedTaskId(null);
+
     try {
       await api.deleteTask(id);
-    } catch (err: any) {
-      console.error("Failed to delete task:", err);
-      if (taskToDelete) setTasks((prev) => [taskToDelete, ...prev]);
-      setPageError(err?.message || "Failed to delete task.");
+    } catch {
+      setTasks(tasks);
+      dataCache.set("tasks", tasks);
+      setError("Failed to delete task.");
     }
-  };
-
-  const handleTaskCreated = (t: Task) => {
-    setTasks((prev) => [t, ...prev]);
-    setNewlyAddedId(t.id);
-    setTimeout(() => setNewlyAddedId(null), 1600);
   };
 
   const handleQuickAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!quickTitle.trim() || quickSaving) return;
     setQuickSaving(true);
+    sound.click();
+
     try {
       const created = await api.createTask({
         title: quickTitle.trim(),
+        completed: false,
+        status: "TODO",
       });
-      sound.pop();
-      setTasks((prev) => [created, ...prev]);
+      const next = [created, ...tasks];
+      setTasks(next);
+      dataCache.set("tasks", next);
       setNewlyAddedId(created.id);
+      setSelectedTaskId(created.id);
       setQuickTitle("");
-      setTimeout(() => setNewlyAddedId(null), 1600);
+      sound.pop();
+      setTimeout(() => setNewlyAddedId(null), 1200);
     } catch (err: any) {
-      console.error("Failed to quick add task:", err);
-      setPageError(err?.message || "Failed to quick add task.");
+      setError(err?.message || "Failed to inscribe task.");
     } finally {
       setQuickSaving(false);
     }
   };
 
+  const handleSaveInspector = async () => {
+    if (!selectedTask || inspectorSaving) return;
+    setInspectorSaving(true);
+    sound.click();
+
+    const formattedDue = inspectorDue
+      ? dayjs(inspectorDue).startOf("day").toISOString()
+      : null;
+    const formattedRemind = inspectorRemind
+      ? dayjs(inspectorRemind).toISOString()
+      : null;
+    const isDone = inspectorStatus === "DONE";
+
+    try {
+      const updated = await api.updateTask(selectedTask.id, {
+        title: inspectorTitle.trim() || selectedTask.title,
+        description: inspectorDesc.trim() || null,
+        due_at: formattedDue,
+        remind_at: formattedRemind,
+        reminder_sent: false,
+        project_id: inspectorProject || null,
+        status: inspectorStatus,
+        completed: isDone,
+      });
+
+      const next = tasks.map((t) => (t.id === updated.id ? updated : t));
+      setTasks(next);
+      dataCache.set("tasks", next);
+      sound.chime();
+    } catch (err: any) {
+      setError(err?.message || "Failed to save task docket.");
+    } finally {
+      setInspectorSaving(false);
+    }
+  };
+
+  const filteredTasks = pendingOnly ? tasks.filter((t) => !t.completed) : tasks;
   const totalCount = tasks.length;
   const completedCount = tasks.filter((t) => t.completed).length;
   const pendingCount = totalCount - completedCount;
-  const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  const completionPercentage = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   return (
-    <div className="h-full flex flex-col bg-ground">
-      <AnimatePresence>
-        {showModal && (
-          <NewTaskModal onClose={() => setShowModal(false)} onCreated={handleTaskCreated} />
-        )}
-      </AnimatePresence>
-
-      {/* Desk Top Bar (Ledger Navigation) */}
-      <div className="shrink-0 bg-surface border-b border-rule px-8 py-3.5 flex items-center justify-between">
+    <div className="h-full flex flex-col overflow-hidden bg-ground">
+      {/* ── Subheader / Editorial Folio Header ───────────────────────────────────── */}
+      <div className="px-6 py-4 border-b border-rule flex items-center justify-between shrink-0 bg-surface/50 backdrop-blur-xs">
         <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-xl font-bold text-ink tracking-tight font-serif">
-              Tasks
-            </h1>
-            <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-none bg-ground border border-rule text-ink-soft">
-              {pendingCount} remaining
+          <h1 className="text-xl font-bold text-ink tracking-tight font-serif flex items-center gap-2">
+            Tasks Ledger
+            <span className="font-mono text-xs font-normal text-ink-faint px-2 py-0.5 rounded border border-rule bg-surface">
+              {pendingCount} Pending
             </span>
-          </div>
-          <p className="text-ink-faint text-xs mt-0.5 font-sans">
-            {dayjs().format("dddd, D MMMM YYYY")} · Action items &amp; disciplined execution
+          </h1>
+          <p className="text-xs text-ink-faint font-sans mt-0.5">
+            Personal action dockets & initiative ledger
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={() => { sound.pop(); setShowModal(true); }}
-            className="px-3.5 py-1.5 rounded-none bg-accent text-white text-xs font-mono font-semibold hover:opacity-90 transition flex items-center gap-1.5 active:scale-[0.97] active:translate-y-[0.5px] cursor-pointer shadow-none"
-          >
-            <Plus className="w-3.5 h-3.5 stroke-[2.2]" /> New Task
-          </button>
+        {/* Status completion ratio */}
+        <div className="flex items-center gap-3 text-right">
+          <div className="hidden sm:block">
+            <span className="font-mono text-xs font-semibold text-ink">
+              {completedCount} of {totalCount} completed ({completionPercentage}%)
+            </span>
+            <div className="w-36 h-1 bg-surface border border-rule rounded-full overflow-hidden mt-1">
+              <div
+                className="h-full bg-accent transition-all duration-300"
+                style={{ width: `${completionPercentage}%` }}
+              />
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-6 sm:p-8">
-        <div className="max-w-3xl mx-auto space-y-5">
-
-          {/* Progress Completion Rule */}
-          {totalCount > 0 && (
-            <div className="bg-surface rounded-none border border-rule p-4 px-5 shadow-none flex items-center justify-between gap-4">
-              <div className="flex-1">
-                <div className="flex justify-between items-center text-xs mb-1.5 font-medium">
-                  <span className="text-ink-soft font-sans">
-                    {progressPercent === 100 ? (
-                      <span className="text-done font-medium flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5" /> All action items cleared for today.
-                      </span>
-                    ) : (
-                      <span>{completedCount} of {totalCount} completed</span>
-                    )}
-                  </span>
-                  <span className="font-mono tabular-nums font-bold text-ink">{progressPercent}%</span>
-                </div>
-                <div className="w-full h-1.5 rounded-none bg-ground border border-rule overflow-hidden">
-                  <motion.div
-                    className={clsx(
-                      "h-full rounded-none transition-all duration-500",
-                      progressPercent === 100 ? "bg-done" : "bg-done"
-                    )}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${progressPercent}%` }}
-                    transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-                  />
-                </div>
-              </div>
+      {/* ── 2-Column Responsive Master-Detail Layout ────────────────────────────── */}
+      <div className="flex-1 min-h-0 p-6 overflow-hidden grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* ── Left Column: Master Task List (7 cols) ────────────────────────────── */}
+        <div className="lg:col-span-7 flex flex-col min-h-0 space-y-3.5">
+          {error && (
+            <div className="p-2.5 rounded bg-danger/10 border border-danger/20 text-danger text-xs flex items-center justify-between">
+              <span className="flex items-center gap-1.5 font-medium">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {error}
+              </span>
+              <button
+                type="button"
+                onClick={() => setError("")}
+                className="text-xs underline hover:opacity-80"
+              >
+                Dismiss
+              </button>
             </div>
           )}
 
-          {pageError && (
-            <div role="alert" aria-live="polite" className="mb-4 px-4 py-2.5 rounded-none bg-danger/10 border border-danger/20 text-xs font-medium text-danger flex items-center justify-between font-mono">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{pageError}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => loadTasks()}
-                  className="px-2 py-0.5 border border-rule text-ink hover:bg-raised transition cursor-pointer text-[11px]"
-                >
-                  Retry
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPageError("")}
-                  className="px-2 py-0.5 border border-rule text-ink hover:bg-raised transition cursor-pointer text-[11px]"
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Quick Task Inline Input (Sharp Ledger Row) */}
+          {/* Quick Inscribe Input Bar */}
           <form
             onSubmit={handleQuickAdd}
-            className="bg-surface rounded-none border border-rule p-2 px-3.5 flex items-center gap-2.5 shadow-none"
+            className="bg-surface border border-rule rounded-xl p-2 px-3.5 flex items-center gap-2.5 shadow-2xs"
           >
-            <Plus className="w-3.5 h-3.5 text-ink-faint shrink-0" />
+            <Plus className="w-4 h-4 text-accent shrink-0 stroke-[2.5]" />
             <input
+              ref={quickInputRef}
               type="text"
               value={quickTitle}
               onChange={(e) => setQuickTitle(e.target.value)}
-              placeholder="Inscribe a new task… (press Enter)"
+              placeholder="Inscribe task... (Press 'N' to focus, Enter to save)"
               className="flex-1 bg-transparent text-xs text-ink placeholder:text-ink-faint outline-none font-sans"
             />
             <button
               type="submit"
               disabled={quickSaving || !quickTitle.trim()}
-              className="px-2.5 py-1 rounded-none bg-ink text-ground hover:opacity-90 text-xs font-mono font-medium transition-all active:scale-[0.97] disabled:opacity-40 cursor-pointer"
+              className="px-2.5 py-1 rounded-lg bg-accent text-white hover:bg-accent/90 text-xs font-mono font-medium transition-all active:scale-[0.97] disabled:opacity-40 cursor-pointer"
             >
               Add
             </button>
           </form>
 
-          {/* Filter Bar */}
-          <div className="flex items-center justify-between pt-0.5">
+          {/* Filter Pills */}
+          <div className="flex items-center justify-between shrink-0">
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => { sound.pop(); setPendingOnly(false); }}
                 className={clsx(
-                  "px-2.5 py-1 rounded-none text-xs font-mono transition-all cursor-pointer border",
+                  "px-2.5 py-1 rounded-lg text-xs font-mono transition-all cursor-pointer border",
                   !pendingOnly
                     ? "bg-ink text-ground border-ink font-semibold"
                     : "bg-surface text-ink-soft hover:text-ink border-rule"
@@ -388,7 +297,7 @@ export default function TasksPage() {
                 type="button"
                 onClick={() => { sound.pop(); setPendingOnly(true); }}
                 className={clsx(
-                  "px-2.5 py-1 rounded-none text-xs font-mono transition-all cursor-pointer border",
+                  "px-2.5 py-1 rounded-lg text-xs font-mono transition-all cursor-pointer border",
                   pendingOnly
                     ? "bg-ink text-ground border-ink font-semibold"
                     : "bg-surface text-ink-soft hover:text-ink border-rule"
@@ -399,110 +308,258 @@ export default function TasksPage() {
             </div>
           </div>
 
-          {/* The Tight Ruled Task Sheet */}
-          <div className="bg-surface rounded-none border border-rule overflow-hidden shadow-none">
-            {loading ? (
+          {/* Ruled Task List */}
+          <div className="flex-1 min-h-0 bg-surface border border-rule rounded-xl overflow-y-auto shadow-2xs divide-y divide-rule">
+            {loading && tasks.length === 0 ? (
               <div className="flex items-center justify-center py-12 text-ink-faint gap-2 font-mono text-xs">
-                <Loader2 className="w-4 h-4 animate-spin text-ink-soft" />
                 <span>Auditing tasks...</span>
               </div>
-            ) : tasks.length === 0 ? (
+            ) : filteredTasks.length === 0 ? (
               <div className="text-center py-12 text-ink-faint p-6">
                 <p className="text-sm font-serif italic text-ink-soft">No tasks recorded in your ledger.</p>
                 <p className="text-xs mt-1 text-ink-faint font-sans">Inscribe an action item above to begin your day.</p>
               </div>
             ) : (
-              <div className="divide-y divide-rule">
-                {tasks.map((task) => {
-                  const isNew = newlyAddedId === task.id;
+              filteredTasks.map((task) => {
+                const isSelected = selectedTaskId === task.id;
+                const isNew = newlyAddedId === task.id;
 
-                  return (
-                    <motion.div
-                      key={task.id}
-                      initial={isNew ? { clipPath: "inset(0 100% 0 0)", backgroundColor: "var(--c-raised)" } : false}
-                      animate={isNew ? { clipPath: "inset(0 0% 0 0)", backgroundColor: "transparent" } : {}}
-                      transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
-                      className="group flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-raised transition-all duration-150 border-l-2 border-l-transparent hover:border-l-ink-soft cursor-default text-xs"
-                    >
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        {/* Square Checkbox */}
-                        <button
-                          type="button"
-                          onClick={() => toggleComplete(task)}
-                          className="cursor-pointer shrink-0"
-                          aria-label={task.completed ? "Mark incomplete" : "Mark complete"}
+                return (
+                  <motion.div
+                    key={task.id}
+                    onClick={() => {
+                      sound.pop();
+                      setSelectedTaskId(task.id);
+                    }}
+                    initial={isNew ? { clipPath: "inset(0 100% 0 0)", backgroundColor: "var(--c-raised)" } : false}
+                    animate={isNew ? { clipPath: "inset(0 0% 0 0)", backgroundColor: "transparent" } : {}}
+                    transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                    className={clsx(
+                      "group flex items-center justify-between gap-3 px-3.5 py-2.5 hover:bg-raised/70 transition-all cursor-pointer text-xs border-l-2",
+                      isSelected
+                        ? "bg-raised border-l-accent"
+                        : "border-l-transparent"
+                    )}
+                  >
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      {/* Checkbox */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleComplete(task);
+                        }}
+                        className="cursor-pointer shrink-0"
+                        aria-label={task.completed ? "Mark incomplete" : "Mark complete"}
+                      >
+                        <div
+                          className={clsx(
+                            "w-4 h-4 rounded flex items-center justify-center transition-colors duration-150 border",
+                            task.completed
+                              ? "bg-accent border-accent text-white"
+                              : "border-rule bg-ground hover:border-ink-soft"
+                          )}
                         >
-                          <div
+                          {task.completed && <Check className="w-3 h-3 stroke-[3]" />}
+                        </div>
+                      </button>
+
+                      {/* Title & Notes */}
+                      <div className="min-w-0 flex-1 relative">
+                        <div className="relative inline-block max-w-full">
+                          <span
                             className={clsx(
-                              "w-4 h-4 rounded-none flex items-center justify-center transition-colors duration-150 border",
-                              task.completed
-                                ? "bg-done border-done text-white"
-                                : "border-rule bg-ground hover:border-ink-soft"
+                              "font-sans text-xs block truncate",
+                              task.completed ? "text-ink-faint" : "text-ink font-medium"
                             )}
                           >
-                            {task.completed && (
-                              <Check className="w-3 h-3 stroke-[3]" />
-                            )}
-                          </div>
-                        </button>
-
-                        {/* Title with Literal Pen Strike-Through */}
-                        <div className="min-w-0 flex-1 relative">
-                          <div className="relative inline-block max-w-full">
-                            <span
-                              className={clsx(
-                                "font-sans text-xs transition-colors duration-200 block truncate",
-                                task.completed ? "text-ink-faint" : "text-ink font-medium"
-                              )}
-                            >
-                              {task.title}
-                            </span>
-
-                            {/* Literal Pen Strike-Through Line */}
-                            {task.completed && (
-                              <motion.span
-                                initial={{ scaleX: 0 }}
-                                animate={{ scaleX: 1 }}
-                                transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-                                className="absolute left-0 top-1/2 -translate-y-1/2 h-[1.5px] bg-ink-soft/70 w-full origin-left pointer-events-none"
-                              />
-                            )}
-                          </div>
-
-                          {task.description && (
-                            <p className="text-[11px] text-ink-faint truncate mt-0.5 font-sans">
-                              {task.description}
-                            </p>
+                            {task.title}
+                          </span>
+                          {task.completed && (
+                            <motion.span
+                              initial={{ scaleX: 0 }}
+                              animate={{ scaleX: 1 }}
+                              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                              className="absolute left-0 top-1/2 -translate-y-1/2 h-[1.5px] bg-ink-faint w-full origin-left pointer-events-none"
+                            />
                           )}
                         </div>
-                      </div>
-
-                      {/* Due Date & Actions */}
-                      <div className="flex items-center gap-2.5 shrink-0">
-                        {task.due_at && (
-                          <span className="text-[10px] font-mono text-ink-faint flex items-center gap-1 bg-ground px-1.5 py-0.5 rounded-none border border-rule">
-                            <CalendarDays className="w-3 h-3 text-ink-soft" />
-                            {dayjs(task.due_at).format("D MMM")}
-                          </span>
+                        {task.description && (
+                          <p className="text-[11px] text-ink-faint truncate font-sans">
+                            {task.description}
+                          </p>
                         )}
-
-                        <button
-                          type="button"
-                          onClick={() => deleteTask(task.id)}
-                          className="opacity-0 group-hover:opacity-100 p-1 rounded-none hover:text-danger text-ink-faint transition-all active:scale-90 border border-transparent hover:border-rule cursor-pointer"
-                          title="Delete task"
-                          aria-label="Delete task"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 stroke-[1.8]" />
-                        </button>
                       </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
+                    </div>
+
+                    {/* Metadata Badges & Delete */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {task.project_id && (
+                        <span className="text-[10px] font-mono text-accent bg-accent/10 px-1.5 py-0.5 rounded border border-accent/20 flex items-center gap-1">
+                          <FolderKanban className="w-3 h-3" />
+                          Docket
+                        </span>
+                      )}
+
+                      {task.due_at && (
+                        <span className="text-[10px] font-mono text-ink-faint flex items-center gap-1 bg-ground px-1.5 py-0.5 rounded border border-rule">
+                          <CalendarDays className="w-3 h-3 text-ink-soft" />
+                          {dayjs(task.due_at).format("D MMM")}
+                        </span>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteTask(task.id);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:text-danger text-ink-faint transition-all cursor-pointer"
+                        title="Delete task"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 stroke-[1.8]" />
+                      </button>
+                    </div>
+                  </motion.div>
+                );
+              })
             )}
           </div>
+        </div>
 
+        {/* ── Right Column: Task Docket Inspector (5 cols) ────────────────────── */}
+        <div className="lg:col-span-5 flex flex-col min-h-0 bg-surface border border-rule rounded-xl p-4 shadow-2xs">
+          {selectedTask ? (
+            <div className="flex flex-col h-full space-y-4 overflow-y-auto">
+              <div className="flex items-center justify-between pb-2 border-b border-rule shrink-0">
+                <span className="font-mono text-[10.5px] uppercase tracking-wider text-ink-faint font-semibold flex items-center gap-1.5">
+                  <FolderKanban className="w-3.5 h-3.5 text-accent" /> Task Docket Inspector
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTaskId(null)}
+                  className="p-1 rounded text-ink-faint hover:text-ink hover:bg-raised transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Title Input */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider">
+                  Docket Title
+                </label>
+                <input
+                  type="text"
+                  value={inspectorTitle}
+                  onChange={(e) => setInspectorTitle(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-ground border border-rule text-xs font-semibold text-ink focus:outline-none focus:border-accent font-sans"
+                />
+              </div>
+
+              {/* Description / Notes */}
+              <div className="space-y-1 flex-1 min-h-[120px] flex flex-col">
+                <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider">
+                  Notes & Details
+                </label>
+                <textarea
+                  value={inspectorDesc}
+                  onChange={(e) => setInspectorDesc(e.target.value)}
+                  placeholder="Record additional context, links, or notes..."
+                  className="w-full flex-1 p-3 rounded-lg bg-ground border border-rule text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent resize-none font-sans"
+                />
+              </div>
+
+              {/* Project Docket Binding & Kanban Stage */}
+              <div className="grid grid-cols-2 gap-3 shrink-0">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider">
+                    Project Docket
+                  </label>
+                  <select
+                    value={inspectorProject}
+                    onChange={(e) => setInspectorProject(e.target.value)}
+                    className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink focus:outline-none focus:border-accent"
+                  >
+                    <option value="">No Project Docket</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>{p.title}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider">
+                    Kanban Stage
+                  </label>
+                  <select
+                    value={inspectorStatus}
+                    onChange={(e) => setInspectorStatus(e.target.value as TaskStatus)}
+                    className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink focus:outline-none focus:border-accent font-mono"
+                  >
+                    <option value="TODO">TODO</option>
+                    <option value="IN_PROGRESS">IN PROGRESS</option>
+                    <option value="DONE">DONE</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Due Date & Native Reminder */}
+              <div className="grid grid-cols-2 gap-3 shrink-0">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider flex items-center gap-1">
+                    <CalendarDays className="w-3 h-3 text-ink-soft" /> Deadline
+                  </label>
+                  <input
+                    type="date"
+                    value={inspectorDue}
+                    onChange={(e) => setInspectorDue(e.target.value)}
+                    className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink font-mono focus:outline-none focus:border-accent"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider flex items-center gap-1">
+                    <Bell className="w-3 h-3 text-ink-soft" /> Native Reminder
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={inspectorRemind}
+                    onChange={(e) => setInspectorRemind(e.target.value)}
+                    className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink font-mono focus:outline-none focus:border-accent"
+                  />
+                </div>
+              </div>
+
+              {/* Actions Footer */}
+              <div className="pt-2 border-t border-rule flex items-center justify-between shrink-0">
+                <button
+                  type="button"
+                  onClick={() => deleteTask(selectedTask.id)}
+                  className="px-3 py-1.5 rounded-lg text-danger hover:bg-danger/10 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveInspector}
+                  disabled={inspectorSaving}
+                  className="px-4 py-1.5 rounded-lg bg-accent text-white hover:bg-accent/90 text-xs font-semibold shadow-2xs transition-all active:scale-[0.98] cursor-pointer"
+                >
+                  {inspectorSaving ? "Saving..." : "Save Docket"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-center p-6 text-ink-faint">
+              <FolderKanban className="w-8 h-8 text-ink-soft/40 mb-2 stroke-[1.5]" />
+              <p className="text-sm font-serif italic text-ink-soft">No Task Selected</p>
+              <p className="text-xs text-ink-faint font-sans mt-1 max-w-[220px]">
+                Click any task from your ruled ledger to inspect its docket, set reminders, or bind to a project.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

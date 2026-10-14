@@ -1,4 +1,4 @@
--- Clarity Supabase Schema Migration
+﻿-- Clarity Supabase Schema Migration
 -- Run this in Supabase SQL Editor after creating your project
 
 -- Enable UUID extension
@@ -9,7 +9,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ============================================================================
 -- Supabase Auth creates auth.users automatically
 -- We create a profiles table for additional user data
-CREATE TABLE profiles (
+CREATE TABLE IF NOT EXISTS profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   username TEXT UNIQUE NOT NULL,
   email TEXT UNIQUE NOT NULL,
@@ -20,14 +20,29 @@ CREATE TABLE profiles (
 );
 
 -- ============================================================================
--- TASKS TABLE
+-- PROJECTS TABLE (Declared before tasks for foreign key reference)
 -- ============================================================================
-CREATE TABLE tasks (
+CREATE TABLE IF NOT EXISTS projects (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   description TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ
+);
+
+-- ============================================================================
+-- TASKS TABLE
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS tasks (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  description TEXT,
   completed BOOLEAN DEFAULT FALSE,
+  status TEXT DEFAULT 'TODO' CHECK (status IN ('TODO', 'IN_PROGRESS', 'DONE')),
   due_at TIMESTAMPTZ,
   remind_at TIMESTAMPTZ,
   reminder_sent BOOLEAN DEFAULT FALSE,
@@ -39,12 +54,12 @@ CREATE TABLE tasks (
 -- ============================================================================
 -- DIARY ENTRIES TABLE
 -- ============================================================================
-CREATE TABLE diary_entries (
+CREATE TABLE IF NOT EXISTS diary_entries (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   date DATE NOT NULL,
   body TEXT DEFAULT '',
-  mood TEXT CHECK (mood IN ('HAPPY', 'NEUTRAL', 'SAD', 'ANXIOUS', 'EXCITED')),
+  mood TEXT CHECK (mood IN ('Energized', 'Peaceful', 'Productive', 'Chilled', 'Tired', 'Thoughtful')),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   deleted_at TIMESTAMPTZ,
@@ -54,7 +69,7 @@ CREATE TABLE diary_entries (
 -- ============================================================================
 -- CALENDAR EVENTS TABLE
 -- ============================================================================
-CREATE TABLE calendar_events (
+CREATE TABLE IF NOT EXISTS calendar_events (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
@@ -73,7 +88,7 @@ CREATE TABLE calendar_events (
 -- ============================================================================
 -- EXPENSES TABLE
 -- ============================================================================
-CREATE TABLE expenses (
+CREATE TABLE IF NOT EXISTS expenses (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   amount NUMERIC(12,2) NOT NULL,
@@ -87,22 +102,9 @@ CREATE TABLE expenses (
 );
 
 -- ============================================================================
--- PROJECTS TABLE
+-- PROJECT TASKS TABLE (Legacy / direct mapping)
 -- ============================================================================
-CREATE TABLE projects (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  description TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  deleted_at TIMESTAMPTZ
-);
-
--- ============================================================================
--- PROJECT TASKS TABLE
--- ============================================================================
-CREATE TABLE project_tasks (
+CREATE TABLE IF NOT EXISTS project_tasks (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
@@ -116,23 +118,24 @@ CREATE TABLE project_tasks (
 -- ============================================================================
 -- INDEXES FOR PERFORMANCE
 -- ============================================================================
-CREATE INDEX idx_tasks_user_id ON tasks(user_id) WHERE deleted_at IS NULL;
-CREATE INDEX idx_tasks_due_at ON tasks(due_at) WHERE deleted_at IS NULL;
-CREATE INDEX idx_tasks_updated_at ON tasks(updated_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_due_at ON tasks(due_at) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at);
 
-CREATE INDEX idx_diary_user_date ON diary_entries(user_id, date) WHERE deleted_at IS NULL;
-CREATE INDEX idx_diary_updated_at ON diary_entries(updated_at);
+CREATE INDEX IF NOT EXISTS idx_diary_user_date ON diary_entries(user_id, date) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_diary_updated_at ON diary_entries(updated_at);
 
-CREATE INDEX idx_calendar_user_date ON calendar_events(user_id, event_date) WHERE deleted_at IS NULL;
-CREATE INDEX idx_calendar_updated_at ON calendar_events(updated_at);
+CREATE INDEX IF NOT EXISTS idx_calendar_user_date ON calendar_events(user_id, event_date) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_calendar_updated_at ON calendar_events(updated_at);
 
-CREATE INDEX idx_expenses_user_date ON expenses(user_id, date) WHERE deleted_at IS NULL;
-CREATE INDEX idx_expenses_updated_at ON expenses(updated_at);
+CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses(user_id, date) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_expenses_updated_at ON expenses(updated_at);
 
-CREATE INDEX idx_projects_user_id ON projects(user_id) WHERE deleted_at IS NULL;
-CREATE INDEX idx_projects_updated_at ON projects(updated_at);
+CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects(updated_at);
 
-CREATE INDEX idx_project_tasks_project_id ON project_tasks(project_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_project_tasks_project_id ON project_tasks(project_id) WHERE deleted_at IS NULL;
 
 -- ============================================================================
 -- TRIGGERS TO AUTO-UPDATE updated_at
@@ -145,30 +148,37 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS profiles_updated_at ON profiles;
 CREATE TRIGGER profiles_updated_at
   BEFORE UPDATE ON profiles
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+DROP TRIGGER IF EXISTS tasks_updated_at ON tasks;
 CREATE TRIGGER tasks_updated_at
   BEFORE UPDATE ON tasks
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+DROP TRIGGER IF EXISTS diary_updated_at ON diary_entries;
 CREATE TRIGGER diary_updated_at
   BEFORE UPDATE ON diary_entries
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+DROP TRIGGER IF EXISTS calendar_updated_at ON calendar_events;
 CREATE TRIGGER calendar_updated_at
   BEFORE UPDATE ON calendar_events
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+DROP TRIGGER IF EXISTS expenses_updated_at ON expenses;
 CREATE TRIGGER expenses_updated_at
   BEFORE UPDATE ON expenses
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+DROP TRIGGER IF EXISTS projects_updated_at ON projects;
 CREATE TRIGGER projects_updated_at
   BEFORE UPDATE ON projects
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+DROP TRIGGER IF EXISTS project_tasks_updated_at ON project_tasks;
 CREATE TRIGGER project_tasks_updated_at
   BEFORE UPDATE ON project_tasks
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();

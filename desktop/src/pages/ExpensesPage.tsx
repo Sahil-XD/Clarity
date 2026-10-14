@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { sound } from "@/lib/sound";
+import { dataCache } from "@/lib/dataCache";
 import { clsx } from "clsx";
 import dayjs from "dayjs";
 
@@ -253,8 +254,8 @@ function AddExpenseModal({
 
 // ─── Main Page (Ruled Ledger Pilot) ─────────────────────────────────────────
 export default function ExpensesPage() {
-  const [expenses, setExpenses] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [expenses, setExpenses] = useState<any[]>(() => dataCache.get<any[]>("expenses") || []);
+  const [loading, setLoading] = useState(() => !dataCache.get<any[]>("expenses"));
   const [showModal, setShowModal] = useState(false);
   const [modalInitial, setModalInitial] = useState<{ amount?: string; category?: string; description?: string } | undefined>(undefined);
   const [filterMonth, setFilterMonth] = useState(dayjs().format("YYYY-MM"));
@@ -262,7 +263,7 @@ export default function ExpensesPage() {
   const [pageError, setPageError] = useState("");
 
   useEffect(() => {
-    loadExpenses();
+    loadExpenses(expenses.length > 0);
     supabase.auth.getUser().then(({ data }) => {
       const cloudBudget = data?.user?.user_metadata?.monthly_budget;
       if (typeof cloudBudget === "number" && cloudBudget > 0) {

@@ -7,6 +7,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import { sound } from "@/lib/sound";
+import { dataCache } from "@/lib/dataCache";
 import type { CalendarEvent, Task } from "@/lib/types";
 import dayjs from "dayjs";
 import { clsx } from "clsx";
@@ -317,7 +318,7 @@ export default function CalendarPage() {
   const [tab, setTab] = useState<TabMode>("tasks");
   const [currentDate, setCurrentDate] = useState(dayjs());
   const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<Task[]>(() => dataCache.get<Task[]>("tasks") || []);
   const [yearHeatmap, setYearHeatmap] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(false);
   const [pageError, setPageError] = useState("");

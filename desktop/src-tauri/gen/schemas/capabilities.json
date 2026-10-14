@@ -1,1 +1,1 @@
-{}
+{"default":{"identifier":"default","description":"Default permissions for Clarity window controls","local":true,"windows":["main"],"permissions":["core:default","core:window:default","shell:default"]}}

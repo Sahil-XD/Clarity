@@ -5,12 +5,13 @@ import {
   Plus, ChevronRight, Pencil, CalendarDays, Check,
   Sparkles, Shuffle, Smile,
   RotateCcw, Delete, Settings, X, Trash2,
-  Sparkle
+  Sparkle, FileText, ChevronDown, ChevronUp, DollarSign, CheckSquare
 } from "lucide-react";
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { api } from "@/lib/api";
 import { sound } from "@/lib/sound";
-import type { DiaryEntry } from "@/lib/types";
+import { dataCache } from "@/lib/dataCache";
+import type { DiaryEntry, DiaryMood, Task, Expense } from "@/lib/types";
 import { clsx } from "clsx";
 import { ClarityLogo } from "@/components/ClarityLogo";
 
@@ -35,7 +36,16 @@ const MOOD_GLOWS: Record<string, string> = {
   Thoughtful: 'rgba(59, 130, 246, 0.08)',
 };
 
-const MOODS = [
+const MOOD_COLORS: Record<string, string> = {
+  Energized: '#F59E0B',
+  Peaceful: '#6B8065',
+  Productive: '#C87467',
+  Chilled: '#D98A7E',
+  Tired: '#8B5CF6',
+  Thoughtful: '#3B82F6',
+};
+
+const MOODS: { label: DiaryMood; emoji: string }[] = [
   { label: "Energized", emoji: "⚡" },
   { label: "Peaceful", emoji: "🌿" },
   { label: "Productive", emoji: "🎯" },
@@ -44,7 +54,7 @@ const MOODS = [
   { label: "Thoughtful", emoji: "💭" },
 ];
 
-// ─── 3D Vault Lock Screen (Physical Keyboard Only, Kinetic Rings) ─────────────
+// ── 3D Vault Lock Screen ─────────────────────────────────────────────────────
 function LockScreen({
   onUnlocked,
 }: {
@@ -52,162 +62,81 @@ function LockScreen({
 }) {
   const [pin, setPin] = useState("");
   const [mode, setMode] = useState<"unlock" | "reset" | "setup">("unlock");
-  const [resetStep, setResetStep] = useState<"enter" | "confirm">("enter");
-  const [tempNewPin, setTempNewPin] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [resetConfirmPin, setResetConfirmPin] = useState("");
+  const [resetStep, setResetStep] = useState<1 | 2>(1);
   const [error, setError] = useState("");
-  const [shake, setShake] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [hasPin, setHasPin] = useState<boolean | null>(null);
   const [success, setSuccess] = useState(false);
+  const [keyParticles, setKeyParticles] = useState<{ id: number; key: string }[]>([]);
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [ripples, setRipples] = useState<{ id: number; index: number }[]>([]);
 
-  // 3D Tilt Parallax Motion Values
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
+  const rotateX = useSpring(useTransform(mouseY, [-300, 300], [12, -12]), { damping: 28, stiffness: 220 });
+  const rotateY = useSpring(useTransform(mouseX, [-300, 300], [-12, 12]), { damping: 28, stiffness: 220 });
+
   const cardRef = useRef<HTMLDivElement>(null);
-  const rawX = useMotionValue(0);
-  const rawY = useMotionValue(0);
-  const mouseX = useSpring(rawX, { stiffness: 280, damping: 26 });
-  const mouseY = useSpring(rawY, { stiffness: 280, damping: 26 });
+  const isVerifyingRef = useRef(false);
 
-  const rotateX = useTransform(mouseY, [-0.5, 0.5], ["12deg", "-12deg"]);
-  const rotateY = useTransform(mouseX, [-0.5, 0.5], ["-12deg", "12deg"]);
+  useEffect(() => {
+    let mounted = true;
+    api.checkDiaryPin()
+      .then((exists) => {
+        if (!mounted) return;
+        setHasPin(exists);
+        if (!exists) setMode("setup");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setHasPin(false);
+        setMode("setup");
+      });
+    return () => { mounted = false; };
+  }, []);
 
-  // Mouse ambient lighting
-  const [coords, setCoords] = useState({ x: 0, y: 0 });
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleMouseMove = (e: React.MouseEvent) => {
     if (!cardRef.current) return;
     const rect = cardRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width - 0.5;
-    const y = (e.clientY - rect.top) / rect.height - 0.5;
-    rawX.set(x);
-    rawY.set(y);
-    setCoords({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    const x = e.clientX - rect.left - rect.width / 2;
+    const y = e.clientY - rect.top - rect.height / 2;
+    mouseX.set(x);
+    mouseY.set(y);
   };
 
   const handleMouseLeave = () => {
-    rawX.set(0);
-    rawY.set(0);
+    mouseX.set(0);
+    mouseY.set(0);
   };
 
-  const triggerShake = (msg: string) => {
-    sound.pop();
-    setError(msg);
-    setShake(true);
-    setPin("");
-    setTimeout(() => setShake(false), 500);
+  const spawnParticle = (k: string) => {
+    const id = Date.now() + Math.random();
+    setKeyParticles((p) => [...p.slice(-4), { id, key: k }]);
+    setTimeout(() => {
+      setKeyParticles((p) => p.filter((item) => item.id !== id));
+    }, 600);
   };
 
-  const handleUnlock = useCallback(async (pinToVerify: string) => {
+  const handleDigit = useCallback((d: string) => {
+    sound.click();
     setError("");
-    setLoading(true);
-    try {
-      const data = await api.getDiaryEntries(pinToVerify);
-      setSuccess(true);
-      sound.chime();
-      setTimeout(() => {
-        onUnlocked(pinToVerify, data);
-      }, 350);
-    } catch (err: any) {
-      const message = err?.message || String(err);
-      if (message.includes("Diary PIN not set")) {
-        setMode("setup");
-        setPin("");
-        setError("No passcode set yet. Type 4 digits to secure your journal.");
-      } else {
-        triggerShake("Incorrect passcode. Try again or reset below.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [onUnlocked]);
-
-  const handleResetSubmit = useCallback(async (confirmedPin: string) => {
-    setError("");
-    setLoading(true);
-    try {
-      await api.resetDiaryPin(confirmedPin);
-      setSuccess(true);
-      sound.chime();
-      const entries = await api.getDiaryEntries(confirmedPin);
-      setTimeout(() => {
-        onUnlocked(confirmedPin, entries);
-      }, 350);
-    } catch {
-      triggerShake("Failed to reset passcode. Try again.");
-    } finally {
-      setLoading(false);
-    }
-  }, [onUnlocked]);
-
-  // Handle digit input with ripple shockwaves
-  const handleDigit = useCallback((digit: string) => {
-    if (loading || success) return;
-    sound.pop();
-    setError("");
-    setActiveKey(digit);
-    setTimeout(() => setActiveKey(null), 140);
+    setActiveKey(d);
+    setTimeout(() => setActiveKey(null), 120);
+    spawnParticle(d);
 
     setPin((prev) => {
       if (prev.length >= 4) return prev;
-      const targetIndex = prev.length;
-      const next = prev + digit;
-
-      // Trigger ripple shockwave on target kinetic ring
-      const rippleId = Date.now() + Math.random();
-      setRipples((r) => [...r, { id: rippleId, index: targetIndex }]);
-      setTimeout(() => {
-        setRipples((r) => r.filter((item) => item.id !== rippleId));
-      }, 600);
-
-      if (next.length === 4) {
-        if (mode === "unlock") {
-          setTimeout(() => handleUnlock(next), 90);
-        } else if (mode === "setup") {
-          setTimeout(async () => {
-            setLoading(true);
-            try {
-              await api.setDiaryPin(next);
-              setSuccess(true);
-              sound.chime();
-              const entries = await api.getDiaryEntries(next);
-              setTimeout(() => onUnlocked(next, entries), 350);
-            } catch {
-              triggerShake("Failed to set passcode. Try again.");
-            } finally {
-              setLoading(false);
-            }
-          }, 90);
-        } else if (mode === "reset") {
-          if (resetStep === "enter") {
-            setTimeout(() => {
-              setTempNewPin(next);
-              setResetStep("confirm");
-              setPin("");
-            }, 90);
-          } else {
-            setTimeout(() => {
-              if (next === tempNewPin) {
-                handleResetSubmit(next);
-              } else {
-                triggerShake("Passcodes do not match. Start over.");
-                setResetStep("enter");
-                setTempNewPin("");
-              }
-            }, 90);
-          }
-        }
-      }
-      return next;
+      return prev + d;
     });
-  }, [loading, success, mode, resetStep, tempNewPin, handleUnlock, handleResetSubmit, onUnlocked]);
+  }, []);
 
   const handleBackspace = useCallback(() => {
-    if (loading || success) return;
     sound.pop();
+    setError("");
     setActiveKey("Backspace");
-    setTimeout(() => setActiveKey(null), 140);
+    setTimeout(() => setActiveKey(null), 120);
     setPin((prev) => prev.slice(0, -1));
-  }, [loading, success]);
+  }, []);
 
   const handleClear = useCallback(() => {
     sound.pop();
@@ -215,10 +144,110 @@ function LockScreen({
     setError("");
   }, []);
 
-  // Global physical keyboard capture
+  const verifyPin = useCallback(async (code: string) => {
+    if (isVerifyingRef.current) return;
+    isVerifyingRef.current = true;
+    setLoading(true);
+    setError("");
+
+    try {
+      const valid = await api.verifyDiaryPin(code);
+      if (valid) {
+        sound.chime();
+        setSuccess(true);
+        const entries = await api.getDiaryEntries(code);
+        setTimeout(() => {
+          onUnlocked(code, entries);
+        }, 500);
+      } else {
+        sound.pop();
+        setError("Incorrect passcode. Please try again.");
+        setPin("");
+      }
+    } catch (err: any) {
+      sound.pop();
+      setError(err?.message || "Authentication error.");
+      setPin("");
+    } finally {
+      setLoading(false);
+      isVerifyingRef.current = false;
+    }
+  }, [onUnlocked]);
+
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key >= "0" && e.key <= "9") {
+    if (mode === "unlock" && pin.length === 4 && !loading && !success) {
+      verifyPin(pin);
+    } else if (mode === "setup" && pin.length === 4) {
+      if (resetStep === 1) {
+        sound.pop();
+        setResetConfirmPin(pin);
+        setPin("");
+        setResetStep(2);
+      } else {
+        if (pin === resetConfirmPin) {
+          sound.chime();
+          setLoading(true);
+          api.setDiaryPin(pin)
+            .then(() => {
+              setSuccess(true);
+              return api.getDiaryEntries(pin);
+            })
+            .then((entries) => {
+              setTimeout(() => onUnlocked(pin, entries), 500);
+            })
+            .catch((err) => {
+              setError(err.message || "Failed to set PIN.");
+              setPin("");
+              setResetStep(1);
+            })
+            .finally(() => setLoading(false));
+        } else {
+          sound.pop();
+          setError("PINs do not match. Try again.");
+          setPin("");
+          setResetConfirmPin("");
+          setResetStep(1);
+        }
+      }
+    } else if (mode === "reset" && pin.length === 4) {
+      if (resetStep === 1) {
+        sound.pop();
+        setResetConfirmPin(pin);
+        setPin("");
+        setResetStep(2);
+      } else {
+        if (pin === resetConfirmPin) {
+          sound.chime();
+          setLoading(true);
+          api.resetDiaryPin(pin)
+            .then(() => {
+              setSuccess(true);
+              return api.getDiaryEntries(pin);
+            })
+            .then((entries) => {
+              setTimeout(() => onUnlocked(pin, entries), 500);
+            })
+            .catch((err) => {
+              setError(err.message || "Failed to reset PIN.");
+              setPin("");
+              setResetStep(1);
+            })
+            .finally(() => setLoading(false));
+        } else {
+          sound.pop();
+          setError("PINs do not match. Try again.");
+          setPin("");
+          setResetConfirmPin("");
+          setResetStep(1);
+        }
+      }
+    }
+  }, [pin, mode, resetStep, resetConfirmPin, loading, success, verifyPin, onUnlocked]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      if (/^[0-9]$/.test(e.key)) {
         e.preventDefault();
         handleDigit(e.key);
       } else if (e.key === "Backspace") {
@@ -229,299 +258,150 @@ function LockScreen({
         handleClear();
       }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleDigit, handleBackspace, handleClear]);
 
   const startResetMode = () => {
     sound.pop();
     setMode("reset");
-    setResetStep("enter");
-    setTempNewPin("");
+    setResetStep(1);
     setPin("");
+    setResetConfirmPin("");
     setError("");
   };
 
   const cancelResetMode = () => {
     sound.pop();
     setMode("unlock");
-    setResetStep("enter");
-    setTempNewPin("");
+    setResetStep(1);
     setPin("");
+    setResetConfirmPin("");
     setError("");
   };
 
   return (
     <div
-      onMouseMove={handleMouseMove}
-      className="h-full flex items-center justify-center p-6 bg-ground text-ink relative select-none overflow-hidden"
+      className="h-full flex items-center justify-center p-6 select-none bg-ground overflow-hidden"
       style={{ perspective: 1200 }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
     >
-      {/* Dynamic Cursor Light Refraction Sphere */}
-      <motion.div
-        className="pointer-events-none absolute w-[600px] h-[600px] rounded-full blur-3xl opacity-35"
-        style={{
-          background: "radial-gradient(circle, rgba(200, 116, 103, 0.28) 0%, rgba(217, 138, 126, 0.12) 40%, transparent 70%)",
-          left: coords.x ? coords.x - 300 : "50%",
-          top: coords.y ? coords.y - 300 : "40%",
-          transform: coords.x ? "none" : "translate(-50%, -50%)",
-          transition: "left 0.1s ease-out, top 0.1s ease-out",
-        }}
-      />
-
-      {/* Floating 3D Parallax Vault Card */}
       <motion.div
         ref={cardRef}
-        animate={shake ? { x: [-16, 16, -12, 12, -6, 6, 0] } : success ? { scale: [1, 1.05, 0.98], opacity: [1, 1, 0.9] } : {}}
-        transition={{ duration: 0.45, ease: "easeOut" }}
         style={{
           rotateX,
           rotateY,
           transformStyle: "preserve-3d",
         }}
-        onMouseLeave={handleMouseLeave}
-        className="w-full max-w-lg relative z-10"
+        initial={{ opacity: 0, scale: 0.95, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full max-w-md relative"
       >
-        <div className="relative overflow-hidden rounded-[32px] p-[1.5px] shadow-[0_24px_64px_rgba(60,50,40,0.12),0_8px_24px_rgba(0,0,0,0.06)] bg-gradient-to-b from-white/90 via-white/40 to-black/[0.08] transition-all">
-          {/* Edge Specular Light Follower */}
-          <div
-            className="pointer-events-none absolute inset-0 rounded-[32px] transition-opacity duration-300 opacity-80"
-            style={{
-              background: `radial-gradient(400px circle at ${coords.x}px ${coords.y}px, rgba(200, 116, 103, 0.35), transparent 60%)`,
-            }}
-          />
-
-          {/* Inner Card Body */}
-          <div className="relative rounded-[30px] bg-surface backdrop-blur-2xl px-10 py-10 flex flex-col items-center">
-            {/* 3D Floating Vault Emblem */}
+        <div className="relative rounded-3xl bg-surface/95 border border-rule shadow-2xl p-8 backdrop-blur-xl transition-all duration-300">
+          <div className="flex flex-col items-center text-center">
             <motion.div
-              style={{ transform: "translateZ(40px)" }}
-              className="relative flex items-center justify-center mb-6"
+              animate={success ? { scale: [1, 1.15, 1], rotate: [0, -6, 0] } : {}}
+              className="w-14 h-14 rounded-2xl bg-accent/15 border border-accent/25 flex items-center justify-center text-accent mb-4 shadow-sm"
             >
-              <div className="relative w-20 h-20 rounded-3xl bg-accent/15 border border-accent/30 shadow-sm flex items-center justify-center">
-                <motion.div
-                  animate={success ? { rotate: [0, 360], scale: [1, 1.25, 1] } : { rotate: [0, 3, -3, 0] }}
-                  transition={{ duration: 0.6 }}
-                >
-                  <ClarityLogo size="lg" showText={false} theme="terracotta" shape="squircle" />
-                </motion.div>
-
-                {/* Status indicator lock glyph */}
-                <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-accent text-white flex items-center justify-center shadow-md">
-                  {mode === "reset" ? (
-                    <RotateCcw className="w-3.5 h-3.5 stroke-[2.4]" />
-                  ) : success ? (
-                    <Unlock className="w-3.5 h-3.5 stroke-[2.4]" />
-                  ) : (
-                    <Lock className="w-3.5 h-3.5 stroke-[2.4]" />
-                  )}
-                </div>
-              </div>
+              {success ? (
+                <Unlock className="w-7 h-7 stroke-[2.2]" />
+              ) : mode === "setup" ? (
+                <Key className="w-7 h-7 stroke-[2.2]" />
+              ) : (
+                <Lock className="w-7 h-7 stroke-[2.2]" />
+              )}
             </motion.div>
 
-            {/* Typography */}
-            <div className="text-center space-y-1.5 mb-8" style={{ transform: "translateZ(30px)" }}>
-              <h2 className="text-3xl font-bold tracking-tight text-ink font-serif">
-                {mode === "reset"
-                  ? resetStep === "enter"
-                    ? "Reset Passcode"
-                    : "Confirm New Passcode"
-                  : mode === "setup"
-                  ? "Protect Your Sanctuary"
-                  : "Private Vault"}
-              </h2>
-              <p className="text-ink-faint text-xs font-medium tracking-wide">
-                {mode === "reset"
-                  ? resetStep === "enter"
-                    ? "Enter 4 digits for your new passcode"
-                    : "Repeat the 4 digits to confirm"
-                  : mode === "setup"
-                  ? "Choose a 4-digit PIN using your keyboard"
-                  : "Type your 4-digit passcode on your keyboard"}
-              </p>
-            </div>
+            <h1 className="text-2xl font-bold text-ink tracking-tight font-serif mb-1">
+              {mode === "setup"
+                ? (resetStep === 1 ? "Initialize Private Vault" : "Confirm Passcode")
+                : mode === "reset"
+                ? (resetStep === 1 ? "Enter New Passcode" : "Confirm New Passcode")
+                : "Private Vault"}
+            </h1>
+            <p className="text-xs text-ink-faint font-sans max-w-xs mb-6">
+              {mode === "setup"
+                ? (resetStep === 1 ? "Inscribe a 4-digit master PIN to seal your private entries." : "Re-enter your 4-digit PIN to confirm.")
+                : mode === "reset"
+                ? (resetStep === 1 ? "Choose a new 4-digit passcode for your journal." : "Confirm your new 4-digit passcode.")
+                : "Client-side AES-256-GCM encrypted personal reflections."}
+            </p>
 
-            {/* ─── 4 Kinetic Floating Vault Rings ───────────────────────────────── */}
-            <div
-              style={{ transform: "translateZ(50px)" }}
-              className="py-4 px-6 flex items-center justify-center gap-6 mb-4 relative"
-            >
+            {/* Digit Slots */}
+            <div className="flex items-center gap-3.5 mb-6">
               {[0, 1, 2, 3].map((idx) => {
                 const filled = pin.length > idx;
                 const active = pin.length === idx;
-                const ringRipples = ripples.filter((r) => r.index === idx);
-
                 return (
-                  <div key={idx} className="relative flex items-center justify-center">
-                    {/* Expanding Kinetic Ripple Shockwaves */}
-                    {ringRipples.map((r) => (
-                      <motion.div
-                        key={r.id}
-                        initial={{ scale: 0.8, opacity: 0.95 }}
-                        animate={{ scale: 2.3, opacity: 0 }}
-                        transition={{ duration: 0.55, ease: "easeOut" }}
-                        className="absolute w-14 h-14 rounded-full border-2 border-accent pointer-events-none"
-                      />
-                    ))}
-
-                    {/* Outer Ambient Kinetic Ring */}
-                    <motion.div
-                      animate={
-                        success
-                          ? { scale: [1, 1.2, 1], borderColor: "var(--c-done)" }
-                          : filled
-                          ? { scale: [1, 1.12, 1], borderColor: "var(--c-accent)" }
-                          : active
-                          ? { scale: [1, 1.05, 1], borderColor: "var(--c-accent-soft)" }
-                          : { scale: 1, borderColor: "var(--c-rule)" }
-                      }
-                      transition={{ duration: 0.35 }}
-                      className={clsx(
-                        "w-14 h-14 rounded-2xl border-2 flex items-center justify-center transition-all duration-200 relative overflow-hidden",
-                        filled
-                          ? "bg-raised shadow-xs border-accent"
-                          : active
-                          ? "bg-surface border-accent shadow-xs ring-2 ring-accent/20"
-                          : "bg-ground border-rule"
-                      )}
-                    >
-                      {/* Inner Core Gemstone / Glyph */}
-                      <AnimatePresence mode="wait">
-                        {filled ? (
-                          <motion.div
-                            key="filled"
-                            initial={{ scale: 0, rotate: -45 }}
-                            animate={{ scale: 1, rotate: 0 }}
-                            exit={{ scale: 0 }}
-                            transition={{ type: "spring", stiffness: 450, damping: 20 }}
-                            className={clsx(
-                              "w-5 h-5 rounded-full flex items-center justify-center text-white shadow-sm",
-                              success ? "bg-done" : "bg-accent"
-                            )}
-                          >
-                            <span className="w-2 h-2 rounded-full bg-white/90" />
-                          </motion.div>
-                        ) : active ? (
-                          <motion.div
-                            key="active"
-                            animate={{ opacity: [0.3, 0.9, 0.3], scale: [0.85, 1.15, 0.85] }}
-                            transition={{ repeat: Infinity, duration: 1.6, ease: "easeInOut" }}
-                            className="w-2.5 h-2.5 rounded-full bg-accent/50"
-                          />
-                        ) : (
-                          <div key="empty" className="w-2 h-2 rounded-full bg-rule" />
-                        )}
-                      </AnimatePresence>
-                    </motion.div>
+                  <div
+                    key={idx}
+                    className={clsx(
+                      "w-11 h-13 rounded-xl border flex items-center justify-center transition-all duration-200 font-mono text-xl font-bold",
+                      filled
+                        ? "border-accent bg-accent/10 text-accent shadow-xs"
+                        : active
+                        ? "border-accent/60 bg-ground ring-2 ring-accent/20"
+                        : "border-rule bg-ground text-ink-faint"
+                    )}
+                  >
+                    {filled ? "•" : ""}
                   </div>
                 );
               })}
             </div>
 
-            {/* Error & Status Toast */}
-            <div className="h-6 flex items-center justify-center mb-6" style={{ transform: "translateZ(30px)" }}>
-              <AnimatePresence mode="wait">
-                {error ? (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    className="flex items-center gap-1.5 text-xs text-accent font-semibold bg-accent/10 px-3 py-1 rounded-full border border-accent/20"
-                  >
-                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>{error}</span>
-                  </motion.div>
-                ) : loading ? (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="flex items-center gap-2 text-xs text-ink-faint font-medium"
-                  >
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
-                    <span>Verifying passcode…</span>
-                  </motion.div>
-                ) : success ? (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="flex items-center gap-1.5 text-xs text-done font-bold"
-                  >
-                    <Sparkle className="w-3.5 h-3.5" />
-                    <span>Journal Unlocked</span>
-                  </motion.div>
-                ) : (
-                  <p className="text-[11px] text-ink-faint font-mono tracking-tight flex items-center gap-1.5">
-                    <span>Press any 4 digits</span>
-                    <span>•</span>
-                    <kbd className="px-1.5 py-0.5 rounded bg-black/[0.04] text-ink-soft text-[10px] font-bold">Esc</kbd>
-                    <span>to clear</span>
-                  </p>
-                )}
-              </AnimatePresence>
-            </div>
+            {error && (
+              <p className="text-xs text-danger font-medium mb-4 flex items-center gap-1.5 animate-fadeIn">
+                <AlertCircle className="w-3.5 h-3.5" /> {error}
+              </p>
+            )}
 
-            <div className="h-px w-full bg-gradient-to-r from-transparent via-black/[0.06] to-transparent mb-6" />
+            {/* Physical Keyboard Visualizer */}
+            <div className="w-full flex flex-col items-center gap-2 pt-2">
+              <div className="grid grid-cols-5 gap-1.5 max-w-xs">
+                {["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => handleDigit(k)}
+                    className={clsx(
+                      "w-11 h-10 rounded-xl font-mono text-xs font-bold transition-all border flex items-center justify-center cursor-pointer shadow-xs",
+                      activeKey === k
+                        ? "bg-accent text-white border-accent scale-95"
+                        : "bg-surface text-ink hover:border-accent border-rule"
+                    )}
+                  >
+                    {k}
+                  </button>
+                ))}
+              </div>
 
-            {/* ─── Real-Time Physical Keyboard Visualizer Strip ──────────────────── */}
-            <div className="w-full flex flex-col items-center gap-3" style={{ transform: "translateZ(30px)" }}>
-              <div className="flex items-center gap-1.5 flex-wrap justify-center max-w-sm">
-                {["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map((k) => {
-                  const isPressed = activeKey === k;
-                  return (
-                    <motion.button
-                      key={k}
-                      type="button"
-                      onClick={() => handleDigit(k)}
-                      animate={isPressed ? { scale: 0.88, y: 2 } : { scale: 1, y: 0 }}
-                      className={clsx(
-                        "w-8 h-8 rounded-xl font-mono text-xs font-bold transition-colors flex items-center justify-center border cursor-pointer select-none shadow-xs",
-                        isPressed
-                          ? "bg-accent text-white border-accent shadow-sm"
-                          : "bg-white/80 hover:bg-white text-ink-soft hover:text-ink border-rule"
-                      )}
-                    >
-                      {k}
-                    </motion.button>
-                  );
-                })}
-
-                {/* Backspace Key */}
-                <motion.button
+              <div className="flex items-center gap-2 mt-2">
+                <button
                   type="button"
                   onClick={handleBackspace}
                   disabled={pin.length === 0}
-                  animate={activeKey === "Backspace" ? { scale: 0.88 } : { scale: 1 }}
-                  className={clsx(
-                    "px-2.5 h-8 rounded-xl font-mono text-[11px] font-bold transition-colors flex items-center gap-1 border cursor-pointer select-none shadow-xs",
-                    activeKey === "Backspace"
-                      ? "bg-accent text-white border-accent"
-                      : "bg-white/80 hover:bg-white text-ink-faint hover:text-ink border-rule disabled:opacity-30 disabled:pointer-events-none"
-                  )}
-                  title="Backspace"
+                  className="px-3 py-1.5 rounded-lg border border-rule bg-surface text-xs font-mono text-ink-soft hover:text-ink disabled:opacity-40 cursor-pointer"
                 >
-                  <Delete className="w-3.5 h-3.5" />
-                  <span>Del</span>
-                </motion.button>
-              </div>
-
-              {/* Recovery / Reset Link */}
-              <div className="pt-2 text-center">
+                  Backspace
+                </button>
                 {mode === "unlock" ? (
                   <button
                     type="button"
                     onClick={startResetMode}
-                    className="text-xs font-bold text-ink-faint hover:text-accent transition cursor-pointer flex items-center gap-1.5 mx-auto"
+                    className="text-xs text-ink-faint hover:text-accent font-mono transition-colors cursor-pointer ml-2"
                   >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Forgot Passcode? Reset PIN</span>
+                    Reset PIN?
                   </button>
                 ) : (
                   <button
                     type="button"
                     onClick={cancelResetMode}
-                    className="text-xs font-bold text-ink-faint hover:text-ink transition cursor-pointer"
+                    className="text-xs text-ink-faint hover:text-ink font-mono transition-colors cursor-pointer ml-2"
                   >
-                    ← Cancel &amp; Return to Unlock
+                    Cancel
                   </button>
                 )}
               </div>
@@ -533,7 +413,7 @@ function LockScreen({
   );
 }
 
-// ─── Passcode Settings Modal (Inside unlocked diary) ─────────────────────────
+// ── Passcode Settings Modal ──────────────────────────────────────────────────
 function PasscodeSettingsModal({
   currentPin: _currentPin,
   onClose,
@@ -559,123 +439,74 @@ function PasscodeSettingsModal({
       return;
     }
     setSaving(true);
-    setError("");
+    sound.click();
     try {
-      await api.resetDiaryPin(newPin.trim());
+      await api.setDiaryPin(newPin.trim());
       sound.chime();
       onPinChanged(newPin.trim());
       onClose();
-    } catch {
-      setError("Failed to update PIN. Try again.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleRemovePin = async () => {
-    if (!confirm("Are you sure you want to remove passcode protection from your diary? Anyone on this computer will be able to open it.")) {
-      return;
-    }
-    setSaving(true);
-    try {
-      await api.removeDiaryPin();
-      sound.chime();
-      onPinChanged(null);
-      onClose();
-    } catch {
-      setError("Failed to remove PIN.");
+    } catch (err: any) {
+      setError(err?.message || "Failed to update passcode.");
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Passcode Settings" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 select-none">
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 select-none">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 12 }}
-        className="w-full max-w-sm morning-card-elevated overflow-hidden bg-surface rounded-3xl border border-rule shadow-2xl"
+        className="w-full max-w-sm bg-surface rounded-2xl border border-rule shadow-2xl overflow-hidden"
       >
-        <div className="px-6 py-4.5 bg-raised border-b border-rule flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-accent/15 flex items-center justify-center text-accent">
-              <Key className="w-4 h-4 stroke-[2.2]" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-ink font-serif">Passcode Settings</h3>
-              <p className="text-[11px] text-ink-faint">Update or remove diary encryption</p>
-            </div>
+        <div className="px-5 py-3.5 bg-raised border-b border-rule flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Key className="w-4 h-4 text-accent" />
+            <h3 className="text-sm font-bold text-ink font-serif">Vault Passcode</h3>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-ink-faint hover:text-ink transition">
+          <button onClick={onClose} className="p-1 rounded text-ink-faint hover:text-ink cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
-
-        <form onSubmit={handleChangePin} className="p-6 space-y-4">
-          {error && (
-            <div className="flex items-center gap-2 p-2.5 text-xs font-semibold text-accent bg-accent/10 rounded-xl border border-accent/20">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
-              New 4-Digit Passcode
-            </label>
+        <form onSubmit={handleChangePin} className="p-5 space-y-3">
+          {error && <p className="text-xs text-danger font-medium">{error}</p>}
+          <div className="space-y-1">
+            <label className="text-[11px] font-mono text-ink-faint uppercase">New 4-Digit PIN</label>
             <input
               type="password"
               maxLength={4}
               value={newPin}
               onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ""))}
               placeholder="••••"
-              className="morning-input text-center font-mono text-lg tracking-widest"
-              autoFocus
+              className="w-full px-3 py-2 rounded-lg bg-ground border border-rule text-center font-mono text-lg text-ink focus:outline-none focus:border-accent"
             />
           </div>
-
-          <div>
-            <label className="block text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
-              Confirm New Passcode
-            </label>
+          <div className="space-y-1">
+            <label className="text-[11px] font-mono text-ink-faint uppercase">Confirm PIN</label>
             <input
               type="password"
               maxLength={4}
               value={confirmPin}
               onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ""))}
               placeholder="••••"
-              className="morning-input text-center font-mono text-lg tracking-widest"
+              className="w-full px-3 py-2 rounded-lg bg-ground border border-rule text-center font-mono text-lg text-ink focus:outline-none focus:border-accent"
             />
           </div>
-
-          <div className="pt-2 flex flex-col gap-2">
-            <button
-              type="submit"
-              disabled={saving || newPin.length !== 4 || confirmPin.length !== 4}
-              className="morning-btn-accent justify-center py-2.5 w-full cursor-pointer disabled:opacity-50"
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              Save New Passcode
-            </button>
-
-            <button
-              type="button"
-              onClick={handleRemovePin}
-              disabled={saving}
-              className="text-xs font-bold text-accent hover:text-accent-soft py-2 transition cursor-pointer flex items-center justify-center gap-1.5"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Remove Passcode Protection
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={saving || newPin.length !== 4}
+            className="w-full py-2 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-40 cursor-pointer mt-2"
+          >
+            {saving ? "Saving..." : "Update Vault PIN"}
+          </button>
         </form>
       </motion.div>
     </div>
   );
 }
 
-// ─── Main Diary Unlocked View ────────────────────────────────────────────────
+// ── Main Diary Unlocked View ─────────────────────────────────────────────────
 export default function DiaryPage() {
   const [pin, setPin] = useState("");
   const [isLocked, setIsLocked] = useState(true);
@@ -691,6 +522,15 @@ export default function DiaryPage() {
   const [newDate, setNewDate] = useState(dayjs().format("YYYY-MM-DD"));
   const [promptIdx, setPromptIdx] = useState(0);
   const [editorText, setEditorText] = useState("");
+  
+  // Phase 2.4: Segmented toggle 'all' | 'written'
+  const [filterMode, setFilterMode] = useState<"all" | "written">("all");
+
+  // Phase 3.1: Day's Footprint auto-margin data
+  const [dayTasks, setDayTasks] = useState<Task[]>([]);
+  const [dayExpenses, setDayExpenses] = useState<Expense[]>([]);
+  const [isFootprintCollapsed, setIsFootprintCollapsed] = useState(false);
+
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
   const editorTextRef = useRef(editorText);
@@ -710,17 +550,34 @@ export default function DiaryPage() {
   const buildDefaultDates = () =>
     Array.from({ length: 14 }, (_, i) => dayjs().subtract(i, "day").format("YYYY-MM-DD"));
 
+  // Fetch Footprint data for selectedDate (Phase 3.1)
+  useEffect(() => {
+    const allTasks = dataCache.get<Task[]>("tasks") || [];
+    const allExpenses = dataCache.get<Expense[]>("expenses") || [];
+
+    setDayTasks(allTasks.filter((t) => t.due_at && t.due_at.startsWith(selectedDate)));
+    setDayExpenses(allExpenses.filter((e) => e.date === selectedDate));
+
+    if (allTasks.length === 0) {
+      api.getTasks().then((ts) => {
+        dataCache.set("tasks", ts);
+        setDayTasks(ts.filter((t) => t.due_at && t.due_at.startsWith(selectedDate)));
+      }).catch(() => {});
+    }
+    if (allExpenses.length === 0) {
+      api.getExpenses().then((exs) => {
+        dataCache.set("expenses", exs);
+        setDayExpenses(exs.filter((e) => e.date === selectedDate));
+      }).catch(() => {});
+    }
+  }, [selectedDate]);
+
   const handleLockDiary = () => {
     sound.pageTurn();
     isLockedRef.current = true;
     if (typingTimerRef.current) {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
-    }
-    for (const key of Object.keys(saveQueueRef.current)) {
-      if (saveQueueRef.current[key]) {
-        saveQueueRef.current[key].pending = undefined;
-      }
     }
     saveQueueRef.current = {};
     setIsTyping(false);
@@ -775,7 +632,6 @@ export default function DiaryPage() {
     }
     const q = saveQueueRef.current[date];
 
-    // If a request is already running for this date, merge and queue this latest payload
     if (q.inFlight) {
       q.pending = {
         body,
@@ -831,15 +687,15 @@ export default function DiaryPage() {
     sound.pop();
     const p = DAILY_PROMPTS[promptIdx];
     const current = editorText.trim();
-    const nextVal = current ? `${current}\n\n✨ *${p}*\n` : `✨ *${p}*\n`;
+    const nextVal = current ? `${current}\n\n• *${p}*\n` : `• *${p}*\n`;
     setEditorText(nextVal);
     handleSave(selectedDate, nextVal.trim());
   };
 
-  const selectMoodPill = (mood: string) => {
+  const selectMoodPill = (mood: DiaryMood) => {
     sound.pop();
     const currentMood = entriesRef.current[selectedDate]?.mood || null;
-    const next = mood === currentMood ? null : (mood as DiaryEntry['mood']);
+    const next = mood === currentMood ? null : mood;
     setEntries((prev) => {
       const updated = {
         ...prev,
@@ -848,8 +704,9 @@ export default function DiaryPage() {
             id: "",
             user_id: "",
             date: selectedDate,
-            created_at: "",
-            updated_at: "",
+            body: "",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
             deleted_at: null,
           }),
           mood: next,
@@ -859,16 +716,21 @@ export default function DiaryPage() {
       entriesRef.current = updated;
       return updated;
     });
+
     handleSave(selectedDate, editorTextRef.current.trim(), next);
   };
 
-  const handleTextChange = (val: string) => {
-    editorTextRef.current = val;
+  const handleTextChange = (text: string) => {
     setIsTyping(true);
+    editorTextRef.current = text;
     typingDateRef.current = selectedDate;
-    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+    }
+
     typingTimerRef.current = setTimeout(() => {
-      if (isLockedRef.current) return;
+      typingTimerRef.current = null;
       setIsTyping(false);
       const targetDate = typingDateRef.current;
       handleSave(targetDate, editorTextRef.current.trim(), entriesRef.current[targetDate]?.mood);
@@ -877,7 +739,6 @@ export default function DiaryPage() {
 
   const handleSelectDate = (date: string) => {
     if (date === selectedDate) return;
-    // Flush any pending auto-save immediately to the PREVIOUS date before switching
     if (typingTimerRef.current) {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
@@ -890,16 +751,52 @@ export default function DiaryPage() {
     setEditorText(entries[date]?.body || "");
   };
 
-  if (isLocked) return <LockScreen onUnlocked={handleUnlocked} />;
+  // Phase 3.1: Insert Footprint into Entry
+  const handleInsertFootprint = () => {
+    sound.chime();
+    const completedTasks = dayTasks.filter((t) => t.completed);
+    const daySpend = dayExpenses
+      .filter((e) => e.expense_type === "EXPENSE")
+      .reduce((sum, e) => sum + Number(e.amount), 0);
+    const dateFormatted = dayjs(selectedDate).format("MMMM D, YYYY");
+
+    const taskLines = completedTasks.length > 0
+      ? completedTasks.map((t) => `  • ✓ ${t.title}`).join("\n")
+      : "  • (No completed tasks recorded)";
+
+    const expenseLines = dayExpenses.length > 0
+      ? dayExpenses.map((e) => `  • $${Number(e.amount).toFixed(2)} — ${e.category}${e.description ? ` (${e.description})` : ""}`).join("\n")
+      : "  • $0.00 logged";
+
+    const stamp = `\n\n════════════════════════════════════════\n📜 Day's Footprint — ${dateFormatted}\n════════════════════════════════════════\nTasks Accomplished (${completedTasks.length}/${dayTasks.length}):\n${taskLines}\n\nLedger Spend ($${daySpend.toFixed(2)} total):\n${expenseLines}\n════════════════════════════════════════\n`;
+
+    const updatedText = editorText + stamp;
+    setEditorText(updatedText);
+    editorTextRef.current = updatedText;
+    handleSave(selectedDate, updatedText.trim(), entries[selectedDate]?.mood);
+  };
+
+  if (isLocked) {
+    return <LockScreen onUnlocked={handleUnlocked} />;
+  }
 
   const entry = entries[selectedDate];
   const currentMood = entry?.mood || null;
   const wordCount = editorText.trim() ? editorText.trim().split(/\s+/).length : 0;
   const readTime = Math.max(1, Math.ceil(wordCount / 200));
 
+  // Phase 2.4: Filtered dates based on 'all' | 'written'
+  const visibleDates = filterMode === "written"
+    ? dates.filter((d) => !!entries[d]?.body?.trim())
+    : dates;
+
+  const completedTasks = dayTasks.filter((t) => t.completed);
+  const totalSpend = dayExpenses
+    .filter((e) => e.expense_type === "EXPENSE")
+    .reduce((sum, e) => sum + Number(e.amount), 0);
+
   return (
-    <div className="h-full flex overflow-hidden bg-transparent">
-      {/* Passcode Settings Modal */}
+    <div className="h-full flex overflow-hidden bg-transparent font-sans">
       <AnimatePresence>
         {showSettings && (
           <PasscodeSettingsModal
@@ -907,44 +804,66 @@ export default function DiaryPage() {
             onClose={() => setShowSettings(false)}
             onPinChanged={(newP) => {
               if (newP) setPin(newP);
-              else {
-                setPin("");
-              }
+              else setPin("");
             }}
           />
         )}
       </AnimatePresence>
 
-      {/* ─── Left Sidebar: Date List ────────────────────────────────────────── */}
+      {/* ── Left Sidebar: Date List & Decluttering (Phase 2.4) ────────────────────── */}
       <aside className="w-72 flex-shrink-0 border-r border-rule flex flex-col bg-surface/90 select-none">
-        <div className="px-5 py-4 border-b border-rule flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center text-accent">
-              <BookOpen className="w-4 h-4 stroke-[2.2]" />
-            </div>
-            <h2 className="font-bold text-ink text-base font-serif">Diary Entries</h2>
+        <div className="px-4 py-3.5 border-b border-rule flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-accent stroke-[2.2]" />
+            <h2 className="font-bold text-ink text-sm font-serif">Diary Entries</h2>
           </div>
           <div className="flex items-center gap-1">
             <button
               title="Add date"
               onClick={() => { sound.pop(); setAddingDate((v) => !v); }}
-              className="p-1.5 rounded-lg hover:bg-raised text-ink-faint hover:text-ink transition-colors cursor-pointer"
+              className="p-1 rounded-lg hover:bg-raised text-ink-faint hover:text-ink transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4 stroke-[2.2]" />
             </button>
             <button
               title="Passcode Settings"
               onClick={() => setShowSettings(true)}
-              className="p-1.5 rounded-lg hover:bg-raised text-ink-faint hover:text-ink transition-colors cursor-pointer"
+              className="p-1 rounded-lg hover:bg-raised text-ink-faint hover:text-ink transition-colors cursor-pointer"
             >
               <Settings className="w-4 h-4 stroke-[1.8]" />
             </button>
             <button
               title="Lock diary"
               onClick={handleLockDiary}
-              className="p-1.5 rounded-lg hover:bg-accent/10 text-ink-faint hover:text-accent transition-colors cursor-pointer"
+              className="p-1 rounded-lg hover:bg-accent/10 text-ink-faint hover:text-accent transition-colors cursor-pointer"
             >
               <Lock className="w-4 h-4 stroke-[1.8]" />
+            </button>
+          </div>
+        </div>
+
+        {/* Phase 2.4: Segmented Pill Toggle (All Days | Written Only) */}
+        <div className="px-3 pt-2.5 pb-1">
+          <div className="grid grid-cols-2 p-0.5 rounded-lg bg-raised border border-rule text-xs font-mono font-medium">
+            <button
+              type="button"
+              onClick={() => { sound.click(); setFilterMode("all"); }}
+              className={clsx(
+                "py-1 rounded-md transition-all cursor-pointer text-center",
+                filterMode === "all" ? "bg-surface text-ink font-bold shadow-2xs" : "text-ink-faint hover:text-ink"
+              )}
+            >
+              All Days ({dates.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => { sound.click(); setFilterMode("written"); }}
+              className={clsx(
+                "py-1 rounded-md transition-all cursor-pointer text-center",
+                filterMode === "written" ? "bg-surface text-ink font-bold shadow-2xs" : "text-ink-faint hover:text-ink"
+              )}
+            >
+              Written ({dates.filter((d) => !!entries[d]?.body?.trim()).length})
             </button>
           </div>
         </div>
@@ -965,11 +884,11 @@ export default function DiaryPage() {
                   type="date"
                   value={newDate}
                   onChange={(e) => setNewDate(e.target.value)}
-                  className="morning-input py-1 text-xs"
+                  className="px-2 py-1 rounded bg-ground border border-rule text-xs font-mono text-ink outline-none"
                 />
                 <button
                   onClick={handleAddDate}
-                  className="p-1.5 rounded-lg bg-accent hover:bg-accent-soft text-white transition-colors cursor-pointer shadow-xs"
+                  className="p-1.5 rounded-lg bg-accent text-white transition-colors cursor-pointer shadow-xs"
                 >
                   <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                 </button>
@@ -978,57 +897,70 @@ export default function DiaryPage() {
           )}
         </AnimatePresence>
 
-        {/* Date List */}
+        {/* Date List with Mood Dots & 1-line preview snippets */}
         <nav className="flex-1 overflow-y-auto py-2 px-2.5 space-y-1">
-          {dates.map((date) => {
+          {visibleDates.map((date) => {
             const d = dayjs(date);
             const isToday = date === dayjs().format("YYYY-MM-DD");
             const isSelected = date === selectedDate;
-            const hasEntry = !!entries[date]?.body;
+            const entryData = entries[date];
+            const hasEntry = !!entryData?.body?.trim();
+            const moodTag = entryData?.mood;
 
             return (
               <button
                 key={date}
                 onClick={() => handleSelectDate(date)}
                 className={clsx(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-left group cursor-pointer",
+                  "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl transition-all duration-150 text-left group cursor-pointer border",
                   isSelected
-                    ? "bg-surface border border-rule shadow-sm text-ink"
-                    : "hover:bg-black/[0.03] border border-transparent text-ink-soft"
+                    ? "bg-surface border-rule shadow-2xs text-ink"
+                    : "hover:bg-raised/70 border-transparent text-ink-soft"
                 )}
               >
-                <div className={clsx(
-                  "w-9 h-9 rounded-xl flex flex-col items-center justify-center flex-shrink-0 text-xs font-bold leading-tight font-serif",
-                  isToday
-                    ? "bg-accent text-white shadow-xs"
-                    : isSelected
+                {/* Date Monogram badge */}
+                <div
+                  className={clsx(
+                    "w-8 h-8 rounded-lg flex flex-col items-center justify-center flex-shrink-0 text-xs font-bold leading-tight font-serif",
+                    isToday
+                      ? "bg-accent text-white"
+                      : isSelected
                       ? "bg-accent/15 text-accent border border-accent/30"
                       : "bg-surface text-ink-soft border border-rule"
-                )}>
-                  <span className="text-[9px] uppercase tracking-wider opacity-80">{d.format("MMM")}</span>
+                  )}
+                >
+                  <span className="text-[8.5px] uppercase tracking-wider opacity-80">{d.format("MMM")}</span>
                   <span className="text-xs font-bold -mt-0.5">{d.format("D")}</span>
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <div className={clsx(
-                    "text-xs font-bold truncate",
-                    isSelected ? "text-ink" : "text-ink-soft"
-                  )}>
-                    {isToday ? "Today" : d.format("dddd")}
-                  </div>
-                  <div className="text-[11px] text-ink-faint truncate mt-0.5">
-                    {hasEntry ? entries[date].body!.slice(0, 30) + (entries[date].body!.length > 30 ? "..." : "") : "No entry yet"}
-                  </div>
-                </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className={clsx("text-xs font-bold truncate", isSelected ? "text-ink" : "text-ink-soft")}>
+                      {isToday ? "Today" : d.format("ddd, D MMM")}
+                    </span>
 
-                {isSelected && <ChevronRight className="w-3.5 h-3.5 text-ink-faint flex-shrink-0" />}
+                    {/* Mood Colored Status Dot (Phase 2.4) */}
+                    {moodTag && MOOD_COLORS[moodTag] && (
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: MOOD_COLORS[moodTag] }}
+                        title={`Mood: ${moodTag}`}
+                      />
+                    )}
+                  </div>
+
+                  {/* 1-Line Preview Snippet */}
+                  <p className="text-[11px] text-ink-faint truncate font-sans">
+                    {hasEntry ? entryData.body.slice(0, 36) : "No entry recorded"}
+                  </p>
+                </div>
               </button>
             );
           })}
         </nav>
       </aside>
 
-      {/* ─── Right: Editor Canvas ────────────────────────────────────────────── */}
+      {/* ── Right: Editor Canvas & Daily Chronicle Margin (Phase 3.1) ────────────── */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <AnimatePresence mode="wait">
           <motion.div
@@ -1036,135 +968,220 @@ export default function DiaryPage() {
             initial={{ opacity: 0, x: 8 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -8 }}
-            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
             className="flex-1 flex flex-col overflow-hidden"
           >
-            {/* Header with Date, Word count & Save Pulse */}
-            <div className="px-10 pt-6 pb-4 border-b border-rule flex items-center justify-between bg-surface/90 backdrop-blur-md select-none">
+            {/* Header */}
+            <div className="px-8 pt-5 pb-3 border-b border-rule flex items-center justify-between bg-surface/90 backdrop-blur-md select-none shrink-0">
               <div>
                 <p className="text-xs font-bold text-ink-faint uppercase tracking-wider font-mono">
                   {dayjs(selectedDate).format("dddd")}
                 </p>
-                <h2 className="text-2xl sm:text-3xl font-bold text-ink font-serif tracking-tight mt-0.5">
+                <h2 className="text-2xl font-bold text-ink font-serif tracking-tight">
                   {dayjs(selectedDate).format("MMMM D, YYYY")}
                 </h2>
               </div>
 
-              {/* Stats & Tactile Save Indicator */}
+              {/* Stats & Save Indicator */}
               <div className="flex items-center gap-3">
-                <span className="font-mono text-xs text-ink-faint px-2.5 py-1 rounded-lg bg-surface border border-rule">
+                <span className="font-mono text-xs text-ink-faint px-2 py-0.5 rounded bg-surface border border-rule">
                   {wordCount} words • ~{readTime}m read
                 </span>
 
-                <div className="h-8 flex items-center" aria-live="polite">
+                <div className="h-7 flex items-center" aria-live="polite">
                   <AnimatePresence mode="wait">
                     {savingIds[selectedDate] || isTyping ? (
-                      <motion.span key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="flex items-center gap-1.5 text-xs text-accent font-medium bg-accent/10 px-2.5 py-1 rounded-lg border border-accent/20">
-                        <span className="w-2 h-2 rounded-full bg-accent animate-ping" />
+                      <span className="flex items-center gap-1.5 text-xs text-accent font-medium bg-accent/10 px-2.5 py-0.5 rounded-lg border border-accent/20">
+                        <span className="w-1.5 h-1.5 rounded-full bg-accent animate-ping" />
                         <span>Autosaving…</span>
-                      </motion.span>
+                      </span>
                     ) : savedIds[selectedDate] ? (
-                      <motion.span key="saved" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-                        className="flex items-center gap-1.5 text-xs text-done font-semibold bg-done/10 px-2.5 py-1 rounded-lg border border-done/20">
-                        <Check className="w-3.5 h-3.5 stroke-[2.5]" /> Saved
-                      </motion.span>
+                      <span className="flex items-center gap-1.5 text-xs text-done font-semibold bg-done/10 px-2.5 py-0.5 rounded-lg border border-done/20">
+                        <Check className="w-3.5 h-3.5 stroke-[2.5]" /> Encrypted & Saved
+                      </span>
                     ) : saveErrors[selectedDate] ? (
-                      <motion.span key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="flex items-center gap-1.5 text-xs text-danger font-semibold bg-danger/10 px-2.5 py-1 rounded-lg border border-danger/20"
-                        title={saveErrors[selectedDate]}>
+                      <span className="flex items-center gap-1.5 text-xs text-danger font-semibold bg-danger/10 px-2.5 py-0.5 rounded-lg border border-danger/20">
                         <AlertCircle className="w-3.5 h-3.5" />
-                        <span>Save failed</span><button type="button" onClick={() => handleSave(selectedDate, editorText.trim(), entries[selectedDate]?.mood)} className="ml-1 underline font-medium hover:text-danger/80 cursor-pointer">Retry</button>
-                      </motion.span>
+                        <span>Save failed</span>
+                      </span>
                     ) : (
-                      <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="flex items-center gap-1.5 text-xs text-ink-faint px-2 py-1">
-                        <Pencil className="w-3.5 h-3.5 stroke-[1.8]" /> Ready
-                      </motion.span>
+                      <span className="flex items-center gap-1.5 text-xs text-ink-faint px-2 py-0.5">
+                        <Pencil className="w-3 h-3 stroke-[1.8]" /> Ready
+                      </span>
                     )}
                   </AnimatePresence>
                 </div>
               </div>
             </div>
 
-            {/* Notebook canvas wrapper */}
-            <div className="flex-1 overflow-hidden p-6 flex flex-col space-y-4">
-              {/* Daily Reflection Prompt Carousel */}
-              <div className="p-3.5 px-4.5 rounded-2xl bg-surface border border-rule shadow-xs flex items-center justify-between gap-4 select-none">
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <div className="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center text-accent flex-shrink-0">
-                    <Sparkles className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[10px] uppercase tracking-wider font-bold text-ink-faint">
-                      Daily Reflection Prompt
-                    </div>
+            {/* Main Notebook Surface with Horizontal Split for Footprint Auto-Margin */}
+            <div className="flex-1 overflow-hidden p-6 flex gap-5">
+              {/* Left Main Writing Area */}
+              <div className="flex-1 flex flex-col space-y-3.5 min-w-0">
+                {/* Reflection Prompt */}
+                <div className="p-3 px-4 rounded-xl bg-surface border border-rule shadow-2xs flex items-center justify-between gap-3 select-none shrink-0">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <Sparkles className="w-4 h-4 text-accent shrink-0" />
                     <p className="text-xs font-semibold text-ink truncate italic font-serif">
                       "{DAILY_PROMPTS[promptIdx]}"
                     </p>
                   </div>
-                </div>
-
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <button
-                    onClick={cyclePrompt}
-                    title="Shuffle prompt"
-                    className="p-1.5 rounded-lg hover:bg-raised text-ink-faint hover:text-ink transition cursor-pointer"
-                  >
-                    <Shuffle className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={insertPrompt}
-                    className="px-2.5 py-1 rounded-lg bg-surface hover:bg-raised border border-rule text-[11px] font-bold text-accent transition cursor-pointer"
-                  >
-                    Use Prompt
-                  </button>
-                </div>
-              </div>
-
-              {/* Mood selector strip */}
-              <div className="flex items-center gap-2 px-1 select-none">
-                <span className="text-xs font-bold text-ink-faint uppercase tracking-wider mr-1 flex items-center gap-1">
-                  <Smile className="w-3.5 h-3.5" /> Mood:
-                </span>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {MOODS.map((m) => (
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
-                      key={m.label}
-                      onClick={() => selectMoodPill(m.label)}
-                      className={clsx(
-                        "flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold border transition-all cursor-pointer",
-                        currentMood === m.label
-                          ? "bg-accent text-white border-accent shadow-xs"
-                          : "bg-surface text-ink-soft border-rule hover:border-rule hover:text-ink"
-                      )}
+                      onClick={cyclePrompt}
+                      title="Shuffle prompt"
+                      className="p-1 rounded text-ink-faint hover:text-ink cursor-pointer"
                     >
-                      <span>{m.emoji}</span>
-                      <span>{m.label}</span>
+                      <Shuffle className="w-3.5 h-3.5" />
                     </button>
-                  ))}
+                    <button
+                      onClick={insertPrompt}
+                      className="px-2 py-0.5 rounded bg-surface hover:bg-raised border border-rule text-[11px] font-bold text-accent cursor-pointer"
+                    >
+                      Use Prompt
+                    </button>
+                  </div>
+                </div>
+
+                {/* Mood Selector Strip */}
+                <div className="flex items-center gap-2 px-1 select-none shrink-0">
+                  <span className="text-xs font-mono font-bold text-ink-faint uppercase mr-1 flex items-center gap-1">
+                    <Smile className="w-3.5 h-3.5" /> Mood:
+                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {MOODS.map((m) => (
+                      <button
+                        key={m.label}
+                        onClick={() => selectMoodPill(m.label)}
+                        className={clsx(
+                          "flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer",
+                          currentMood === m.label
+                            ? "bg-accent text-white border-accent shadow-2xs"
+                            : "bg-surface text-ink-soft border-rule hover:border-ink-soft hover:text-ink"
+                        )}
+                      >
+                        <span>{m.emoji}</span>
+                        <span>{m.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Physical Ruled Journal Surface */}
+                <div
+                  style={{ '--mood-glow': currentMood && MOOD_GLOWS[currentMood] ? MOOD_GLOWS[currentMood] : 'transparent' } as React.CSSProperties}
+                  className="flex-1 overflow-hidden rounded-2xl bg-surface border border-rule p-6 sm:p-8 flex flex-col relative mood-glow transition-[border-color,box-shadow,background-color] duration-300"
+                >
+                  <div className="absolute top-0 bottom-0 left-12 sm:left-16 w-px bg-accent/20 pointer-events-none" />
+                  <textarea
+                    key={selectedDate}
+                    ref={textareaRef}
+                    value={editorText}
+                    onChange={(e) => {
+                      setEditorText(e.target.value);
+                      handleTextChange(e.target.value);
+                    }}
+                    placeholder={`Write your private thoughts for ${dayjs(selectedDate).format("MMMM D")}…`}
+                    className="w-full h-full bg-transparent outline-none resize-none text-ink font-serif text-base sm:text-lg leading-relaxed placeholder:text-ink-faint pl-10 sm:pl-12 pr-4 border-none"
+                    autoFocus
+                  />
                 </div>
               </div>
 
-              {/* Physical Journal Textured Page */}
+              {/* ── Phase 3.1: Collapsible "Day's Footprint" Auto-Margin ──────────── */}
               <div
-                style={{ '--mood-glow': currentMood && MOOD_GLOWS[currentMood] ? MOOD_GLOWS[currentMood] : 'transparent' } as React.CSSProperties}
-                className="flex-1 overflow-hidden rounded-2xl bg-surface border border-rule p-6 sm:p-8 flex flex-col relative mood-glow transition-[border-color,box-shadow,background-color] duration-300">
-                {/* Left Margin Accent Line */}
-                <div className="absolute top-0 bottom-0 left-12 sm:left-16 w-px bg-accent/20 pointer-events-none" />
+                className={clsx(
+                  "flex-shrink-0 transition-all duration-300 flex flex-col",
+                  isFootprintCollapsed ? "w-10" : "w-72"
+                )}
+              >
+                {isFootprintCollapsed ? (
+                  <button
+                    type="button"
+                    onClick={() => { sound.click(); setIsFootprintCollapsed(false); }}
+                    className="h-full bg-surface border border-rule rounded-2xl p-2 flex flex-col items-center justify-between text-ink-faint hover:text-ink hover:border-accent transition-all cursor-pointer"
+                    title="Expand Day's Footprint"
+                  >
+                    <FileText className="w-4 h-4 text-accent" />
+                    <span className="font-mono text-[10px] uppercase tracking-wider [writing-mode:vertical-lr] rotate-180 font-bold">
+                      Day's Footprint
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <div className="h-full bg-surface border border-rule rounded-2xl p-4 shadow-2xs flex flex-col overflow-hidden">
+                    <div className="flex items-center justify-between pb-2 border-b border-rule shrink-0">
+                      <span className="font-mono text-[10.5px] uppercase tracking-wider text-ink font-bold flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-accent" /> Day's Footprint
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => { sound.click(); setIsFootprintCollapsed(true); }}
+                        className="p-1 rounded text-ink-faint hover:text-ink cursor-pointer"
+                        title="Collapse Footprint"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
 
-                <textarea
-                  key={selectedDate}
-                  ref={textareaRef}
-                  value={editorText}
-                  onChange={(e) => {
-                    setEditorText(e.target.value);
-                    handleTextChange(e.target.value);
-                  }}
-                  placeholder={`Write your private thoughts for ${dayjs(selectedDate).format("MMMM D")}…`}
-                  className="w-full h-full bg-transparent outline-none resize-none text-ink font-serif text-base sm:text-lg leading-relaxed placeholder:text-ink-faint pl-10 sm:pl-12 pr-4 border-none focus:ring-1 focus:ring-accent/25 rounded-xl transition-[border-color,box-shadow]"
-                  autoFocus
-                />
+                    {/* Aggregated Daily Activity */}
+                    <div className="flex-1 overflow-y-auto py-3 space-y-3.5 text-xs">
+                      {/* Tasks Checked Off */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px] font-mono text-ink-faint uppercase">
+                          <span className="flex items-center gap-1 font-semibold text-ink">
+                            <CheckSquare className="w-3 h-3 text-accent" /> Tasks
+                          </span>
+                          <span>{completedTasks.length} / {dayTasks.length}</span>
+                        </div>
+                        {dayTasks.length > 0 ? (
+                          <div className="space-y-1 pl-1">
+                            {dayTasks.map((t) => (
+                              <p key={t.id} className={clsx("truncate text-[11px]", t.completed ? "text-ink-faint line-through" : "text-ink")}>
+                                • {t.title}
+                              </p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-ink-faint italic pl-1">No tasks recorded for date.</p>
+                        )}
+                      </div>
+
+                      {/* Ledger Outflow */}
+                      <div className="space-y-1.5 pt-2 border-t border-rule">
+                        <div className="flex items-center justify-between text-[11px] font-mono text-ink-faint uppercase">
+                          <span className="flex items-center gap-1 font-semibold text-ink">
+                            <DollarSign className="w-3 h-3 text-accent" /> Ledger Spend
+                          </span>
+                          <span className="font-bold text-accent font-mono">${totalSpend.toFixed(2)}</span>
+                        </div>
+                        {dayExpenses.length > 0 ? (
+                          <div className="space-y-1 pl-1">
+                            {dayExpenses.slice(0, 4).map((ex) => (
+                              <p key={ex.id} className="truncate text-[11px] text-ink font-mono">
+                                • ${Number(ex.amount).toFixed(2)} <span className="font-sans text-ink-faint">({ex.category})</span>
+                              </p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-ink-faint italic pl-1">$0.00 spent on date.</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 1-Click "Insert Footprint into Entry" */}
+                    <div className="pt-2 border-t border-rule shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleInsertFootprint}
+                        className="w-full py-2 rounded-xl bg-accent text-white text-xs font-semibold hover:bg-accent/90 transition-all active:scale-[0.98] shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Insert Footprint into Entry</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>

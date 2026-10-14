@@ -7,6 +7,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import { sound } from "@/lib/sound";
+import { dataCache } from "@/lib/dataCache";
 import { clsx } from "clsx";
 import dayjs from "dayjs";
 
@@ -264,16 +265,16 @@ function InlineAddTask({
 
 // ─── Main Projects Page (Ruled Kanban Board) ─────────────────────────────────
 export default function ProjectsPage() {
-  const [projects, setProjects] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>(() => dataCache.get<any[]>("projects") || []);
   const [tasks, setTasks] = useState<Record<string, any[]>>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !dataCache.get<any[]>("projects"));
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [showNewProject, setShowNewProject] = useState(false);
   const [newlyAddedTaskId, setNewlyAddedTaskId] = useState<string | null>(null);
   const [pageError, setPageError] = useState("");
 
   useEffect(() => {
-    loadProjects();
+    loadProjects(projects.length > 0);
   }, []);
 
   const loadProjects = async () => {
