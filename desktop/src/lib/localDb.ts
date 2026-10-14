@@ -254,6 +254,7 @@ export const localDb = {
     const tasks = getItem<Task[]>('clarity_tasks', getSeedTasks());
     const now = new Date().toISOString();
     const status: TaskStatus = task.status || (task.completed ? 'DONE' : 'TODO');
+    const today = new Date().toISOString().split('T')[0];
     const created: Task = {
       id: String(Date.now()),
       user_id: LOCAL_USER_ID,
@@ -262,7 +263,7 @@ export const localDb = {
       completed: Boolean(task.completed) || status === 'DONE',
       status,
       project_id: task.project_id || null,
-      due_at: task.due_at || null,
+      due_at: task.due_at !== undefined ? task.due_at : today,
       remind_at: task.remind_at || null,
       reminder_sent: false,
       created_at: now,

@@ -142,10 +142,12 @@ export default function TasksPage() {
     sound.click();
 
     try {
+      const today = dayjs().format("YYYY-MM-DD");
       const created = await api.createTask({
         title: quickTitle.trim(),
         completed: false,
         status: "TODO",
+        due_at: today,
       });
       const next = [created, ...tasks];
       setTasks(next);
@@ -402,9 +404,20 @@ export default function TasksPage() {
                       )}
 
                       {task.due_at && (
-                        <span className="text-[10px] font-mono text-ink-faint flex items-center gap-1 bg-ground px-1.5 py-0.5 rounded border border-rule">
-                          <CalendarDays className="w-3 h-3 text-ink-soft" />
-                          {dayjs(task.due_at).format("D MMM")}
+                        <span
+                          className={clsx(
+                            "text-[10px] font-mono flex items-center gap-1 px-1.5 py-0.5 rounded border",
+                            dayjs(task.due_at).isSame(dayjs(), "day")
+                              ? "bg-accent/10 border-accent/30 text-accent font-semibold"
+                              : dayjs(task.due_at).isBefore(dayjs(), "day") && !task.completed
+                              ? "bg-danger/10 border-danger/30 text-danger font-semibold"
+                              : "bg-ground border-rule text-ink-faint"
+                          )}
+                        >
+                          <CalendarDays className="w-3 h-3" />
+                          {dayjs(task.due_at).isSame(dayjs(), "day")
+                            ? "Today"
+                            : dayjs(task.due_at).format("D MMM")}
                         </span>
                       )}
 

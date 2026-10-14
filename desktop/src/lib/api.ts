@@ -80,6 +80,8 @@ async function createTask(task: Partial<Task>): Promise<Task> {
   const title = task.title?.trim() || "Untitled Task";
   const desc = task.description?.trim() || null;
   const status: TaskStatus = task.status || (task.completed ? "DONE" : "TODO");
+  const today = new Date().toISOString().split("T")[0];
+  const targetDue = task.due_at !== undefined ? task.due_at : today;
 
   if (isTauri()) {
     try {
@@ -87,7 +89,7 @@ async function createTask(task: Partial<Task>): Promise<Task> {
         userId: 1,
         title,
         description: desc,
-        dueAt: task.due_at || null,
+        dueAt: targetDue || null,
       });
 
       if (task.completed || status === "DONE") {
@@ -123,7 +125,7 @@ async function createTask(task: Partial<Task>): Promise<Task> {
     completed: task.completed,
     status,
     project_id: task.project_id || null,
-    due_at: task.due_at || null,
+    due_at: targetDue || null,
     remind_at: task.remind_at || null,
   });
   dataCache.invalidate("tasks");

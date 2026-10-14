@@ -73,6 +73,7 @@ export function OmniInscribeModal({ isOpen, onClose }: OmniInscribeModalProps) {
         title: query.trim(),
         completed: false,
         status: "TODO",
+        due_at: dayjs().format("YYYY-MM-DD"),
       });
       dataCache.invalidate("tasks");
       sound.chime();

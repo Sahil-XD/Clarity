@@ -14,7 +14,7 @@ import { clsx } from "clsx";
 import dayjs from "dayjs";
 
 // ─── Category Configuration ──────────────────────────────────────────────────
-export const CATEGORIES = [
+const CATEGORIES = [
   { label: "Snacks", icon: Popcorn },
   { label: "Rent", icon: Key },
   { label: "Buying / Shopping", icon: ShoppingBag },
@@ -419,7 +419,12 @@ export default function ExpensesPage() {
       text: "text-danger",
       label: "over pace",
     },
-  }[paceState];
+  }[paceState] || {
+    bar: "bg-done",
+    tick: "bg-done",
+    text: "text-done",
+    label: "under pace",
+  };
 
   // Group filtered expenses day-by-day (newest date first for display)
   const groupedByDate = useMemo(() => {
@@ -762,7 +767,7 @@ export default function ExpensesPage() {
                         <div className="divide-y divide-rule/40">
                           {dayItems.map((expense) => {
                             const meta = categoryMeta(expense.category);
-                            const Icon = meta.icon;
+                            const Icon = meta?.icon || Tag;
                             const balanceInfo = expenseBalanceMap.get(expense.id);
                             const isNew = newlyAddedId === expense.id;
 
@@ -795,7 +800,7 @@ export default function ExpensesPage() {
                                     <Icon className="w-3 h-3 stroke-[2]" />
                                   </div>
                                   <span className="font-mono text-ink-faint text-[11px] truncate">
-                                    #{expense.id.toString().slice(-4)} · {dayjs(expense.date).format("D MMM")}
+                                    #{String(expense.id || "").slice(-4)} · {dayjs(expense.date).format("D MMM")}
                                   </span>
                                 </div>
 

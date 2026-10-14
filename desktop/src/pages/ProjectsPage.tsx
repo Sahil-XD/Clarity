@@ -390,8 +390,8 @@ export default function ProjectsPage() {
     return "DONE";
   };
 
-  const activeProject = projects.find((p) => p.id === activeProjectId);
-  const color = activeProject ? PROJECT_PALETTES[activeProject.colorIdx] : PROJECT_PALETTES[0];
+  const activeProject = projects.find((p) => String(p.id) === String(activeProjectId));
+  const color = (activeProject && activeProject.colorIdx != null && PROJECT_PALETTES[activeProject.colorIdx]) || PROJECT_PALETTES[0];
 
   const handleTaskCreated = (t: any) => {
     if (activeProjectId == null) return;
@@ -503,7 +503,7 @@ export default function ProjectsPage() {
                 const total = projectTasks.length;
                 const pct = total > 0 ? Math.round((done / total) * 100) : 0;
                 const isActive = project.id === activeProjectId;
-                const pColor = PROJECT_PALETTES[project.colorIdx];
+                const pColor = (project.colorIdx != null && PROJECT_PALETTES[project.colorIdx]) || PROJECT_PALETTES[0];
 
                 return (
                   <button
