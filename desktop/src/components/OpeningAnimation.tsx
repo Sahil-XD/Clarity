@@ -15,7 +15,6 @@ export const OpeningAnimation: React.FC<OpeningAnimationProps> = ({ onComplete }
   const [shimmerActive, setShimmerActive] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const completedRef = useRef(false);
-  const hasStartedRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
 
   useEffect(() => {
@@ -43,11 +42,8 @@ export const OpeningAnimation: React.FC<OpeningAnimationProps> = ({ onComplete }
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleFinish]);
 
-  // Main Choreography Sequence (Guaranteed single execution)
+  // Main Choreography Sequence
   useEffect(() => {
-    if (hasStartedRef.current) return;
-    hasStartedRef.current = true;
-
     // Respect prefers-reduced-motion
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       const quickTimer = setTimeout(handleFinish, 300);
@@ -101,6 +97,13 @@ export const OpeningAnimation: React.FC<OpeningAnimationProps> = ({ onComplete }
       setTimeout(() => {
         handleFinish();
       }, 2850)
+    );
+
+    // Hard fallback safety timer
+    timers.push(
+      setTimeout(() => {
+        handleFinish();
+      }, 3300)
     );
 
     return () => {
