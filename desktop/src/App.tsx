@@ -20,11 +20,21 @@ function App() {
 
   const [showIntro, setShowIntro] = useState(() => {
     try {
-      return !sessionStorage.getItem("clarity_intro_seen");
+      const seen = sessionStorage.getItem("clarity_intro_seen");
+      if (!seen) {
+        // Mark immediately so re-renders during boot never re-trigger it
+        sessionStorage.setItem("clarity_intro_seen", "true");
+        return true;
+      }
+      return false;
     } catch {
-      return true;
+      return false;
     }
   });
+
+  const handleIntroComplete = useCallback(() => {
+    setShowIntro(false);
+  }, []);
 
   useEffect(() => {
     // Initialize auth state from Supabase session
@@ -79,14 +89,7 @@ function App() {
   return (
     <>
       {showIntro && (
-        <OpeningAnimation
-          onComplete={() => {
-            setShowIntro(false);
-            try {
-              sessionStorage.setItem("clarity_intro_seen", "true");
-            } catch {}
-          }}
-        />
+        <OpeningAnimation onComplete={handleIntroComplete} />
       )}
 
       {isLoading ? (
