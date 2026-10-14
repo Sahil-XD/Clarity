@@ -463,6 +463,8 @@ export const localDb = {
     start_at?: string | null;
     end_at?: string | null;
     event_type?: 'TASK' | 'NOTE';
+    remind_at?: string | null;
+    reminder_sent?: boolean;
   }): CalendarEvent {
     const all = getItem<CalendarEvent[]>('clarity_calendar', getSeedCalendarEvents());
     const now = new Date().toISOString();
@@ -475,8 +477,8 @@ export const localDb = {
       start_at: event.start_at || null,
       end_at: event.end_at || null,
       event_type: event.event_type || 'NOTE',
-      remind_at: null,
-      reminder_sent: false,
+      remind_at: event.remind_at || null,
+      reminder_sent: Boolean(event.reminder_sent),
       created_at: now,
       updated_at: now,
       deleted_at: null,

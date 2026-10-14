@@ -90,6 +90,10 @@ async function createTask(task: Partial<Task>): Promise<Task> {
         title,
         description: desc,
         dueAt: targetDue || null,
+        status,
+        projectId: task.project_id || null,
+        remindAt: task.remind_at || null,
+        reminderSent: task.reminder_sent || false,
       });
 
       if (task.completed || status === "DONE") {
@@ -150,6 +154,10 @@ async function updateTask(id: string, patch: Partial<Task>): Promise<Task> {
         description: patch.description !== undefined ? patch.description : null,
         completed: completedVal,
         dueAt: patch.due_at !== undefined ? patch.due_at : null,
+        status: patch.status !== undefined ? patch.status : null,
+        projectId: patch.project_id !== undefined ? patch.project_id : null,
+        remindAt: patch.remind_at !== undefined ? patch.remind_at : null,
+        reminderSent: patch.reminder_sent !== undefined ? patch.reminder_sent : null,
       });
 
       dataCache.invalidate("tasks");
@@ -531,6 +539,8 @@ async function createCalendarEvent(
         startAt: event.start_at || null,
         endAt: event.end_at || null,
         eventType: event.event_type || "NOTE",
+        remindAt: event.remind_at || null,
+        reminderSent: event.reminder_sent || false,
       });
       return {
         id: String(c.id),
@@ -541,8 +551,8 @@ async function createCalendarEvent(
         start_at: c.startAt || null,
         end_at: c.endAt || null,
         event_type: (c.type as "TASK" | "NOTE") || "NOTE",
-        remind_at: null,
-        reminder_sent: false,
+        remind_at: c.remindAt || null,
+        reminder_sent: Boolean(c.reminderSent),
         created_at: c.createdAt || new Date().toISOString(),
         updated_at: c.createdAt || new Date().toISOString(),
         deleted_at: null,
@@ -572,9 +582,15 @@ async function updateCalendarEvent(
   >
 ): Promise<CalendarEvent> {
   const numericId = parseInt(id, 10);
-  if (isTauri() && !isNaN(numericId) && patch.title) {
+  if (isTauri() && !isNaN(numericId)) {
     try {
-      await invoke("update_calendar_event", { id: numericId, title: patch.title });
+      await invoke("update_calendar_event", {
+        id: numericId,
+        title: patch.title !== undefined ? patch.title : null,
+        description: patch.description !== undefined ? patch.description : null,
+        remindAt: patch.remind_at !== undefined ? patch.remind_at : null,
+        reminderSent: patch.reminder_sent !== undefined ? patch.reminder_sent : null,
+      });
     } catch (e) {
       console.warn("[Tauri IPC] update_calendar_event error:", e);
     }

@@ -127,24 +127,25 @@ pub fn ensure_supabase_user(supabase_id: String, email: String, username: String
 pub fn get_tasks(user_id: i64, pending_only: bool) -> Result<Vec<Task>, String> {
     let db = get_db();
     let sql = if pending_only {
-        "SELECT id, title, description, completed, due_at, created_at, updated_at FROM tasks WHERE user_id = ?1 AND completed = 0 AND deleted_at IS NULL ORDER BY created_at DESC"
+        "SELECT id, title, description, completed, due_at, status, project_id, remind_at, reminder_sent, created_at, updated_at FROM tasks WHERE user_id = ?1 AND completed = 0 AND deleted_at IS NULL ORDER BY created_at DESC"
     } else {
-        "SELECT id, title, description, completed, due_at, created_at, updated_at FROM tasks WHERE user_id = ?1 AND deleted_at IS NULL ORDER BY created_at DESC"
+        "SELECT id, title, description, completed, due_at, status, project_id, remind_at, reminder_sent, created_at, updated_at FROM tasks WHERE user_id = ?1 AND deleted_at IS NULL ORDER BY created_at DESC"
     };
     let mut stmt = db.prepare(sql).map_err(|e| e.to_string())?;
     let tasks = stmt.query_map(params![user_id], |row| {
+        let reminder_sent_int: Option<i32> = row.get(8)?;
         Ok(Task {
             id: row.get(0)?,
             title: row.get(1)?,
             description: row.get(2)?,
             completed: row.get::<_, i32>(3)? != 0,
             due_at: row.get(4)?,
-            status: Some(if row.get::<_, i32>(3)? != 0 { "DONE".to_string() } else { "TODO".to_string() }),
-            project_id: None,
-            remind_at: None,
-            reminder_sent: Some(false),
-            created_at: row.get(5)?,
-            updated_at: row.get(6)?,
+            status: row.get(5)?,
+            project_id: row.get(6)?,
+            remind_at: row.get(7)?,
+            reminder_sent: reminder_sent_int.map(|v| v != 0),
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
         })
     }).map_err(|e| e.to_string())?
     .filter_map(|r| r.ok())
@@ -153,70 +154,132 @@ pub fn get_tasks(user_id: i64, pending_only: bool) -> Result<Vec<Task>, String> 
 }
 
 #[tauri::command]
-pub fn create_task(user_id: i64, title: String, description: Option<String>, due_at: Option<String>) -> Result<Task, String> {
+pub fn create_task(
+    user_id: i64,
+    title: String,
+    description: Option<String>,
+    due_at: Option<String>,
+    status: Option<String>,
+    project_id: Option<String>,
+    remind_at: Option<String>,
+    reminder_sent: Option<bool>,
+) -> Result<Task, String> {
     let db = get_db();
     let client_id = uuid::Uuid::new_v4().to_string();
+    let desc_val = description.and_then(|d| if d.trim().is_empty() { None } else { Some(d) });
+    let due_val = due_at.and_then(|d| if d.trim().is_empty() { None } else { Some(d) });
+    let proj_val = project_id.and_then(|p| if p.trim().is_empty() { None } else { Some(p) });
+    let remind_val = remind_at.and_then(|r| if r.trim().is_empty() { None } else { Some(r) });
+    let status_val = status.unwrap_or_else(|| "TODO".to_string());
+    let completed_val: i32 = if status_val == "DONE" { 1 } else { 0 };
+    let reminder_sent_int: i32 = if reminder_sent.unwrap_or(false) { 1 } else { 0 };
+
     db.execute(
-        "INSERT INTO tasks (user_id, title, description, due_at, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
-        params![user_id, title, description, due_at, client_id],
+        "INSERT INTO tasks (user_id, title, description, completed, due_at, status, project_id, remind_at, reminder_sent, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'pending')",
+        params![user_id, title, desc_val, completed_val, due_val, status_val, proj_val, remind_val, reminder_sent_int, client_id],
     ).map_err(|e| e.to_string())?;
     let id = db.last_insert_rowid();
-    let mut stmt = db.prepare("SELECT id, title, description, completed, due_at, created_at, updated_at FROM tasks WHERE id = ?1")
+    let mut stmt = db.prepare("SELECT id, title, description, completed, due_at, status, project_id, remind_at, reminder_sent, created_at, updated_at FROM tasks WHERE id = ?1")
         .map_err(|e| e.to_string())?;
     stmt.query_row(params![id], |row| {
+        let r_sent: Option<i32> = row.get(8)?;
         Ok(Task {
             id: row.get(0)?,
             title: row.get(1)?,
             description: row.get(2)?,
             completed: row.get::<_, i32>(3)? != 0,
             due_at: row.get(4)?,
-            status: Some(if row.get::<_, i32>(3)? != 0 { "DONE".to_string() } else { "TODO".to_string() }),
-            project_id: None,
-            remind_at: None,
-            reminder_sent: Some(false),
-            created_at: row.get(5)?,
-            updated_at: row.get(6)?,
+            status: row.get(5)?,
+            project_id: row.get(6)?,
+            remind_at: row.get(7)?,
+            reminder_sent: r_sent.map(|v| v != 0),
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
         })
     }).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn update_task(id: i64, title: Option<String>, description: Option<String>, completed: Option<bool>, due_at: Option<String>) -> Result<Task, String> {
+pub fn update_task(
+    id: i64,
+    title: Option<String>,
+    description: Option<String>,
+    completed: Option<bool>,
+    due_at: Option<String>,
+    status: Option<String>,
+    project_id: Option<String>,
+    remind_at: Option<String>,
+    reminder_sent: Option<bool>,
+) -> Result<Task, String> {
     let db = get_db();
-    // Build dynamic update
     if let Some(t) = &title {
         db.execute("UPDATE tasks SET title = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![t, id])
             .map_err(|e| e.to_string())?;
     }
     if let Some(d) = &description {
-        db.execute("UPDATE tasks SET description = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![d, id])
+        let val = if d.trim().is_empty() { None } else { Some(d.as_str()) };
+        db.execute("UPDATE tasks SET description = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
             .map_err(|e| e.to_string())?;
     }
     if let Some(c) = completed {
         let val: i32 = if c { 1 } else { 0 };
-        db.execute("UPDATE tasks SET completed = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
-            .map_err(|e| e.to_string())?;
+        let auto_status = if c { "DONE" } else { "TODO" };
+        if status.is_none() {
+            db.execute("UPDATE tasks SET completed = ?1, status = ?2, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?3", params![val, auto_status, id])
+                .map_err(|e| e.to_string())?;
+        } else {
+            db.execute("UPDATE tasks SET completed = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    if let Some(s) = &status {
+        let is_done = s == "DONE";
+        let comp_val: i32 = if is_done { 1 } else { 0 };
+        if completed.is_none() {
+            db.execute("UPDATE tasks SET status = ?1, completed = ?2, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?3", params![s, comp_val, id])
+                .map_err(|e| e.to_string())?;
+        } else {
+            db.execute("UPDATE tasks SET status = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![s, id])
+                .map_err(|e| e.to_string())?;
+        }
     }
     if let Some(d) = &due_at {
-        db.execute("UPDATE tasks SET due_at = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![d, id])
+        let val = if d.trim().is_empty() { None } else { Some(d.as_str()) };
+        db.execute("UPDATE tasks SET due_at = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(p) = &project_id {
+        let val = if p.trim().is_empty() { None } else { Some(p.as_str()) };
+        db.execute("UPDATE tasks SET project_id = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(r) = &remind_at {
+        let val = if r.trim().is_empty() { None } else { Some(r.as_str()) };
+        db.execute("UPDATE tasks SET remind_at = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(rs) = reminder_sent {
+        let val: i32 = if rs { 1 } else { 0 };
+        db.execute("UPDATE tasks SET reminder_sent = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
             .map_err(|e| e.to_string())?;
     }
 
-    let mut stmt = db.prepare("SELECT id, title, description, completed, due_at, created_at, updated_at FROM tasks WHERE id = ?1")
+    let mut stmt = db.prepare("SELECT id, title, description, completed, due_at, status, project_id, remind_at, reminder_sent, created_at, updated_at FROM tasks WHERE id = ?1")
         .map_err(|e| e.to_string())?;
     stmt.query_row(params![id], |row| {
+        let r_sent: Option<i32> = row.get(8)?;
         Ok(Task {
             id: row.get(0)?,
             title: row.get(1)?,
             description: row.get(2)?,
             completed: row.get::<_, i32>(3)? != 0,
             due_at: row.get(4)?,
-            status: Some(if row.get::<_, i32>(3)? != 0 { "DONE".to_string() } else { "TODO".to_string() }),
-            project_id: None,
-            remind_at: None,
-            reminder_sent: Some(false),
-            created_at: row.get(5)?,
-            updated_at: row.get(6)?,
+            status: row.get(5)?,
+            project_id: row.get(6)?,
+            remind_at: row.get(7)?,
+            reminder_sent: r_sent.map(|v| v != 0),
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
         })
     }).map_err(|e| e.to_string())
 }
@@ -348,9 +411,10 @@ pub fn save_diary_entry(user_id: i64, date: String, body: String, mood: Option<S
 pub fn get_calendar_day(user_id: i64, date: String) -> Result<Vec<CalendarEvent>, String> {
     let db = get_db();
     let mut stmt = db.prepare(
-        "SELECT id, title, description, event_date, start_at, end_at, event_type, created_at FROM calendar_events WHERE user_id = ?1 AND event_date = ?2 AND deleted_at IS NULL ORDER BY start_at"
+        "SELECT id, title, description, event_date, start_at, end_at, event_type, remind_at, reminder_sent, created_at FROM calendar_events WHERE user_id = ?1 AND event_date = ?2 AND deleted_at IS NULL ORDER BY start_at"
     ).map_err(|e| e.to_string())?;
     let events = stmt.query_map(params![user_id, date], |row| {
+        let r_sent: Option<i32> = row.get(8)?;
         Ok(CalendarEvent {
             id: row.get(0)?,
             title: row.get(1)?,
@@ -359,9 +423,9 @@ pub fn get_calendar_day(user_id: i64, date: String) -> Result<Vec<CalendarEvent>
             start_at: row.get(4)?,
             end_at: row.get(5)?,
             event_type: row.get(6)?,
-            remind_at: None,
-            reminder_sent: Some(false),
-            created_at: row.get(7)?,
+            remind_at: row.get(7)?,
+            reminder_sent: r_sent.map(|v| v != 0),
+            created_at: row.get(9)?,
         })
     }).map_err(|e| e.to_string())?
     .filter_map(|r| r.ok())
@@ -373,9 +437,10 @@ pub fn get_calendar_day(user_id: i64, date: String) -> Result<Vec<CalendarEvent>
 pub fn get_calendar_range(user_id: i64, from: String, to: String) -> Result<Vec<CalendarEvent>, String> {
     let db = get_db();
     let mut stmt = db.prepare(
-        "SELECT id, title, description, event_date, start_at, end_at, event_type, created_at FROM calendar_events WHERE user_id = ?1 AND event_date >= ?2 AND event_date <= ?3 AND deleted_at IS NULL ORDER BY event_date, start_at"
+        "SELECT id, title, description, event_date, start_at, end_at, event_type, remind_at, reminder_sent, created_at FROM calendar_events WHERE user_id = ?1 AND event_date >= ?2 AND event_date <= ?3 AND deleted_at IS NULL ORDER BY event_date, start_at"
     ).map_err(|e| e.to_string())?;
     let events = stmt.query_map(params![user_id, from, to], |row| {
+        let r_sent: Option<i32> = row.get(8)?;
         Ok(CalendarEvent {
             id: row.get(0)?,
             title: row.get(1)?,
@@ -384,9 +449,9 @@ pub fn get_calendar_range(user_id: i64, from: String, to: String) -> Result<Vec<
             start_at: row.get(4)?,
             end_at: row.get(5)?,
             event_type: row.get(6)?,
-            remind_at: None,
-            reminder_sent: Some(false),
-            created_at: row.get(7)?,
+            remind_at: row.get(7)?,
+            reminder_sent: r_sent.map(|v| v != 0),
+            created_at: row.get(9)?,
         })
     }).map_err(|e| e.to_string())?
     .filter_map(|r| r.ok())
@@ -422,18 +487,27 @@ pub fn create_calendar_event(
     start_at: Option<String>,
     end_at: Option<String>,
     event_type: String,
+    remind_at: Option<String>,
+    reminder_sent: Option<bool>,
 ) -> Result<CalendarEvent, String> {
     let db = get_db();
     let client_id = uuid::Uuid::new_v4().to_string();
+    let desc_val = description.and_then(|d| if d.trim().is_empty() { None } else { Some(d) });
+    let start_val = start_at.and_then(|s| if s.trim().is_empty() { None } else { Some(s) });
+    let end_val = end_at.and_then(|e| if e.trim().is_empty() { None } else { Some(e) });
+    let remind_val = remind_at.and_then(|r| if r.trim().is_empty() { None } else { Some(r) });
+    let reminder_sent_int: i32 = if reminder_sent.unwrap_or(false) { 1 } else { 0 };
+
     db.execute(
-        "INSERT INTO calendar_events (user_id, title, description, event_date, start_at, end_at, event_type, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending')",
-        params![user_id, title, description, event_date, start_at, end_at, event_type, client_id],
+        "INSERT INTO calendar_events (user_id, title, description, event_date, start_at, end_at, event_type, remind_at, reminder_sent, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'pending')",
+        params![user_id, title, desc_val, event_date, start_val, end_val, event_type, remind_val, reminder_sent_int, client_id],
     ).map_err(|e| e.to_string())?;
     let id = db.last_insert_rowid();
     let mut stmt = db.prepare(
-        "SELECT id, title, description, event_date, start_at, end_at, event_type, created_at FROM calendar_events WHERE id = ?1"
+        "SELECT id, title, description, event_date, start_at, end_at, event_type, remind_at, reminder_sent, created_at FROM calendar_events WHERE id = ?1"
     ).map_err(|e| e.to_string())?;
     stmt.query_row(params![id], |row| {
+        let r_sent: Option<i32> = row.get(8)?;
         Ok(CalendarEvent {
             id: row.get(0)?,
             title: row.get(1)?,
@@ -442,9 +516,9 @@ pub fn create_calendar_event(
             start_at: row.get(4)?,
             end_at: row.get(5)?,
             event_type: row.get(6)?,
-            remind_at: None,
-            reminder_sent: Some(false),
-            created_at: row.get(7)?,
+            remind_at: row.get(7)?,
+            reminder_sent: r_sent.map(|v| v != 0),
+            created_at: row.get(9)?,
         })
     }).map_err(|e| e.to_string())
 }
@@ -452,7 +526,6 @@ pub fn create_calendar_event(
 #[tauri::command]
 pub fn delete_calendar_event(id: i64) -> Result<(), String> {
     let db = get_db();
-    // If this was a task event, also soft-delete the corresponding task
     if let Ok(mut stmt) = db.prepare("SELECT user_id, title, event_type FROM calendar_events WHERE id = ?1") {
         if let Ok(row) = stmt.query_row(params![id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))) {
             let (user_id, title, event_type) = row;
@@ -464,7 +537,6 @@ pub fn delete_calendar_event(id: i64) -> Result<(), String> {
             }
         }
     }
-    // Soft delete calendar event
     db.execute(
         "UPDATE calendar_events SET deleted_at = datetime('now'), sync_status = 'pending' WHERE id = ?1",
         params![id],
@@ -473,14 +545,36 @@ pub fn delete_calendar_event(id: i64) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn update_calendar_event(id: i64, title: String) -> Result<(), String> {
+pub fn update_calendar_event(
+    id: i64,
+    title: Option<String>,
+    description: Option<String>,
+    remind_at: Option<String>,
+    reminder_sent: Option<bool>,
+) -> Result<(), String> {
     let db = get_db();
-    db.execute(
-        "UPDATE calendar_events SET title = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2",
-        params![title, id],
-    ).map_err(|e| e.to_string())?;
+    if let Some(t) = &title {
+        db.execute("UPDATE calendar_events SET title = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![t, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(d) = &description {
+        let val = if d.trim().is_empty() { None } else { Some(d.as_str()) };
+        db.execute("UPDATE calendar_events SET description = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(r) = &remind_at {
+        let val = if r.trim().is_empty() { None } else { Some(r.as_str()) };
+        db.execute("UPDATE calendar_events SET remind_at = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(rs) = reminder_sent {
+        let val: i32 = if rs { 1 } else { 0 };
+        db.execute("UPDATE calendar_events SET reminder_sent = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
+
 
 // â”€â”€â”€ Expenses â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

@@ -105,6 +105,10 @@ fn init_tables(conn: &Connection) {
     // Add sync columns to all tables (safe to re-run — ALTERs silently fail if column exists)
     let sync_migrations = vec![
         // tasks
+        "ALTER TABLE tasks ADD COLUMN status TEXT DEFAULT 'TODO'",
+        "ALTER TABLE tasks ADD COLUMN project_id TEXT",
+        "ALTER TABLE tasks ADD COLUMN remind_at TEXT",
+        "ALTER TABLE tasks ADD COLUMN reminder_sent INTEGER DEFAULT 0",
         "ALTER TABLE tasks ADD COLUMN server_id TEXT",
         "ALTER TABLE tasks ADD COLUMN client_id TEXT",
         "ALTER TABLE tasks ADD COLUMN deleted_at TEXT",
@@ -115,6 +119,8 @@ fn init_tables(conn: &Connection) {
         "ALTER TABLE diary_entries ADD COLUMN deleted_at TEXT",
         "ALTER TABLE diary_entries ADD COLUMN sync_status TEXT DEFAULT 'pending'",
         // calendar_events
+        "ALTER TABLE calendar_events ADD COLUMN remind_at TEXT",
+        "ALTER TABLE calendar_events ADD COLUMN reminder_sent INTEGER DEFAULT 0",
         "ALTER TABLE calendar_events ADD COLUMN server_id TEXT",
         "ALTER TABLE calendar_events ADD COLUMN client_id TEXT",
         "ALTER TABLE calendar_events ADD COLUMN deleted_at TEXT",
