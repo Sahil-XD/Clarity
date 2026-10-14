@@ -39,6 +39,9 @@ pub fn run() {
             commands::create_project_task,
             commands::update_project_task_status,
             commands::delete_project_task,
+            commands::window_minimize,
+            commands::window_toggle_maximize,
+            commands::window_close,
             // Sync commands
             sync_commands::get_pending_tasks,
             sync_commands::get_pending_diary_entries,

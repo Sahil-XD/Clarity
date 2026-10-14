@@ -265,20 +265,19 @@ function InlineAddTask({
 
 // ─── Main Projects Page (Ruled Kanban Board) ─────────────────────────────────
 export default function ProjectsPage() {
-  const [projects, setProjects] = useState<any[]>(() => dataCache.get<any[]>("projects") || []);
+  const cachedProjects = dataCache.get<any[]>("projects") || [];
+  const [projects, setProjects] = useState<any[]>(cachedProjects);
   const [tasks, setTasks] = useState<Record<string, any[]>>({});
-  const [loading, setLoading] = useState(() => !dataCache.get<any[]>("projects"));
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(() => cachedProjects.length === 0);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(
+    () => (cachedProjects.length > 0 ? cachedProjects[0].id : null)
+  );
   const [showNewProject, setShowNewProject] = useState(false);
   const [newlyAddedTaskId, setNewlyAddedTaskId] = useState<string | null>(null);
   const [pageError, setPageError] = useState("");
 
-  useEffect(() => {
-    loadProjects(projects.length > 0);
-  }, []);
-
-  const loadProjects = async () => {
-    setLoading(true);
+  const loadProjects = async (silent = false) => {
+    if (!silent) setLoading(true);
     setPageError("");
     try {
       const data = await api.getProjects();
@@ -287,13 +286,27 @@ export default function ProjectsPage() {
         colorIdx: i % PROJECT_PALETTES.length,
       }));
       setProjects(withColors);
-      if (withColors.length > 0) setActiveProjectId(withColors[0].id);
+      dataCache.set("projects", withColors);
+      if (withColors.length > 0) {
+        setActiveProjectId((curr) => curr || withColors[0].id);
+      }
     } catch (err: any) {
-      setPageError(err?.message || "Failed to load project dockets.");
+      if (!silent) setPageError(err?.message || "Failed to load project dockets.");
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const cached = dataCache.get<any[]>("projects");
+    if (cached && cached.length > 0) {
+      setProjects(cached);
+      setActiveProjectId((curr) => curr || cached[0].id);
+      loadProjects(true); // Silent revalidation
+    } else {
+      loadProjects(false);
+    }
+  }, []);
 
   const loadTasksForProject = async (projectId: string) => {
     try {

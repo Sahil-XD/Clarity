@@ -1,4 +1,5 @@
 ﻿import { supabase } from "./supabase";
+import { dataCache } from "./dataCache";
 import { encryptVaultText, decryptVaultText } from "./encryption";
 import type {
   Task,
@@ -47,7 +48,7 @@ async function requireUserId(): Promise<string> {
 
 function withTimeout<T>(
   promise: PromiseLike<T>,
-  ms = 10000,
+  ms = 3500,
   errorMsg = "Network request timed out. Please check your connection."
 ): Promise<T> {
   return Promise.race([
@@ -512,16 +513,26 @@ async function deleteExpense(id: string): Promise<void> {
 // ── Projects ─────────────────────────────────────────────────────────────────
 
 async function getProjects(): Promise<Project[]> {
-  const userId = await requireUserId();
-  const query = supabase
-    .from("projects")
-    .select("*")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false });
-  const { data, error } = await withTimeout(query);
-  if (error) throw error;
-  return data ?? [];
+  const cached = dataCache.get<Project[]>("projects");
+  try {
+    const userId = await requireUserId();
+    const query = supabase
+      .from("projects")
+      .select("*")
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false });
+    const { data, error } = await withTimeout(query, 3500);
+    if (!error && data) {
+      dataCache.set("projects", data);
+      return data;
+    }
+  } catch (err) {
+    if (cached) return cached;
+    console.warn("getProjects remote fetch failed, using fallback:", err);
+    return [];
+  }
+  return cached ?? [];
 }
 
 async function createProject(
@@ -554,39 +565,49 @@ async function deleteProject(id: string): Promise<void> {
 }
 
 async function getProjectTasks(projectId: string): Promise<ProjectTask[]> {
-  // Query unified tasks table bound to project_id first
-  const { data: unifiedTasks } = await withTimeout(
-    supabase
-      .from("tasks")
+  // 1. Query unified tasks table bound to project_id first
+  try {
+    const { data: unifiedTasks } = await withTimeout(
+      supabase
+        .from("tasks")
+        .select("*")
+        .eq("project_id", projectId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: true }),
+      3500
+    );
+
+    if (unifiedTasks && unifiedTasks.length > 0) {
+      return unifiedTasks.map((t) => ({
+        id: t.id,
+        project_id: t.project_id || projectId,
+        title: t.title,
+        description: t.description,
+        status: (t.status as ProjectTaskStatus) || (t.completed ? "DONE" : "TODO"),
+        created_at: t.created_at,
+        updated_at: t.updated_at,
+        deleted_at: t.deleted_at,
+      }));
+    }
+  } catch (e) {
+    console.warn("Unified tasks query:", e);
+  }
+
+  // 2. Fallback to legacy project_tasks table safely without throwing
+  try {
+    const query = supabase
+      .from("project_tasks")
       .select("*")
       .eq("project_id", projectId)
       .is("deleted_at", null)
-      .order("created_at", { ascending: true })
-  ).catch(() => ({ data: null }));
-
-  if (unifiedTasks && unifiedTasks.length > 0) {
-    return unifiedTasks.map((t) => ({
-      id: t.id,
-      project_id: t.project_id || projectId,
-      title: t.title,
-      description: t.description,
-      status: (t.status as ProjectTaskStatus) || (t.completed ? "DONE" : "TODO"),
-      created_at: t.created_at,
-      updated_at: t.updated_at,
-      deleted_at: t.deleted_at,
-    }));
+      .order("created_at", { ascending: true });
+    const { data, error } = await withTimeout(query, 3500);
+    if (!error && data) return data;
+  } catch {
+    // Both tables returned nothing or errored
   }
 
-  // Fallback to legacy project_tasks table
-  const query = supabase
-    .from("project_tasks")
-    .select("*")
-    .eq("project_id", projectId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: true });
-  const { data, error } = await withTimeout(query);
-  if (error) throw error;
-  return data ?? [];
+  return [];
 }
 
 async function createProjectTask(

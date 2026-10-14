@@ -11,7 +11,7 @@ import { startReminderService, stopReminderService } from "@/lib/reminderService
 import { OmniInscribeModal } from "./OmniInscribeModal";
 import { clsx } from "clsx";
 import { ClarityLogo } from "./ClarityLogo";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { windowControls } from "@/lib/windowControls";
 
 export default function Layout() {
   const { username, avatarUrl, logout } = useAuth();
@@ -40,36 +40,20 @@ export default function Layout() {
     return () => window.removeEventListener("clarity:open-omni", handleOpenOmni);
   }, []);
 
-  // Window titlebar handlers (Tauri v2)
-  const appWindow = typeof window !== "undefined" && ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
-    ? getCurrentWindow()
-    : null;
-
-  const handleMinimize = async () => {
+  // Robust window titlebar handlers
+  const handleMinimize = () => {
     sound.click();
-    try {
-      await appWindow?.minimize();
-    } catch (e) {
-      console.warn("Minimize error:", e);
-    }
+    windowControls.minimize();
   };
 
-  const handleToggleMaximize = async () => {
+  const handleToggleMaximize = () => {
     sound.click();
-    try {
-      await appWindow?.toggleMaximize();
-    } catch (e) {
-      console.warn("Toggle maximize error:", e);
-    }
+    windowControls.toggleMaximize();
   };
 
-  const handleClose = async () => {
+  const handleClose = () => {
     sound.click();
-    try {
-      await appWindow?.close();
-    } catch (e) {
-      console.warn("Close error:", e);
-    }
+    windowControls.close();
   };
 
   const handleToggleTheme = () => {
@@ -106,10 +90,7 @@ export default function Layout() {
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-ground text-ink select-none font-sans">
       {/* ── Custom Frameless Window Title Bar (32px, Warm Paper) ────────────────── */}
-      <header
-        data-tauri-drag-region
-        className="h-8 flex-shrink-0 bg-surface/95 border-b border-rule flex items-center justify-between px-3 z-40 select-none cursor-default"
-      >
+      <header className="h-8 flex-shrink-0 bg-surface/95 border-b border-rule flex items-center justify-between px-3 z-40 select-none cursor-default">
         {/* Left: Monospace Status & Logo */}
         <div data-tauri-drag-region className="flex items-center gap-2">
           <span className="font-mono text-[10.5px] text-ink-faint tracking-wider uppercase font-semibold flex items-center gap-1.5">
