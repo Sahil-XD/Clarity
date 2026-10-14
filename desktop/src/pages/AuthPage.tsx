@@ -20,6 +20,20 @@ export default function AuthPage() {
 
   const { loginWithEmail, registerWithEmail, loginWithGoogle } = useAuth();
 
+  const appWindow = typeof window !== "undefined" && ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+    ? getCurrentWindow()
+    : null;
+
+  const handleMinimize = () => {
+    sound.click();
+    appWindow?.minimize().catch(() => {});
+  };
+
+  const handleClose = () => {
+    sound.click();
+    appWindow?.close().catch(() => {});
+  };
+
   // 3D Tilt Parallax
   const cardRef = useRef<HTMLDivElement>(null);
   const rawX = useMotionValue(0);

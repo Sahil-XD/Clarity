@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "./lib/store";
 import { supabase } from "./lib/supabase";
 import AuthPage from "./pages/AuthPage";
