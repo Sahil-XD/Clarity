@@ -626,6 +626,8 @@ export default function DiaryPage() {
 
   const handleSave = async (date: string, body: string, moodOverride?: DiaryEntry['mood'] | null) => {
     if (isLockedRef.current || !pin) return;
+    if (entriesRef.current[date]?.readOnly || body === "[Locked with previous PIN]") return;
+    if (entriesRef.current[date]?.readOnly || body === "[Locked with previous PIN]") return;
 
     if (!saveQueueRef.current[date]) {
       saveQueueRef.current[date] = { inFlight: false };
@@ -1073,16 +1075,24 @@ export default function DiaryPage() {
                   className="flex-1 overflow-hidden rounded-2xl bg-surface border border-rule p-6 sm:p-8 flex flex-col relative mood-glow transition-[border-color,box-shadow,background-color] duration-300"
                 >
                   <div className="absolute top-0 bottom-0 left-12 sm:left-16 w-px bg-accent/20 pointer-events-none" />
+                  {entries[selectedDate]?.readOnly && (
+                    <div className="mb-3 px-3 py-1.5 rounded-lg bg-warn/10 border border-warn/30 text-warn text-xs font-mono flex items-center gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>This entry was encrypted with a previous PIN and is protected in read-only mode.</span>
+                    </div>
+                  )}
                   <textarea
                     key={selectedDate}
                     ref={textareaRef}
                     value={editorText}
+                    readOnly={Boolean(entries[selectedDate]?.readOnly || editorText === "[Locked with previous PIN]")}
                     onChange={(e) => {
+                      if (entries[selectedDate]?.readOnly || editorText === "[Locked with previous PIN]") return;
                       setEditorText(e.target.value);
                       handleTextChange(e.target.value);
                     }}
                     placeholder={`Write your private thoughts for ${dayjs(selectedDate).format("MMMM D")}…`}
-                    className="w-full h-full bg-transparent outline-none resize-none text-ink font-serif text-base sm:text-lg leading-relaxed placeholder:text-ink-faint pl-10 sm:pl-12 pr-4 border-none"
+                    className="w-full h-full bg-transparent outline-none resize-none text-ink font-serif text-base sm:text-lg leading-relaxed placeholder:text-ink-faint pl-10 sm:pl-12 pr-4 border-none disabled:opacity-75"
                     autoFocus
                   />
                 </div>

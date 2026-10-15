@@ -326,11 +326,21 @@ export default function CalendarPage() {
   const [showNoteModal, setShowNoteModal] = useState(false);
 
   useEffect(() => {
-    loadData();
+    loadData(allEvents.length > 0 || tasks.length > 0);
   }, [view, currentDate, tab]);
 
-  const loadData = async () => {
-    setLoading(true);
+  useEffect(() => {
+    const handleDataUpdated = () => {
+      loadData(true);
+    };
+    window.addEventListener("clarity:data-updated", handleDataUpdated);
+    return () => window.removeEventListener("clarity:data-updated", handleDataUpdated);
+  }, [view, currentDate, tab]);
+
+  const loadData = async (silent = false) => {
+    if (!silent && allEvents.length === 0 && tasks.length === 0) {
+      setLoading(true);
+    }
     setPageError("");
     try {
       const effectiveView = tab === "notes" ? "month" : view;
@@ -555,7 +565,7 @@ export default function CalendarPage() {
         </div>
       )}
       <div className="flex-1 overflow-auto relative">
-        {loading ? (
+        {loading && allEvents.length === 0 && tasks.length === 0 ? (
           <div className="flex items-center justify-center h-full text-ink-faint gap-2.5">
             <Loader2 className="w-5 h-5 animate-spin text-accent" />
             <span className="text-sm font-medium">Loading agenda…</span>

@@ -23,7 +23,7 @@ export function OmniInscribeModal({ isOpen, onClose }: OmniInscribeModalProps) {
   
   // Expense fields
   const [amount, setAmount] = useState("");
-  const [category, setCategory] = useState("General");
+  const [category, setCategory] = useState("Food & Meals");
   
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
@@ -33,7 +33,7 @@ export function OmniInscribeModal({ isOpen, onClose }: OmniInscribeModalProps) {
       sound.pop();
       setQuery("");
       setAmount("");
-      setCategory("General");
+      setCategory("Food & Meals");
       setSuccessMsg("");
       setTimeout(() => inputRef.current?.focus(), 50);
     }
@@ -209,7 +209,7 @@ export function OmniInscribeModal({ isOpen, onClose }: OmniInscribeModalProps) {
             <div className="space-y-2.5">
               <div className="grid grid-cols-2 gap-2">
                 <div className="relative flex items-center">
-                  <span className="absolute left-3 font-mono text-sm text-accent font-bold">$</span>
+                  <span className="absolute left-3 font-mono text-sm text-accent font-bold">₹</span>
                   <input
                     ref={inputRef}
                     type="number"
@@ -223,14 +223,19 @@ export function OmniInscribeModal({ isOpen, onClose }: OmniInscribeModalProps) {
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="px-3 py-2.5 rounded-xl bg-ground border border-rule text-xs font-medium text-ink focus:outline-none focus:border-accent transition-colors"
+                  className="px-3 py-2.5 rounded-xl bg-ground border border-rule text-xs font-medium text-ink focus:outline-none focus:border-accent transition-colors cursor-pointer"
                 >
-                  <option value="General">General</option>
-                  <option value="Food & Dining">Food & Dining</option>
-                  <option value="Transit & Travel">Transit & Travel</option>
-                  <option value="Supplies & Stationery">Supplies & Stationery</option>
-                  <option value="Software & Hosting">Software & Hosting</option>
-                  <option value="Health & Living">Health & Living</option>
+                  <option value="Chai & Coffee">Chai & Coffee</option>
+                  <option value="Snacks">Snacks</option>
+                  <option value="Food & Meals">Food & Meals</option>
+                  <option value="Groceries">Groceries</option>
+                  <option value="Transport & Fuel">Transport & Fuel</option>
+                  <option value="Buying / Shopping">Buying / Shopping</option>
+                  <option value="Bills & Utilities">Bills & Utilities</option>
+                  <option value="Rent">Rent</option>
+                  <option value="Entertainment">Entertainment</option>
+                  <option value="Health & Meds">Health & Meds</option>
+                  <option value="Other">Other</option>
                 </select>
               </div>
               <div className="relative flex items-center">

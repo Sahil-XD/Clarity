@@ -306,12 +306,50 @@ export default function ProjectsPage() {
     } else {
       loadProjects(false);
     }
+
+    const handleDataUpdated = () => {
+      loadProjects(true);
+      setActiveProjectId((curr) => {
+        if (curr) loadTasksForProject(curr);
+        return curr;
+      });
+    };
+    window.addEventListener("clarity:data-updated", handleDataUpdated);
+    return () => window.removeEventListener("clarity:data-updated", handleDataUpdated);
   }, []);
 
   const loadTasksForProject = async (projectId: string) => {
     try {
-      const data = await api.getProjectTasks(projectId);
-      setTasks((p) => ({ ...p, [projectId]: data }));
+      const [pTasks, allTasks] = await Promise.all([
+        api.getProjectTasks(projectId).catch(() => []),
+        api.getTasks(false).catch(() => []),
+      ]);
+
+      const docketTasks = allTasks
+        .filter((t) => String(t.project_id) === String(projectId))
+        .map((t) => ({
+          id: String(t.id),
+          project_id: projectId,
+          title: t.title,
+          description: t.description,
+          status: (t.status as TaskStatus) || (t.completed ? "DONE" : "TODO"),
+          created_at: t.created_at,
+          _source: "task" as const,
+        }));
+
+      const nativePTasks = (pTasks || []).map((pt: any) => ({
+        ...pt,
+        id: String(pt.id),
+        _source: "project_task" as const,
+      }));
+
+      const existingIds = new Set(nativePTasks.map((t: any) => String(t.id)));
+      const merged = [
+        ...nativePTasks,
+        ...docketTasks.filter((t: any) => !existingIds.has(String(t.id))),
+      ];
+
+      setTasks((p) => ({ ...p, [projectId]: merged }));
     } catch (err: any) {
       setPageError(err?.message || "Failed to load project tasks.");
     }
@@ -328,14 +366,23 @@ export default function ProjectsPage() {
     if (targetProjectId == null) return;
     sound.pop();
     const prevTasks = tasks[targetProjectId] || [];
+    const targetTask = prevTasks.find((t) => String(t.id) === String(taskId));
+
     setTasks((prev) => ({
       ...prev,
       [targetProjectId]: (prev[targetProjectId] || []).map((t) =>
-        t.id === taskId ? { ...t, status: newStatus } : t
+        String(t.id) === String(taskId) ? { ...t, status: newStatus } : t
       ),
     }));
     try {
-      await api.updateProjectTaskStatus(taskId, newStatus);
+      if (targetTask?._source === "task") {
+        await api.updateTask(taskId, {
+          status: newStatus,
+          completed: newStatus === "DONE",
+        });
+      } else {
+        await api.updateProjectTaskStatus(taskId, newStatus);
+      }
     } catch (err: any) {
       setTasks((prev) => ({ ...prev, [targetProjectId]: prevTasks }));
       setPageError(err?.message || "Failed to update project task status.");
@@ -347,12 +394,18 @@ export default function ProjectsPage() {
     if (targetProjectId == null) return;
     sound.pop();
     const prevTasks = tasks[targetProjectId] || [];
+    const targetTask = prevTasks.find((t) => String(t.id) === String(taskId));
+
     setTasks((prev) => ({
       ...prev,
-      [targetProjectId]: (prev[targetProjectId] || []).filter((t) => t.id !== taskId),
+      [targetProjectId]: (prev[targetProjectId] || []).filter((t) => String(t.id) !== String(taskId)),
     }));
     try {
-      await api.deleteProjectTask(taskId);
+      if (targetTask?._source === "task") {
+        await api.deleteTask(taskId);
+      } else {
+        await api.deleteProjectTask(taskId);
+      }
     } catch (err: any) {
       setTasks((prev) => ({ ...prev, [targetProjectId]: prevTasks }));
       setPageError(err?.message || "Failed to delete project task.");

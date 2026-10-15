@@ -674,11 +674,14 @@ async function getDiaryEntries(pin: string): Promise<DiaryEntry[]> {
       const entries: DiaryEntry[] = [];
       for (const entry of list) {
         let decryptedBody = entry.body || "";
-        if (pin) {
+        let isReadOnly = false;
+        if (pin && typeof decryptedBody === "string" && decryptedBody.startsWith("clarity_enc:v1:")) {
           try {
-            decryptedBody = await decryptVaultText(entry.body || "", pin, LOCAL_USER_ID);
+            decryptedBody = await decryptVaultText(decryptedBody, pin, LOCAL_USER_ID);
           } catch (e) {
-            console.warn("Vault decrypt warning:", e);
+            console.warn("Vault decrypt warning (locked with previous PIN):", e);
+            decryptedBody = "[Locked with previous PIN]";
+            isReadOnly = true;
           }
         }
         entries.push({
@@ -687,6 +690,7 @@ async function getDiaryEntries(pin: string): Promise<DiaryEntry[]> {
           date: entry.date,
           body: decryptedBody,
           mood: (entry.mood as DiaryMood) || null,
+          readOnly: isReadOnly,
           created_at: entry.createdAt || new Date().toISOString(),
           updated_at: entry.updatedAt || new Date().toISOString(),
           deleted_at: null,
@@ -702,12 +706,16 @@ async function getDiaryEntries(pin: string): Promise<DiaryEntry[]> {
   const decrypted: DiaryEntry[] = [];
   for (const entry of entries) {
     let body = entry.body || "";
-    if (pin) {
+    let isReadOnly = false;
+    if (pin && typeof body === "string" && body.startsWith("clarity_enc:v1:")) {
       try {
-        body = await decryptVaultText(entry.body || "", pin, LOCAL_USER_ID);
-      } catch {}
+        body = await decryptVaultText(body, pin, LOCAL_USER_ID);
+      } catch {
+        body = "[Locked with previous PIN]";
+        isReadOnly = true;
+      }
     }
-    decrypted.push({ ...entry, body });
+    decrypted.push({ ...entry, body, readOnly: isReadOnly });
   }
   return decrypted;
 }
@@ -718,6 +726,22 @@ async function saveDiaryEntry(
   body: Partial<DiaryEntry>
 ): Promise<DiaryEntry> {
   const rawBody = body.body || "";
+
+  // Guard: if entry is locked with previous PIN or flagged readOnly, do NOT overwrite ciphertext!
+  if (body.readOnly || rawBody === "[Locked with previous PIN]") {
+    return {
+      id: String(Date.now()),
+      user_id: LOCAL_USER_ID,
+      date,
+      body: "[Locked with previous PIN]",
+      mood: body.mood || null,
+      readOnly: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      deleted_at: null,
+    };
+  }
+
   let encryptedBody = rawBody;
 
   if (pin) {

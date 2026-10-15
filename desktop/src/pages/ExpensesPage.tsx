@@ -273,6 +273,12 @@ export default function ExpensesPage() {
         } catch {}
       }
     }).catch(() => {});
+
+    const handleDataUpdated = () => {
+      loadExpenses(true);
+    };
+    window.addEventListener("clarity:data-updated", handleDataUpdated);
+    return () => window.removeEventListener("clarity:data-updated", handleDataUpdated);
   }, []);
 
   const loadExpenses = async (silent = false) => {
@@ -385,6 +391,8 @@ export default function ExpensesPage() {
   const safeBudget = monthlyBudget > 0 ? monthlyBudget : 1;
   const safeDays = daysInMonth > 0 ? daysInMonth : 30;
   const dailyAverage = currentDay > 0 ? totalSpentThisMonth / currentDay : 0;
+  const remainingDays = Math.max(1, daysInMonth - currentDay + 1);
+  const safeDailyAllowance = Math.max(0, (monthlyBudget - totalSpentThisMonth) / remainingDays);
   const expectedPaceSpend = (safeBudget / safeDays) * currentDay;
   const paceDiff = totalSpentThisMonth - expectedPaceSpend; // negative = under pace (good), positive = over pace
   const isUnderPace = paceDiff <= 0;
@@ -596,7 +604,10 @@ export default function ExpensesPage() {
                 <div className="text-sm font-mono font-bold text-ink tabular-nums">
                   ₹{dailyAverage.toFixed(0)}/day
                 </div>
-                <div className="text-xs font-mono text-ink-faint">
+                <div className="mt-0.5 inline-block px-1.5 py-0.5 rounded-none bg-ground border border-rule text-[11px] font-mono text-accent font-semibold tracking-tight">
+                  ₹{safeDailyAllowance.toFixed(0)}/day safe allowance
+                </div>
+                <div className="text-xs font-mono text-ink-faint mt-0.5">
                   day {currentDay} of {daysInMonth}
                 </div>
               </div>

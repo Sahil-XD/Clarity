@@ -38,17 +38,32 @@ export const dataCache = {
     if (callbacks) {
       callbacks.forEach((cb) => cb(data));
     }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("clarity:data-updated", { detail: { prefix: key } })
+      );
+    }
   },
 
   invalidate(prefix?: string): void {
     if (!prefix) {
       cache.clear();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("clarity:data-updated", { detail: { prefix: "" } })
+        );
+      }
       return;
     }
     for (const key of cache.keys()) {
       if (key.startsWith(prefix)) {
         cache.delete(key);
       }
+    }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("clarity:data-updated", { detail: { prefix } })
+      );
     }
   },
 

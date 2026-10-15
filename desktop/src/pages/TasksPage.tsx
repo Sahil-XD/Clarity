@@ -63,6 +63,12 @@ export default function TasksPage() {
 
   useEffect(() => {
     fetchTasks(tasks.length > 0);
+
+    const handleDataUpdated = () => {
+      fetchTasks(true);
+    };
+    window.addEventListener("clarity:data-updated", handleDataUpdated);
+    return () => window.removeEventListener("clarity:data-updated", handleDataUpdated);
   }, []);
 
   // Keyboard shortcut 'N' focuses inline input
@@ -201,6 +207,25 @@ export default function TasksPage() {
   };
 
   const filteredTasks = pendingOnly ? tasks.filter((t) => !t.completed) : tasks;
+  const overdueTasks = tasks.filter(
+    (t) => !t.completed && t.due_at && dayjs(t.due_at).isBefore(dayjs(), "day")
+  );
+
+  const handleRolloverOverdue = async () => {
+    sound.pop();
+    const todayStr = dayjs().format("YYYY-MM-DD");
+    setTasks((prev) =>
+      prev.map((t) =>
+        !t.completed && t.due_at && dayjs(t.due_at).isBefore(dayjs(), "day")
+          ? { ...t, due_at: todayStr }
+          : t
+      )
+    );
+    await Promise.all(
+      overdueTasks.map((t) => api.updateTask(t.id, { due_at: todayStr }).catch(() => {}))
+    );
+    dataCache.invalidate("tasks");
+  };
   const totalCount = tasks.length;
   const completedCount = tasks.filter((t) => t.completed).length;
   const pendingCount = totalCount - completedCount;
@@ -309,6 +334,22 @@ export default function TasksPage() {
               </button>
             </div>
           </div>
+
+          {/* Overdue Rollover Banner */}
+          {overdueTasks.length > 0 && (
+            <div className="shrink-0 flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-accent/10 border border-accent/25 text-xs animate-fadeIn">
+              <span className="font-mono text-ink">
+                <span className="font-bold text-accent">{overdueTasks.length}</span> overdue task{overdueTasks.length > 1 ? "s" : ""} from previous days
+              </span>
+              <button
+                type="button"
+                onClick={handleRolloverOverdue}
+                className="px-2.5 py-1 rounded-lg bg-accent text-white font-mono text-xs font-semibold hover:bg-accent/90 transition active:scale-[0.98] cursor-pointer"
+              >
+                Roll over to Today
+              </button>
+            </div>
+          )}
 
           {/* Ruled Task List */}
           <div className="flex-1 min-h-0 bg-surface border border-rule rounded-xl overflow-y-auto shadow-2xs divide-y divide-rule">

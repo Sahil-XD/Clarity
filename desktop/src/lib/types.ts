@@ -1,4 +1,4 @@
-﻿export interface Profile {
+export interface Profile {
   id: string; // UUID, matches auth.users.id
   username: string;
   email: string;
@@ -40,6 +40,7 @@ export interface DiaryEntry {
   date: string; // YYYY-MM-DD
   body: string;
   mood: DiaryMood | null;
+  readOnly?: boolean;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
