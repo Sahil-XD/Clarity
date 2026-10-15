@@ -63,7 +63,6 @@ async function getTasks(pendingOnly = false): Promise<Task[]> {
         updated_at: t.updatedAt || new Date().toISOString(),
         deleted_at: null,
       }));
-      dataCache.set("tasks", mapped);
       return mapped;
     } catch (e) {
       console.warn("[Tauri IPC] get_tasks error, falling back to localDb:", e);
@@ -72,7 +71,6 @@ async function getTasks(pendingOnly = false): Promise<Task[]> {
 
   // LocalDb (0ms response, persists in localStorage)
   const tasks = localDb.getTasks(pendingOnly);
-  dataCache.set("tasks", tasks);
   return tasks;
 }
 
@@ -93,12 +91,7 @@ async function createTask(task: Partial<Task>): Promise<Task> {
         status,
         projectId: task.project_id || null,
         remindAt: task.remind_at || null,
-        reminderSent: task.reminder_sent || false,
       });
-
-      if (task.completed || status === "DONE") {
-        await invoke("update_task", { id: t.id, completed: true }).catch(() => {});
-      }
 
       const created: Task = {
         id: String(t.id),
@@ -224,7 +217,6 @@ async function getProjects(): Promise<Project[]> {
         updated_at: p.createdAt || new Date().toISOString(),
         deleted_at: null,
       }));
-      dataCache.set("projects", mapped);
       return mapped;
     } catch (e) {
       console.warn("[Tauri IPC] get_projects error, falling back to localDb:", e);
@@ -232,7 +224,6 @@ async function getProjects(): Promise<Project[]> {
   }
 
   const projects = localDb.getProjects();
-  dataCache.set("projects", projects);
   return projects;
 }
 
@@ -391,7 +382,6 @@ async function getExpenses(): Promise<Expense[]> {
         updated_at: e.createdAt || new Date().toISOString(),
         deleted_at: null,
       }));
-      dataCache.set("expenses", mapped);
       return mapped;
     } catch (e) {
       console.warn("[Tauri IPC] get_expenses error, falling back to localDb:", e);
@@ -399,7 +389,6 @@ async function getExpenses(): Promise<Expense[]> {
   }
 
   const exp = localDb.getExpenses();
-  dataCache.set("expenses", exp);
   return exp;
 }
 

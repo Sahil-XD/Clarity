@@ -264,21 +264,14 @@ export default function ExpensesPage() {
 
   useEffect(() => {
     loadExpenses(expenses.length > 0);
-    supabase.auth.getUser().then(({ data }) => {
-      const cloudBudget = data?.user?.user_metadata?.monthly_budget;
-      if (typeof cloudBudget === "number" && cloudBudget > 0) {
-        setMonthlyBudget(cloudBudget);
-        try {
-          localStorage.setItem("clarity_monthly_budget", String(cloudBudget));
-        } catch {}
-      }
-    }).catch(() => {});
 
-    const handleDataUpdated = () => {
-      loadExpenses(true);
+    const handleMutation = (e: any) => {
+      if (!e.detail?.topic || e.detail?.topic === "expenses") {
+        loadExpenses(true);
+      }
     };
-    window.addEventListener("clarity:data-updated", handleDataUpdated);
-    return () => window.removeEventListener("clarity:data-updated", handleDataUpdated);
+    window.addEventListener("clarity:mutation", handleMutation);
+    return () => window.removeEventListener("clarity:mutation", handleMutation);
   }, []);
 
   const loadExpenses = async (silent = false) => {
@@ -800,10 +793,13 @@ export default function ExpensesPage() {
                             return (
                               <motion.div
                                 key={expense.id}
-                                initial={isNew ? { clipPath: "inset(0 100% 0 0)", backgroundColor: "var(--c-raised)" } : false}
-                                animate={isNew ? { clipPath: "inset(0 0% 0 0)", backgroundColor: "transparent" } : {}}
-                                transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
-                                className="group grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-3 px-4 py-2.5 hover:bg-raised transition-all duration-150 items-center text-xs border-l-2 border-l-transparent hover:border-l-ink-soft cursor-default"
+                                initial={{ opacity: 0, y: 4 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.16, ease: "easeOut" }}
+                                className={clsx(
+                                  "group grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-3 px-4 py-2.5 hover:bg-raised transition-all duration-150 items-center text-xs border-l-2 cursor-default",
+                                  isNew ? "border-l-accent bg-raised/30" : "border-l-transparent hover:border-l-ink-soft"
+                                )}
                               >
                                 {/* Date / Ref (Col 1-2) */}
                                 <div className="sm:col-span-2 flex items-center gap-2">

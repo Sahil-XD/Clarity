@@ -75,7 +75,7 @@ export function OmniInscribeModal({ isOpen, onClose }: OmniInscribeModalProps) {
         status: "TODO",
         due_at: dayjs().format("YYYY-MM-DD"),
       });
-      dataCache.invalidate("tasks");
+      dataCache.emitMutation("tasks");
       sound.chime();
       setSuccessMsg("Task inscribed to Ledger");
       setTimeout(() => {
@@ -103,7 +103,7 @@ export function OmniInscribeModal({ isOpen, onClose }: OmniInscribeModalProps) {
         date: dayjs().format("YYYY-MM-DD"),
         expense_type: "EXPENSE",
       });
-      dataCache.invalidate("expenses");
+      dataCache.emitMutation("expenses");
       sound.chime();
       setSuccessMsg("Expense logged to Ledger");
       setTimeout(() => {

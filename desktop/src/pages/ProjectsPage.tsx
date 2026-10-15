@@ -307,15 +307,17 @@ export default function ProjectsPage() {
       loadProjects(false);
     }
 
-    const handleDataUpdated = () => {
-      loadProjects(true);
-      setActiveProjectId((curr) => {
-        if (curr) loadTasksForProject(curr);
-        return curr;
-      });
+    const handleMutation = (e: any) => {
+      if (!e.detail?.topic || e.detail?.topic === "projects" || e.detail?.topic === "tasks") {
+        loadProjects(true);
+        setActiveProjectId((curr) => {
+          if (curr) loadTasksForProject(curr);
+          return curr;
+        });
+      }
     };
-    window.addEventListener("clarity:data-updated", handleDataUpdated);
-    return () => window.removeEventListener("clarity:data-updated", handleDataUpdated);
+    window.addEventListener("clarity:mutation", handleMutation);
+    return () => window.removeEventListener("clarity:mutation", handleMutation);
   }, []);
 
   const loadTasksForProject = async (projectId: string) => {
@@ -683,19 +685,14 @@ export default function ProjectsPage() {
                                 <motion.div
                                   key={task.id}
                                   layout
-                                  initial={
-                                    isNew
-                                      ? { clipPath: "inset(0 100% 0 0)", backgroundColor: "var(--c-raised)" }
-                                      : { opacity: 0, y: 4 }
-                                  }
-                                  animate={
-                                    isNew
-                                      ? { clipPath: "inset(0 0% 0 0)", backgroundColor: "var(--c-surface)" }
-                                      : { opacity: 1, y: 0 }
-                                  }
+                                  initial={{ opacity: 0, y: 4 }}
+                                  animate={{ opacity: 1, y: 0 }}
                                   exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.12 } }}
-                                  transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
-                                  className="group bg-surface rounded-none border border-rule p-3 shadow-none transition-all duration-150 border-l-2 border-l-transparent hover:border-l-ink-soft hover:bg-raised/50 cursor-default"
+                                  transition={{ duration: 0.16, ease: "easeOut" }}
+                                  className={clsx(
+                                    "group bg-surface rounded-none border border-rule p-3 shadow-none transition-all duration-150 border-l-2 hover:bg-raised/50 cursor-default",
+                                    isNew ? "border-l-accent bg-raised/20" : "border-l-transparent hover:border-l-ink-soft"
+                                  )}
                                 >
                                   <div className="flex items-start justify-between gap-2">
                                     <p

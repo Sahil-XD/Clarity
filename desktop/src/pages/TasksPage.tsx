@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Plus, Trash2, CalendarDays, Bell, FolderKanban,
-  Check, AlertCircle, X
+  Check, AlertCircle, X, Clock, Sparkles
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { api } from "@/lib/api";
@@ -10,6 +10,37 @@ import { dataCache } from "@/lib/dataCache";
 import type { Task, Project, TaskStatus } from "@/lib/types";
 import { clsx } from "clsx";
 import dayjs from "dayjs";
+
+/**
+ * Smart Default Schedule Helper
+ * Always defaults to today's date + the next full hour with at least a 1-hour buffer.
+ * Example: If it is 3:50 PM (15:50), next hour buffer is 5:00 PM (17:00).
+ * Example: If it is 3:00 PM (15:00), next hour is 4:00 PM (16:00).
+ */
+function getSmartDefaultSchedule() {
+  const now = dayjs();
+  const targetTime = now.minute() > 0
+    ? now.add(2, "hour").startOf("hour")
+    : now.add(1, "hour").startOf("hour");
+  return {
+    dateStr: targetTime.format("YYYY-MM-DD"),
+    timeStr: targetTime.format("HH:mm"),
+    isoStr: targetTime.toISOString(),
+    remindStr: targetTime.format("YYYY-MM-DDTHH:mm"),
+  };
+}
+
+/**
+ * Formats due date & time badge
+ * Example: "Today · 5:00 PM" or "15 Oct · 5:00 PM" (or date-only if no time set)
+ */
+function formatTaskDueBadge(dueAt: string) {
+  const due = dayjs(dueAt);
+  const isToday = due.isSame(dayjs(), "day");
+  const isDateOnly = !dueAt.includes("T") || dueAt.includes("T00:00:00");
+  const datePart = isToday ? "Today" : due.format("D MMM");
+  return isDateOnly ? datePart : `${datePart} · ${due.format("h:mm A")}`;
+}
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>(() => {
@@ -21,17 +52,26 @@ export default function TasksPage() {
   const [quickTitle, setQuickTitle] = useState("");
   const [quickSaving, setQuickSaving] = useState(false);
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
-  
-  // Master-Detail selection
+
+  // Master-Detail selection (null = "Inscribe New Task Docket" mode)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>(() => {
     return dataCache.get<Project[]>("projects") || [];
   });
 
-  // Inspector form state
+  // Draft state for "Inscribe New Task Docket" mode
+  const [draftDate, setDraftDate] = useState(() => getSmartDefaultSchedule().dateStr);
+  const [draftTime, setDraftTime] = useState(() => getSmartDefaultSchedule().timeStr);
+  const [draftDesc, setDraftDesc] = useState("");
+  const [draftProject, setDraftProject] = useState("");
+  const [draftStatus, setDraftStatus] = useState<TaskStatus>("TODO");
+  const [draftRemind, setDraftRemind] = useState(false);
+
+  // Inspector form state for existing tasks
   const [inspectorTitle, setInspectorTitle] = useState("");
   const [inspectorDesc, setInspectorDesc] = useState("");
-  const [inspectorDue, setInspectorDue] = useState("");
+  const [inspectorDueDate, setInspectorDueDate] = useState("");
+  const [inspectorDueTime, setInspectorDueTime] = useState("");
   const [inspectorRemind, setInspectorRemind] = useState("");
   const [inspectorProject, setInspectorProject] = useState<string>("");
   const [inspectorStatus, setInspectorStatus] = useState<TaskStatus>("TODO");
@@ -64,20 +104,23 @@ export default function TasksPage() {
   useEffect(() => {
     fetchTasks(tasks.length > 0);
 
-    const handleDataUpdated = () => {
-      fetchTasks(true);
+    const handleMutation = (e: any) => {
+      if (!e.detail?.topic || e.detail?.topic === "tasks" || e.detail?.topic === "projects") {
+        fetchTasks(true);
+      }
     };
-    window.addEventListener("clarity:data-updated", handleDataUpdated);
-    return () => window.removeEventListener("clarity:data-updated", handleDataUpdated);
+    window.addEventListener("clarity:mutation", handleMutation);
+    return () => window.removeEventListener("clarity:mutation", handleMutation);
   }, []);
 
-  // Keyboard shortcut 'N' focuses inline input
+  // Keyboard shortcut 'N' focuses inline input and switches to new draft mode
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key.toLowerCase() === "n") {
         e.preventDefault();
         sound.click();
+        setSelectedTaskId(null);
         quickInputRef.current?.focus();
       }
     };
@@ -91,7 +134,15 @@ export default function TasksPage() {
     if (selectedTask) {
       setInspectorTitle(selectedTask.title);
       setInspectorDesc(selectedTask.description || "");
-      setInspectorDue(selectedTask.due_at ? dayjs(selectedTask.due_at).format("YYYY-MM-DD") : "");
+      if (selectedTask.due_at) {
+        const d = dayjs(selectedTask.due_at);
+        setInspectorDueDate(d.format("YYYY-MM-DD"));
+        const isDateOnly = !selectedTask.due_at.includes("T") || selectedTask.due_at.includes("T00:00:00");
+        setInspectorDueTime(isDateOnly ? "" : d.format("HH:mm"));
+      } else {
+        setInspectorDueDate("");
+        setInspectorDueTime("");
+      }
       setInspectorRemind(selectedTask.remind_at ? dayjs(selectedTask.remind_at).format("YYYY-MM-DDTHH:mm") : "");
       setInspectorProject(selectedTask.project_id || "");
       setInspectorStatus((selectedTask.status as TaskStatus) || (selectedTask.completed ? "DONE" : "TODO"));
@@ -141,26 +192,48 @@ export default function TasksPage() {
     }
   };
 
-  const handleQuickAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Unified creation handler (Fast Path & Side Panel Detailed Path)
+  const handleCreateTask = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!quickTitle.trim() || quickSaving) return;
     setQuickSaving(true);
     sound.click();
 
     try {
-      const today = dayjs().format("YYYY-MM-DD");
+      const dueIso = draftDate
+        ? draftTime
+          ? dayjs(`${draftDate}T${draftTime}`).toISOString()
+          : dayjs(draftDate).startOf("day").toISOString()
+        : null;
+
+      const remindIso = draftRemind && dueIso ? dueIso : null;
+
       const created = await api.createTask({
         title: quickTitle.trim(),
-        completed: false,
-        status: "TODO",
-        due_at: today,
+        description: draftDesc.trim() || null,
+        completed: draftStatus === "DONE",
+        status: draftStatus,
+        due_at: dueIso,
+        project_id: draftProject || null,
+        remind_at: remindIso,
       });
+
       const next = [created, ...tasks];
       setTasks(next);
       dataCache.set("tasks", next);
       setNewlyAddedId(created.id);
       setSelectedTaskId(created.id);
+
+      // Reset draft fields to a fresh smart schedule
+      const fresh = getSmartDefaultSchedule();
+      setDraftDate(fresh.dateStr);
+      setDraftTime(fresh.timeStr);
+      setDraftDesc("");
+      setDraftProject("");
+      setDraftStatus("TODO");
+      setDraftRemind(false);
       setQuickTitle("");
+
       sound.pop();
       setTimeout(() => setNewlyAddedId(null), 1200);
     } catch (err: any) {
@@ -175,9 +248,12 @@ export default function TasksPage() {
     setInspectorSaving(true);
     sound.click();
 
-    const formattedDue = inspectorDue
-      ? dayjs(inspectorDue).startOf("day").toISOString()
+    const formattedDue = inspectorDueDate
+      ? inspectorDueTime
+        ? dayjs(`${inspectorDueDate}T${inspectorDueTime}`).toISOString()
+        : dayjs(inspectorDueDate).startOf("day").toISOString()
       : null;
+
     const formattedRemind = inspectorRemind
       ? dayjs(inspectorRemind).toISOString()
       : null;
@@ -213,19 +289,20 @@ export default function TasksPage() {
 
   const handleRolloverOverdue = async () => {
     sound.pop();
-    const todayStr = dayjs().format("YYYY-MM-DD");
+    const todaySchedule = getSmartDefaultSchedule();
     setTasks((prev) =>
       prev.map((t) =>
         !t.completed && t.due_at && dayjs(t.due_at).isBefore(dayjs(), "day")
-          ? { ...t, due_at: todayStr }
+          ? { ...t, due_at: todaySchedule.isoStr }
           : t
       )
     );
     await Promise.all(
-      overdueTasks.map((t) => api.updateTask(t.id, { due_at: todayStr }).catch(() => {}))
+      overdueTasks.map((t) => api.updateTask(t.id, { due_at: todaySchedule.isoStr }).catch(() => {}))
     );
     dataCache.invalidate("tasks");
   };
+
   const totalCount = tasks.length;
   const completedCount = tasks.filter((t) => t.completed).length;
   const pendingCount = totalCount - completedCount;
@@ -234,7 +311,7 @@ export default function TasksPage() {
   return (
     <div className="h-full flex flex-col overflow-hidden bg-ground">
       {/* ── Subheader / Editorial Folio Header ───────────────────────────────────── */}
-      <div className="px-6 py-4 border-b border-rule flex items-center justify-between shrink-0 bg-surface/50 backdrop-blur-xs">
+      <div className="px-6 py-4 border-b border-rule flex items-center justify-between shrink-0 bg-surface">
         <div>
           <h1 className="text-xl font-bold text-ink tracking-tight font-serif flex items-center gap-2">
             Tasks Ledger
@@ -248,34 +325,38 @@ export default function TasksPage() {
         </div>
 
         {/* Status completion ratio */}
-        <div className="flex items-center gap-3 text-right">
-          <div className="hidden sm:block">
-            <span className="font-mono text-xs font-semibold text-ink">
-              {completedCount} of {totalCount} completed ({completionPercentage}%)
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <span className="text-[11px] font-mono text-ink-faint block uppercase tracking-wider">
+              Completion Rate
             </span>
-            <div className="w-36 h-1 bg-surface border border-rule rounded-full overflow-hidden mt-1">
-              <div
-                className="h-full bg-accent transition-all duration-300"
-                style={{ width: `${completionPercentage}%` }}
-              />
-            </div>
+            <span className="text-sm font-bold font-mono text-ink">
+              {completedCount} / {totalCount} ({completionPercentage}%)
+            </span>
+          </div>
+          <div className="w-24 h-2 rounded-full bg-raised overflow-hidden border border-rule">
+            <div
+              className="h-full bg-accent transition-all duration-300 rounded-full"
+              style={{ width: `${completionPercentage}%` }}
+            />
           </div>
         </div>
       </div>
 
-      {/* ── 2-Column Responsive Master-Detail Layout ────────────────────────────── */}
-      <div className="flex-1 min-h-0 p-6 overflow-hidden grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* ── Left Column: Master Task List (7 cols) ────────────────────────────── */}
-        <div className="lg:col-span-7 flex flex-col min-h-0 space-y-3.5">
+      {/* ── Main Workspace Body (Master-Detail Grid) ─────────────────────────────── */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 overflow-hidden">
+        {/* ── Left Column: Master Task List (7 cols) ─────────────────────────── */}
+        <div className="lg:col-span-7 flex flex-col min-h-0 space-y-3">
+          {/* Error Message */}
           {error && (
-            <div className="p-2.5 rounded bg-danger/10 border border-danger/20 text-danger text-xs flex items-center justify-between">
+            <div className="p-2.5 rounded-lg bg-danger/10 border border-danger/20 text-danger text-xs flex items-center justify-between">
               <span className="flex items-center gap-1.5 font-medium">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {error}
               </span>
               <button
                 type="button"
                 onClick={() => setError("")}
-                className="text-xs underline hover:opacity-80"
+                className="text-[11px] hover:underline cursor-pointer font-mono"
               >
                 Dismiss
               </button>
@@ -284,7 +365,7 @@ export default function TasksPage() {
 
           {/* Quick Inscribe Input Bar */}
           <form
-            onSubmit={handleQuickAdd}
+            onSubmit={handleCreateTask}
             className="bg-surface border border-rule rounded-xl p-2 px-3.5 flex items-center gap-2.5 shadow-2xs"
           >
             <Plus className="w-4 h-4 text-accent shrink-0 stroke-[2.5]" />
@@ -293,6 +374,7 @@ export default function TasksPage() {
               type="text"
               value={quickTitle}
               onChange={(e) => setQuickTitle(e.target.value)}
+              onFocus={() => setSelectedTaskId(null)}
               placeholder="Inscribe task... (Press 'N' to focus, Enter to save)"
               className="flex-1 bg-transparent text-xs text-ink placeholder:text-ink-faint outline-none font-sans"
             />
@@ -374,13 +456,15 @@ export default function TasksPage() {
                       sound.pop();
                       setSelectedTaskId(task.id);
                     }}
-                    initial={isNew ? { clipPath: "inset(0 100% 0 0)", backgroundColor: "var(--c-raised)" } : false}
-                    animate={isNew ? { clipPath: "inset(0 0% 0 0)", backgroundColor: "transparent" } : {}}
-                    transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.16, ease: "easeOut" }}
                     className={clsx(
                       "group flex items-center justify-between gap-3 px-3.5 py-2.5 hover:bg-raised/70 transition-all cursor-pointer text-xs border-l-2",
                       isSelected
                         ? "bg-raised border-l-accent"
+                        : isNew
+                        ? "bg-raised/40 border-l-accent"
                         : "border-l-transparent"
                     )}
                   >
@@ -407,43 +491,36 @@ export default function TasksPage() {
                         </div>
                       </button>
 
-                      {/* Title & Notes */}
-                      <div className="min-w-0 flex-1 relative">
-                        <div className="relative inline-block max-w-full">
-                          <span
-                            className={clsx(
-                              "font-sans text-xs block truncate",
-                              task.completed ? "text-ink-faint" : "text-ink font-medium"
-                            )}
-                          >
-                            {task.title}
-                          </span>
-                          {task.completed && (
-                            <motion.span
-                              initial={{ scaleX: 0 }}
-                              animate={{ scaleX: 1 }}
-                              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-                              className="absolute left-0 top-1/2 -translate-y-1/2 h-[1.5px] bg-ink-faint w-full origin-left pointer-events-none"
-                            />
+                      {/* Title & Description preview */}
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className={clsx(
+                            "font-medium truncate leading-tight font-sans text-xs",
+                            task.completed
+                              ? "line-through text-ink-faint"
+                              : "text-ink"
                           )}
-                        </div>
+                        >
+                          {task.title}
+                        </p>
                         {task.description && (
-                          <p className="text-[11px] text-ink-faint truncate font-sans">
+                          <p className="text-[10.5px] text-ink-faint truncate mt-0.5 font-sans">
                             {task.description}
                           </p>
                         )}
                       </div>
                     </div>
 
-                    {/* Metadata Badges & Delete */}
+                    {/* Metadata Badges & Actions */}
                     <div className="flex items-center gap-2 shrink-0">
+                      {/* Project Docket Tag */}
                       {task.project_id && (
-                        <span className="text-[10px] font-mono text-accent bg-accent/10 px-1.5 py-0.5 rounded border border-accent/20 flex items-center gap-1">
-                          <FolderKanban className="w-3 h-3" />
-                          Docket
+                        <span className="text-[9.5px] font-mono px-1.5 py-0.5 rounded bg-raised border border-rule text-ink-soft truncate max-w-[90px]">
+                          {projects.find((p) => p.id === task.project_id)?.title || "Docket"}
                         </span>
                       )}
 
+                      {/* Due Date & Time Badge */}
                       {task.due_at && (
                         <span
                           className={clsx(
@@ -456,9 +533,7 @@ export default function TasksPage() {
                           )}
                         >
                           <CalendarDays className="w-3 h-3" />
-                          {dayjs(task.due_at).isSame(dayjs(), "day")
-                            ? "Today"
-                            : dayjs(task.due_at).format("D MMM")}
+                          {formatTaskDueBadge(task.due_at)}
                         </span>
                       )}
 
@@ -481,9 +556,10 @@ export default function TasksPage() {
           </div>
         </div>
 
-        {/* ── Right Column: Task Docket Inspector (5 cols) ────────────────────── */}
+        {/* ── Right Column: Task Docket Inspector / Inscribe New Docket (5 cols) ─ */}
         <div className="lg:col-span-5 flex flex-col min-h-0 bg-surface border border-rule rounded-xl p-4 shadow-2xs">
           {selectedTask ? (
+            /* ── Mode 1: Edit Selected Task Docket ───────────────────────── */
             <div className="flex flex-col h-full space-y-4 overflow-y-auto">
               <div className="flex items-center justify-between pb-2 border-b border-rule shrink-0">
                 <span className="font-mono text-[10.5px] uppercase tracking-wider text-ink-faint font-semibold flex items-center gap-1.5">
@@ -492,6 +568,7 @@ export default function TasksPage() {
                 <button
                   type="button"
                   onClick={() => setSelectedTaskId(null)}
+                  title="Switch to New Docket mode"
                   className="p-1 rounded text-ink-faint hover:text-ink hover:bg-raised transition-colors cursor-pointer"
                 >
                   <X className="w-4 h-4" />
@@ -512,7 +589,7 @@ export default function TasksPage() {
               </div>
 
               {/* Description / Notes */}
-              <div className="space-y-1 flex-1 min-h-[120px] flex flex-col">
+              <div className="space-y-1 flex-1 min-h-[100px] flex flex-col">
                 <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider">
                   Notes & Details
                 </label>
@@ -533,7 +610,7 @@ export default function TasksPage() {
                   <select
                     value={inspectorProject}
                     onChange={(e) => setInspectorProject(e.target.value)}
-                    className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink focus:outline-none focus:border-accent"
+                    className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink focus:outline-none focus:border-accent cursor-pointer"
                   >
                     <option value="">No Project Docket</option>
                     {projects.map((p) => (
@@ -549,7 +626,7 @@ export default function TasksPage() {
                   <select
                     value={inspectorStatus}
                     onChange={(e) => setInspectorStatus(e.target.value as TaskStatus)}
-                    className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink focus:outline-none focus:border-accent font-mono"
+                    className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink focus:outline-none focus:border-accent font-mono cursor-pointer"
                   >
                     <option value="TODO">TODO</option>
                     <option value="IN_PROGRESS">IN PROGRESS</option>
@@ -558,31 +635,44 @@ export default function TasksPage() {
                 </div>
               </div>
 
-              {/* Due Date & Native Reminder */}
+              {/* Separate Date and Time Inputs */}
               <div className="grid grid-cols-2 gap-3 shrink-0">
                 <div className="space-y-1">
                   <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider flex items-center gap-1">
-                    <CalendarDays className="w-3 h-3 text-ink-soft" /> Deadline
+                    <CalendarDays className="w-3 h-3 text-ink-soft" /> Scheduled Date
                   </label>
                   <input
                     type="date"
-                    value={inspectorDue}
-                    onChange={(e) => setInspectorDue(e.target.value)}
+                    value={inspectorDueDate}
+                    onChange={(e) => setInspectorDueDate(e.target.value)}
                     className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink font-mono focus:outline-none focus:border-accent"
                   />
                 </div>
 
                 <div className="space-y-1">
                   <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider flex items-center gap-1">
-                    <Bell className="w-3 h-3 text-ink-soft" /> Native Reminder
+                    <Clock className="w-3 h-3 text-ink-soft" /> Scheduled Time
                   </label>
                   <input
-                    type="datetime-local"
-                    value={inspectorRemind}
-                    onChange={(e) => setInspectorRemind(e.target.value)}
+                    type="time"
+                    value={inspectorDueTime}
+                    onChange={(e) => setInspectorDueTime(e.target.value)}
                     className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink font-mono focus:outline-none focus:border-accent"
                   />
                 </div>
+              </div>
+
+              {/* Native Reminder */}
+              <div className="space-y-1 shrink-0">
+                <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider flex items-center gap-1">
+                  <Bell className="w-3 h-3 text-ink-soft" /> Native Reminder
+                </label>
+                <input
+                  type="datetime-local"
+                  value={inspectorRemind}
+                  onChange={(e) => setInspectorRemind(e.target.value)}
+                  className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink font-mono focus:outline-none focus:border-accent"
+                />
               </div>
 
               {/* Actions Footer */}
@@ -606,12 +696,148 @@ export default function TasksPage() {
               </div>
             </div>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-center p-6 text-ink-faint">
-              <FolderKanban className="w-8 h-8 text-ink-soft/40 mb-2 stroke-[1.5]" />
-              <p className="text-sm font-serif italic text-ink-soft">No Task Selected</p>
-              <p className="text-xs text-ink-faint font-sans mt-1 max-w-[220px]">
-                Click any task from your ruled ledger to inspect its docket, set reminders, or bind to a project.
-              </p>
+            /* ── Mode 2: Inscribe New Task Docket (Live Side-Panel Creation) ─ */
+            <div className="flex flex-col h-full space-y-4 overflow-y-auto">
+              <div className="flex items-center justify-between pb-2 border-b border-rule shrink-0">
+                <span className="font-mono text-[10.5px] uppercase tracking-wider text-ink-faint font-semibold flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-accent" /> Inscribe New Task Docket
+                </span>
+                <span className="font-mono text-[10px] text-accent uppercase tracking-wider font-semibold px-2 py-0.5 rounded bg-accent/10 border border-accent/25">
+                  New Draft
+                </span>
+              </div>
+
+              {/* Title Input (Synchronized with top quick-add bar) */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider">
+                  Docket Title
+                </label>
+                <input
+                  type="text"
+                  value={quickTitle}
+                  onChange={(e) => setQuickTitle(e.target.value)}
+                  placeholder="Task title (e.g. Audit quarterly Ledger)..."
+                  className="w-full px-3 py-2 rounded-lg bg-ground border border-rule text-xs font-semibold text-ink focus:outline-none focus:border-accent font-sans placeholder:text-ink-faint"
+                />
+              </div>
+
+              {/* Notes & Details */}
+              <div className="space-y-1 flex-1 min-h-[100px] flex flex-col">
+                <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider">
+                  Notes & Details
+                </label>
+                <textarea
+                  value={draftDesc}
+                  onChange={(e) => setDraftDesc(e.target.value)}
+                  placeholder="Record context, links, or checklists for this docket..."
+                  className="w-full flex-1 p-3 rounded-lg bg-ground border border-rule text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent resize-none font-sans"
+                />
+              </div>
+
+              {/* Project Docket & Kanban Stage */}
+              <div className="grid grid-cols-2 gap-3 shrink-0">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider">
+                    Project Docket
+                  </label>
+                  <select
+                    value={draftProject}
+                    onChange={(e) => setDraftProject(e.target.value)}
+                    className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink focus:outline-none focus:border-accent cursor-pointer"
+                  >
+                    <option value="">No Project Docket</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>{p.title}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider">
+                    Kanban Stage
+                  </label>
+                  <select
+                    value={draftStatus}
+                    onChange={(e) => setDraftStatus(e.target.value as TaskStatus)}
+                    className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink focus:outline-none focus:border-accent font-mono cursor-pointer"
+                  >
+                    <option value="TODO">TODO</option>
+                    <option value="IN_PROGRESS">IN PROGRESS</option>
+                    <option value="DONE">DONE</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Scheduled Date & Smart Default Time */}
+              <div className="grid grid-cols-2 gap-3 shrink-0">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider flex items-center gap-1">
+                    <CalendarDays className="w-3 h-3 text-ink-soft" /> Scheduled Date
+                  </label>
+                  <input
+                    type="date"
+                    value={draftDate}
+                    onChange={(e) => setDraftDate(e.target.value)}
+                    className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink font-mono focus:outline-none focus:border-accent"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-ink-soft" /> Scheduled Time
+                  </label>
+                  <input
+                    type="time"
+                    value={draftTime}
+                    onChange={(e) => setDraftTime(e.target.value)}
+                    className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink font-mono focus:outline-none focus:border-accent"
+                  />
+                </div>
+              </div>
+
+              {/* Native Reminder Checkbox */}
+              <div className="p-2.5 rounded-lg bg-ground border border-rule flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <Bell className="w-3.5 h-3.5 text-accent" />
+                  <span className="text-xs text-ink font-medium">Trigger Native Desktop Reminder</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={draftRemind}
+                  onChange={(e) => setDraftRemind(e.target.checked)}
+                  className="w-4 h-4 rounded text-accent accent-accent cursor-pointer"
+                />
+              </div>
+
+              {/* Actions Footer */}
+              <div className="pt-2 border-t border-rule flex items-center justify-between shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickTitle("");
+                    setDraftDesc("");
+                    const fresh = getSmartDefaultSchedule();
+                    setDraftDate(fresh.dateStr);
+                    setDraftTime(fresh.timeStr);
+                    setDraftProject("");
+                    setDraftStatus("TODO");
+                    setDraftRemind(false);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-raised text-xs font-semibold cursor-pointer transition-colors"
+                >
+                  Clear Draft
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleCreateTask()}
+                  disabled={!quickTitle.trim() || quickSaving}
+                  className="px-4 py-1.5 rounded-lg bg-accent text-white hover:bg-accent/90 text-xs font-semibold shadow-2xs transition-all active:scale-[0.98] disabled:opacity-40 cursor-pointer flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                  {quickSaving ? "Inscribing..." : "Inscribe Task Docket"}
+                </button>
+              </div>
             </div>
           )}
         </div>

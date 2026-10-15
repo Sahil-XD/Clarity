@@ -1,4 +1,4 @@
-﻿import { create } from "zustand";
+import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { supabase, signOut, signInWithGoogle, signInWithEmail, signUpWithEmail } from "./supabase";
 import { api } from "./api";
@@ -74,6 +74,24 @@ export const useAuth = create<AuthState>()(
       },
 
       initAuth: async () => {
+        const hasLocalSession =
+          typeof window !== "undefined" &&
+          Object.keys(localStorage).some(
+            (k) => k.startsWith("sb-") && k.endsWith("-auth-token")
+          );
+
+        if (!hasLocalSession) {
+          set({
+            supabaseUser: null,
+            username: "Sahil",
+            email: "sahil@clarity.local",
+            avatarUrl: null,
+            isAuthenticated: true,
+            isLoading: false,
+          });
+          return;
+        }
+
         try {
           // 1. Check local session from Supabase storage first (instant, 0ms, works offline)
           const { data: { session } } = await supabase.auth.getSession();

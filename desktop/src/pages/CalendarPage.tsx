@@ -79,7 +79,7 @@ function AddTaskModal({
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="New Calendar Task" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-xs p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div role="dialog" aria-modal="true" aria-label="New Calendar Task" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -233,7 +233,7 @@ function AddNoteModal({
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="New Note" className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-xs p-4 select-none" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div role="dialog" aria-modal="true" aria-label="New Note" className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4 select-none" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -330,11 +330,13 @@ export default function CalendarPage() {
   }, [view, currentDate, tab]);
 
   useEffect(() => {
-    const handleDataUpdated = () => {
-      loadData(true);
+    const handleMutation = (e: any) => {
+      if (!e.detail?.topic || e.detail?.topic === "calendar" || e.detail?.topic === "tasks") {
+        loadData(true);
+      }
     };
-    window.addEventListener("clarity:data-updated", handleDataUpdated);
-    return () => window.removeEventListener("clarity:data-updated", handleDataUpdated);
+    window.addEventListener("clarity:mutation", handleMutation);
+    return () => window.removeEventListener("clarity:mutation", handleMutation);
   }, [view, currentDate, tab]);
 
   const loadData = async (silent = false) => {
@@ -434,7 +436,7 @@ export default function CalendarPage() {
       </AnimatePresence>
 
       {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="shrink-0 bg-surface/85 backdrop-blur-md border-b border-rule">
+      <div className="shrink-0 bg-surface border-b border-rule">
         <div className="px-6 pt-5 pb-4 flex items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             {/* Nav Arrows */}
@@ -995,7 +997,7 @@ function QuickAddNoteModal({
 
   return (
     <div
-      role="dialog" aria-modal="true" aria-label="Add Date Note" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-xs p-4"
+      role="dialog" aria-modal="true" aria-label="Add Date Note" className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <motion.div

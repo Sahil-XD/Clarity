@@ -1,14 +1,19 @@
-﻿/**
+/**
  * Clarity Private Vault — AES-256-GCM End-to-End Encryption
  * Uses Web Crypto API (supported natively in all modern browsers & Tauri WebView2).
  */
 
 const ENC_PREFIX = "clarity_enc:v1:";
 
+const keyCache = new Map<string, CryptoKey>();
+
 /**
  * Derives a 256-bit AES-GCM CryptoKey from a 4-digit PIN and user-specific salt using PBKDF2 (100k iterations).
  */
 async function deriveVaultKey(pin: string, userId: string): Promise<CryptoKey> {
+  const cacheKey = `${userId}:${pin.trim()}`;
+  if (keyCache.has(cacheKey)) return keyCache.get(cacheKey)!;
+
   const enc = new TextEncoder();
   const baseKey = await crypto.subtle.importKey(
     "raw",
@@ -18,7 +23,7 @@ async function deriveVaultKey(pin: string, userId: string): Promise<CryptoKey> {
     ["deriveKey"]
   );
 
-  return crypto.subtle.deriveKey(
+  const derivedKey = await crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
       salt: enc.encode(`clarity-vault-salt:${userId}`),
@@ -30,6 +35,9 @@ async function deriveVaultKey(pin: string, userId: string): Promise<CryptoKey> {
     false,
     ["encrypt", "decrypt"]
   );
+
+  keyCache.set(cacheKey, derivedKey);
+  return derivedKey;
 }
 
 /**

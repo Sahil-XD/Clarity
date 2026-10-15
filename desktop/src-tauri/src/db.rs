@@ -151,13 +151,14 @@ fn init_tables(conn: &Connection) {
         let _ = conn.execute(migration, []);
     }
 
-    // Purge any orphaned task calendar events where the underlying task was deleted
-    let _ = conn.execute(
-        "DELETE FROM calendar_events WHERE event_type = 'TASK' AND NOT EXISTS (
-            SELECT 1 FROM tasks WHERE tasks.user_id = calendar_events.user_id AND tasks.title = calendar_events.title
-        )",
-        [],
-    );
+    // Local SQLite indexes for instant <1ms queries
+    let _ = conn.execute_batch("
+        CREATE INDEX IF NOT EXISTS idx_local_tasks_user ON tasks(user_id, deleted_at);
+        CREATE INDEX IF NOT EXISTS idx_local_expenses_user_date ON expenses(user_id, date, deleted_at);
+        CREATE INDEX IF NOT EXISTS idx_local_calendar_user_date ON calendar_events(user_id, event_date, deleted_at);
+        CREATE INDEX IF NOT EXISTS idx_local_diary_user_date ON diary_entries(user_id, date, deleted_at);
+        CREATE INDEX IF NOT EXISTS idx_local_ptasks_proj ON project_tasks(project_id, deleted_at);
+    ");
 
     // Ensure default local user exists for offline desktop operations
     let _ = conn.execute(

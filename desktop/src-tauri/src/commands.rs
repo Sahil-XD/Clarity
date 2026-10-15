@@ -123,6 +123,23 @@ pub fn ensure_supabase_user(supabase_id: String, email: String, username: String
 
 // â”€â”€â”€ Tasks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+fn map_task_row(row: &rusqlite::Row) -> rusqlite::Result<Task> {
+    let reminder_sent_int: Option<i32> = row.get(8)?;
+    Ok(Task {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        description: row.get::<_, Option<String>>(2)?.filter(|s| !s.is_empty()),
+        completed: row.get::<_, i32>(3).unwrap_or(0) != 0,
+        due_at: row.get::<_, Option<String>>(4)?.filter(|s| !s.is_empty()),
+        status: Some(row.get::<_, Option<String>>(5)?.unwrap_or_else(|| if row.get::<_, i32>(3).unwrap_or(0) != 0 { "DONE".to_string() } else { "TODO".to_string() })),
+        project_id: row.get::<_, Option<String>>(6)?.filter(|s| !s.is_empty()),
+        remind_at: row.get::<_, Option<String>>(7)?.filter(|s| !s.is_empty()),
+        reminder_sent: Some(reminder_sent_int.unwrap_or(0) != 0),
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
+    })
+}
+
 #[tauri::command]
 pub fn get_tasks(user_id: i64, pending_only: bool) -> Result<Vec<Task>, String> {
     let db = get_db();
@@ -132,24 +149,10 @@ pub fn get_tasks(user_id: i64, pending_only: bool) -> Result<Vec<Task>, String> 
         "SELECT id, title, description, completed, due_at, status, project_id, remind_at, reminder_sent, created_at, updated_at FROM tasks WHERE user_id = ?1 AND deleted_at IS NULL ORDER BY created_at DESC"
     };
     let mut stmt = db.prepare(sql).map_err(|e| e.to_string())?;
-    let tasks = stmt.query_map(params![user_id], |row| {
-        let reminder_sent_int: Option<i32> = row.get(8)?;
-        Ok(Task {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            description: row.get(2)?,
-            completed: row.get::<_, i32>(3)? != 0,
-            due_at: row.get(4)?,
-            status: row.get(5)?,
-            project_id: row.get(6)?,
-            remind_at: row.get(7)?,
-            reminder_sent: reminder_sent_int.map(|v| v != 0),
-            created_at: row.get(9)?,
-            updated_at: row.get(10)?,
-        })
-    }).map_err(|e| e.to_string())?
-    .filter_map(|r| r.ok())
-    .collect();
+    let tasks = stmt.query_map(params![user_id], |row| map_task_row(row))
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
     Ok(tasks)
 }
 
@@ -162,41 +165,25 @@ pub fn create_task(
     status: Option<String>,
     project_id: Option<String>,
     remind_at: Option<String>,
-    reminder_sent: Option<bool>,
 ) -> Result<Task, String> {
     let db = get_db();
     let client_id = uuid::Uuid::new_v4().to_string();
-    let desc_val = description.and_then(|d| if d.trim().is_empty() { None } else { Some(d) });
-    let due_val = due_at.and_then(|d| if d.trim().is_empty() { None } else { Some(d) });
-    let proj_val = project_id.and_then(|p| if p.trim().is_empty() { None } else { Some(p) });
-    let remind_val = remind_at.and_then(|r| if r.trim().is_empty() { None } else { Some(r) });
+    let desc_val = description.and_then(|d| { let s = d.trim().to_string(); if s.is_empty() { None } else { Some(s) } });
+    let due_val = due_at.and_then(|d| { let s = d.trim().to_string(); if s.is_empty() { None } else { Some(s) } });
+    let proj_val = project_id.and_then(|p| { let s = p.trim().to_string(); if s.is_empty() { None } else { Some(s) } });
+    let remind_val = remind_at.and_then(|r| { let s = r.trim().to_string(); if s.is_empty() { None } else { Some(r) } });
     let status_val = status.unwrap_or_else(|| "TODO".to_string());
     let completed_val: i32 = if status_val == "DONE" { 1 } else { 0 };
-    let reminder_sent_int: i32 = if reminder_sent.unwrap_or(false) { 1 } else { 0 };
 
     db.execute(
-        "INSERT INTO tasks (user_id, title, description, completed, due_at, status, project_id, remind_at, reminder_sent, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'pending')",
-        params![user_id, title, desc_val, completed_val, due_val, status_val, proj_val, remind_val, reminder_sent_int, client_id],
+        "INSERT INTO tasks (user_id, title, description, completed, due_at, status, project_id, remind_at, reminder_sent, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, 'pending')",
+        params![user_id, title.trim(), desc_val, completed_val, due_val, status_val, proj_val, remind_val, client_id],
     ).map_err(|e| e.to_string())?;
+
     let id = db.last_insert_rowid();
     let mut stmt = db.prepare("SELECT id, title, description, completed, due_at, status, project_id, remind_at, reminder_sent, created_at, updated_at FROM tasks WHERE id = ?1")
         .map_err(|e| e.to_string())?;
-    stmt.query_row(params![id], |row| {
-        let r_sent: Option<i32> = row.get(8)?;
-        Ok(Task {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            description: row.get(2)?,
-            completed: row.get::<_, i32>(3)? != 0,
-            due_at: row.get(4)?,
-            status: row.get(5)?,
-            project_id: row.get(6)?,
-            remind_at: row.get(7)?,
-            reminder_sent: r_sent.map(|v| v != 0),
-            created_at: row.get(9)?,
-            updated_at: row.get(10)?,
-        })
-    }).map_err(|e| e.to_string())
+    stmt.query_row(params![id], |row| map_task_row(row)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -213,11 +200,11 @@ pub fn update_task(
 ) -> Result<Task, String> {
     let db = get_db();
     if let Some(t) = &title {
-        db.execute("UPDATE tasks SET title = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![t, id])
+        db.execute("UPDATE tasks SET title = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![t.trim(), id])
             .map_err(|e| e.to_string())?;
     }
     if let Some(d) = &description {
-        let val = if d.trim().is_empty() { None } else { Some(d.as_str()) };
+        let val: Option<&str> = if d.trim().is_empty() { None } else { Some(d.trim()) };
         db.execute("UPDATE tasks SET description = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
             .map_err(|e| e.to_string())?;
     }
@@ -244,17 +231,17 @@ pub fn update_task(
         }
     }
     if let Some(d) = &due_at {
-        let val = if d.trim().is_empty() { None } else { Some(d.as_str()) };
+        let val: Option<&str> = if d.trim().is_empty() { None } else { Some(d.trim()) };
         db.execute("UPDATE tasks SET due_at = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
             .map_err(|e| e.to_string())?;
     }
     if let Some(p) = &project_id {
-        let val = if p.trim().is_empty() { None } else { Some(p.as_str()) };
+        let val: Option<&str> = if p.trim().is_empty() { None } else { Some(p.trim()) };
         db.execute("UPDATE tasks SET project_id = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
             .map_err(|e| e.to_string())?;
     }
     if let Some(r) = &remind_at {
-        let val = if r.trim().is_empty() { None } else { Some(r.as_str()) };
+        let val: Option<&str> = if r.trim().is_empty() { None } else { Some(r.trim()) };
         db.execute("UPDATE tasks SET remind_at = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
             .map_err(|e| e.to_string())?;
     }
@@ -266,22 +253,7 @@ pub fn update_task(
 
     let mut stmt = db.prepare("SELECT id, title, description, completed, due_at, status, project_id, remind_at, reminder_sent, created_at, updated_at FROM tasks WHERE id = ?1")
         .map_err(|e| e.to_string())?;
-    stmt.query_row(params![id], |row| {
-        let r_sent: Option<i32> = row.get(8)?;
-        Ok(Task {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            description: row.get(2)?,
-            completed: row.get::<_, i32>(3)? != 0,
-            due_at: row.get(4)?,
-            status: row.get(5)?,
-            project_id: row.get(6)?,
-            remind_at: row.get(7)?,
-            reminder_sent: r_sent.map(|v| v != 0),
-            created_at: row.get(9)?,
-            updated_at: row.get(10)?,
-        })
-    }).map_err(|e| e.to_string())
+    stmt.query_row(params![id], |row| map_task_row(row)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

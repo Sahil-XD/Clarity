@@ -299,7 +299,7 @@ function LockScreen({
         transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
         className="w-full max-w-md relative"
       >
-        <div className="relative rounded-3xl bg-surface/95 border border-rule shadow-2xl p-8 backdrop-blur-xl transition-all duration-300">
+        <div className="relative rounded-3xl bg-surface border border-rule shadow-2xl p-8 transition-all duration-300">
           <div className="flex flex-col items-center text-center">
             <motion.div
               animate={success ? { scale: [1, 1.15, 1], rotate: [0, -6, 0] } : {}}
@@ -453,7 +453,7 @@ function PasscodeSettingsModal({
   };
 
   return (
-    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 select-none">
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 select-none">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -974,7 +974,7 @@ export default function DiaryPage() {
             className="flex-1 flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className="px-8 pt-5 pb-3 border-b border-rule flex items-center justify-between bg-surface/90 backdrop-blur-md select-none shrink-0">
+            <div className="px-8 pt-5 pb-3 border-b border-rule flex items-center justify-between bg-surface select-none shrink-0">
               <div>
                 <p className="text-xs font-bold text-ink-faint uppercase tracking-wider font-mono">
                   {dayjs(selectedDate).format("dddd")}

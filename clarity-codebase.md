@@ -1,9 +1,9 @@
-This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+This file is a merged representation of a subset of the codebase, containing files not matching ignore patterns, combined into a single document by Repomix.
 
 # File Summary
 
 ## Purpose
-This file contains a packed representation of the entire repository's contents.
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
 It is designed to be easily consumable by AI systems for analysis, code review,
 or other automated processes.
 
@@ -28,63 +28,13 @@ The content is organized as follows:
 ## Notes
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching these patterns are excluded: *.zip, flash-audit.md, *.png, *.jpg
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
 
 # Directory Structure
 ````
-backend/
-  src/
-    main/
-      java/
-        com/
-          clarity/
-            config/
-              CorsConfig.java
-              GlobalExceptionHandler.java
-              SecurityConfig.java
-            controller/
-              AuthController.java
-              CalendarController.java
-              DiaryController.java
-              ExpenseController.java
-              ProjectController.java
-              TaskController.java
-            dto/
-              AuthDto.java
-            model/
-              CalendarEvent.java
-              DiaryEntry.java
-              Expense.java
-              Project.java
-              Task.java
-              User.java
-            repository/
-              CalendarEventRepository.java
-              DiaryEntryRepository.java
-              ExpenseRepository.java
-              ProjectRepository.java
-              TaskRepository.java
-              UserRepository.java
-            security/
-              JwtAuthFilter.java
-              JwtUtil.java
-            service/
-              AuthService.java
-              CalendarService.java
-              DiaryService.java
-              ExpenseService.java
-              ProjectService.java
-              ReminderService.java
-              TaskService.java
-              UserService.java
-            ClarityApplication.java
-      resources/
-        application.yml
-  .env.example
-  .gitignore
-  pom.xml
 changes/
   Screenshot 2026-09-02 121603.png
 desktop/
@@ -94,13 +44,19 @@ desktop/
     components/
       ClarityLogo.tsx
       Layout.tsx
+      OmniInscribeModal.tsx
       OpeningAnimation.tsx
     lib/
       api.ts
+      dataCache.ts
+      encryption.ts
+      localDb.ts
+      reminderService.ts
       sound.ts
       store.ts
       supabase.ts
       types.ts
+      windowControls.ts
     pages/
       AuthPage.tsx
       CalendarPage.tsx
@@ -113,6 +69,8 @@ desktop/
     styles.css
     vite-env.d.ts
   src-tauri/
+    capabilities/
+      default.json
     gen/
       schemas/
         acl-manifests.json
@@ -226,1281 +184,6 @@ upgrade-ui.md
 
 # Files
 
-## File: backend/src/main/java/com/clarity/config/GlobalExceptionHandler.java
-````java
-package com.clarity.config;
-
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ProblemDetail;
-import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.RestControllerAdvice;
-
-import java.util.stream.Collectors;
-
-@RestControllerAdvice
-public class GlobalExceptionHandler {
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ProblemDetail handleBadRequest(IllegalArgumentException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
-    }
-
-    @ExceptionHandler(IllegalStateException.class)
-    public ProblemDetail handleConflict(IllegalStateException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
-    }
-
-    @ExceptionHandler(SecurityException.class)
-    public ProblemDetail handleForbidden(SecurityException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
-    }
-
-    @ExceptionHandler(RuntimeException.class)
-    public ProblemDetail handleNotFound(RuntimeException ex) {
-        // "not found" messages bubble up as RuntimeException from services
-        String msg = ex.getMessage();
-        if (msg != null && msg.toLowerCase().contains("not found"))
-            return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, msg);
-        return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, msg);
-    }
-
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ProblemDetail handleValidation(MethodArgumentNotValidException ex) {
-        String errors = ex.getBindingResult().getFieldErrors().stream()
-                .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
-                .collect(Collectors.joining(", "));
-        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, errors);
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/config/SecurityConfig.java
-````java
-package com.clarity.config;
-
-import com.clarity.repository.UserRepository;
-import com.clarity.security.JwtAuthFilter;
-import lombok.RequiredArgsConstructor;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
-import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-
-@Configuration
-@EnableWebSecurity
-@RequiredArgsConstructor
-public class SecurityConfig {
-
-    private final JwtAuthFilter jwtAuthFilter;
-    private final UserRepository userRepository;
-
-    /** Tells Spring Security how to load a user by username during login */
-    @Bean
-    public UserDetailsService userDetailsService() {
-        return username -> userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
-    }
-
-    /** Wires the UserDetailsService + PasswordEncoder into the AuthenticationManager */
-    @Bean
-    public DaoAuthenticationProvider authenticationProvider() {
-        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
-        provider.setUserDetailsService(userDetailsService());
-        provider.setPasswordEncoder(passwordEncoder());
-        return provider;
-    }
-
-    @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http
-            .csrf(AbstractHttpConfigurer::disable)
-            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authenticationProvider(authenticationProvider())
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**").permitAll()   // register + login
-                .anyRequest().authenticated()
-            )
-            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
-
-        return http.build();
-    }
-
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
-
-    @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {
-        return cfg.getAuthenticationManager();
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/controller/CalendarController.java
-````java
-package com.clarity.controller;
-
-import com.clarity.model.CalendarEvent;
-import com.clarity.model.User;
-import com.clarity.service.CalendarService;
-import lombok.RequiredArgsConstructor;
-import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.*;
-
-import java.time.LocalDate;
-import java.util.List;
-import java.util.Map;
-
-@RestController
-@RequestMapping("/api/calendar")
-@RequiredArgsConstructor
-public class CalendarController {
-
-    private final CalendarService calendarService;
-
-    /** Year-view: returns { 1: 4, 2: 0, ... 12: 7 } event counts per month */
-    @GetMapping("/year/{year}")
-    public Map<Integer, Long> getYearHeatmap(@AuthenticationPrincipal User user,
-                                             @PathVariable int year) {
-        return calendarService.getYearHeatmap(user, year);
-    }
-
-    @GetMapping("/day/{date}")
-    public List<CalendarEvent> getDay(@AuthenticationPrincipal User user,
-                                      @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        return calendarService.getDay(user, date);
-    }
-
-    @GetMapping
-    public List<CalendarEvent> getRange(@AuthenticationPrincipal User user,
-                                        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-                                        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return calendarService.getRange(user, from, to);
-    }
-
-    @PostMapping
-    public ResponseEntity<CalendarEvent> create(@AuthenticationPrincipal User user,
-                                                @RequestBody CalendarEvent event) {
-        return ResponseEntity.ok(calendarService.create(user, event));
-    }
-
-    @PutMapping("/{id}")
-    public ResponseEntity<CalendarEvent> update(@AuthenticationPrincipal User user,
-                                                @PathVariable Long id,
-                                                @RequestBody CalendarEvent patch) {
-        return ResponseEntity.ok(calendarService.update(user, id, patch));
-    }
-
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@AuthenticationPrincipal User user,
-                                       @PathVariable Long id) {
-        calendarService.delete(user, id);
-        return ResponseEntity.noContent().build();
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/controller/DiaryController.java
-````java
-package com.clarity.controller;
-
-import com.clarity.model.DiaryEntry;
-import com.clarity.model.User;
-import com.clarity.service.DiaryService;
-import com.clarity.service.UserService;
-import jakarta.validation.constraints.NotBlank;
-import lombok.Data;
-import lombok.RequiredArgsConstructor;
-import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.*;
-
-import java.time.LocalDate;
-import java.util.List;
-
-@RestController
-@RequestMapping("/api/diary")
-@RequiredArgsConstructor
-public class DiaryController {
-
-    private final DiaryService diaryService;
-    private final UserService userService;
-
-    /** All diary endpoints require the PIN in the X-Diary-Pin header */
-    private void checkPin(User user, String pin) {
-        diaryService.verifyPin(user, pin);
-    }
-
-    @GetMapping
-    public List<DiaryEntry> getAll(@AuthenticationPrincipal User user,
-                                   @RequestHeader("X-Diary-Pin") String pin) {
-        checkPin(user, pin);
-        return diaryService.getAll(user);
-    }
-
-    @GetMapping("/{date}")
-    public DiaryEntry getByDate(@AuthenticationPrincipal User user,
-                                @RequestHeader("X-Diary-Pin") String pin,
-                                @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        checkPin(user, pin);
-        return diaryService.getByDate(user, date);
-    }
-
-    @PutMapping("/{date}")
-    public ResponseEntity<DiaryEntry> save(@AuthenticationPrincipal User user,
-                                           @RequestHeader("X-Diary-Pin") String pin,
-                                           @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
-                                           @RequestBody DiaryEntry body) {
-        checkPin(user, pin);
-        return ResponseEntity.ok(diaryService.save(user, date, body));
-    }
-
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@AuthenticationPrincipal User user,
-                                       @RequestHeader("X-Diary-Pin") String pin,
-                                       @PathVariable Long id) {
-        checkPin(user, pin);
-        diaryService.delete(user, id);
-        return ResponseEntity.noContent().build();
-    }
-
-    // --- PIN management (no existing PIN needed to set the first one) ---
-    @Data
-    static class PinRequest { @NotBlank private String pin; }
-
-    @PostMapping("/pin")
-    public ResponseEntity<Void> setPin(@AuthenticationPrincipal User user,
-                                       @RequestBody PinRequest req) {
-        userService.setDiaryPin(user, req.getPin());
-        return ResponseEntity.ok().build();
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/controller/ExpenseController.java
-````java
-package com.clarity.controller;
-
-import com.clarity.model.Expense;
-import com.clarity.model.User;
-import com.clarity.service.ExpenseService;
-import lombok.RequiredArgsConstructor;
-import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.*;
-
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.List;
-
-@RestController
-@RequestMapping("/api/expenses")
-@RequiredArgsConstructor
-public class ExpenseController {
-
-    private final ExpenseService expenseService;
-
-    @GetMapping
-    public List<Expense> getAll(@AuthenticationPrincipal User user,
-                                @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-                                @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        if (from != null && to != null) return expenseService.getRange(user, from, to);
-        return expenseService.getAll(user);
-    }
-
-    @GetMapping("/summary")
-    public BigDecimal monthSummary(@AuthenticationPrincipal User user,
-                                   @RequestParam int year,
-                                   @RequestParam int month) {
-        return expenseService.sumForMonth(user, year, month);
-    }
-
-    @PostMapping
-    public ResponseEntity<Expense> create(@AuthenticationPrincipal User user,
-                                          @RequestBody Expense expense) {
-        return ResponseEntity.ok(expenseService.create(user, expense));
-    }
-
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@AuthenticationPrincipal User user,
-                                       @PathVariable Long id) {
-        expenseService.delete(user, id);
-        return ResponseEntity.noContent().build();
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/controller/ProjectController.java
-````java
-package com.clarity.controller;
-
-import com.clarity.model.Project;
-import com.clarity.model.User;
-import com.clarity.service.ProjectService;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-
-@RestController
-@RequestMapping("/api/projects")
-@RequiredArgsConstructor
-public class ProjectController {
-
-    private final ProjectService projectService;
-
-    @GetMapping
-    public List<Project> getAll(@AuthenticationPrincipal User user) {
-        return projectService.getAll(user);
-    }
-
-    @PostMapping
-    public ResponseEntity<Project> create(@AuthenticationPrincipal User user,
-                                          @RequestBody Project project) {
-        return ResponseEntity.ok(projectService.create(user, project));
-    }
-
-    @PutMapping("/{id}")
-    public ResponseEntity<Project> update(@AuthenticationPrincipal User user,
-                                          @PathVariable Long id,
-                                          @RequestBody Project patch) {
-        return ResponseEntity.ok(projectService.update(user, id, patch));
-    }
-
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@AuthenticationPrincipal User user,
-                                       @PathVariable Long id) {
-        projectService.delete(user, id);
-        return ResponseEntity.noContent().build();
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/controller/TaskController.java
-````java
-package com.clarity.controller;
-
-import com.clarity.model.Task;
-import com.clarity.model.User;
-import com.clarity.service.TaskService;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-
-@RestController
-@RequestMapping("/api/tasks")
-@RequiredArgsConstructor
-public class TaskController {
-
-    private final TaskService taskService;
-
-    @GetMapping
-    public List<Task> getAll(@AuthenticationPrincipal User user,
-                             @RequestParam(defaultValue = "false") boolean pendingOnly) {
-        return pendingOnly ? taskService.getPending(user) : taskService.getAll(user);
-    }
-
-    @PostMapping
-    public ResponseEntity<Task> create(@AuthenticationPrincipal User user,
-                                       @RequestBody Task task) {
-        return ResponseEntity.ok(taskService.create(user, task));
-    }
-
-    @PutMapping("/{id}")
-    public ResponseEntity<Task> update(@AuthenticationPrincipal User user,
-                                       @PathVariable Long id,
-                                       @RequestBody Task patch) {
-        return ResponseEntity.ok(taskService.update(user, id, patch));
-    }
-
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@AuthenticationPrincipal User user,
-                                       @PathVariable Long id) {
-        taskService.delete(user, id);
-        return ResponseEntity.noContent().build();
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/model/CalendarEvent.java
-````java
-package com.clarity.model;
-
-import jakarta.persistence.*;
-import lombok.*;
-
-import java.time.Instant;
-import java.time.LocalDate;
-
-@Entity
-@Table(name = "calendar_events")
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-public class CalendarEvent {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
-
-    @Column(nullable = false)
-    private String title;
-
-    @Column(columnDefinition = "TEXT")
-    private String description;
-
-    /** DATE for all-day events */
-    @Column(name = "event_date", nullable = false)
-    private LocalDate eventDate;
-
-    /** Null = all-day event */
-    @Column(name = "start_at")
-    private Instant startAt;
-
-    @Column(name = "end_at")
-    private Instant endAt;
-
-    /** TASK | NOTE */
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private EventType type = EventType.NOTE;
-
-    @Column(name = "remind_at")
-    private Instant remindAt;
-
-    @Column(name = "reminder_sent")
-    private boolean reminderSent;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @PrePersist void onCreate() { createdAt = Instant.now(); }
-
-    public enum EventType { TASK, NOTE }
-}
-````
-
-## File: backend/src/main/java/com/clarity/model/DiaryEntry.java
-````java
-package com.clarity.model;
-
-import jakarta.persistence.*;
-import lombok.*;
-
-import java.time.LocalDate;
-import java.time.Instant;
-
-/** A private diary entry – body is stored as plain text; the PIN check happens at API level */
-@Entity
-@Table(name = "diary_entries",
-       uniqueConstraints = @UniqueConstraint(name = "uc_diary_user_date", columnNames = {"user_id", "date"}))
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-public class DiaryEntry {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
-
-    /** One entry per day (enforced by unique constraint) */
-    @Column(nullable = false)
-    private LocalDate date;
-
-    @Column(columnDefinition = "TEXT", nullable = false)
-    private String body;
-
-    /** Optional mood tag: HAPPY | NEUTRAL | SAD | ANXIOUS | EXCITED */
-    @Enumerated(EnumType.STRING)
-    private Mood mood;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @Column(name = "updated_at")
-    private Instant updatedAt;
-
-    @PrePersist  void onCreate()  { createdAt = updatedAt = Instant.now(); }
-    @PreUpdate   void onUpdate()  { updatedAt = Instant.now(); }
-
-    public enum Mood { HAPPY, NEUTRAL, SAD, ANXIOUS, EXCITED }
-}
-````
-
-## File: backend/src/main/java/com/clarity/model/Expense.java
-````java
-package com.clarity.model;
-
-import jakarta.persistence.*;
-import lombok.*;
-
-import java.math.BigDecimal;
-import java.time.Instant;
-import java.time.LocalDate;
-
-@Entity
-@Table(name = "expenses")
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-public class Expense {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
-
-    @Column(nullable = false)
-    private String title;
-
-    @Column(columnDefinition = "TEXT")
-    private String note;
-
-    /** Positive = expense, negative = income */
-    @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal amount;
-
-    @Column(length = 3)
-    private String currency = "INR";
-
-    /** e.g. FOOD, TRANSPORT, RENT, ENTERTAINMENT, EDUCATION, OTHER */
-    @Column(length = 30)
-    private String category;
-
-    @Column(nullable = false)
-    private LocalDate date;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @PrePersist void onCreate() { createdAt = Instant.now(); }
-}
-````
-
-## File: backend/src/main/java/com/clarity/model/Project.java
-````java
-package com.clarity.model;
-
-import jakarta.persistence.*;
-import lombok.*;
-
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-
-@Entity
-@Table(name = "projects")
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-public class Project {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
-
-    @Column(nullable = false)
-    private String name;
-
-    @Column(columnDefinition = "TEXT")
-    private String description;
-
-    /** TODO | IN_PROGRESS | DONE | ARCHIVED */
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private Status status = Status.TODO;
-
-    /** Tasks that belong to this project */
-    @OneToMany(mappedBy = "project", cascade = CascadeType.ALL, orphanRemoval = true)
-    @Builder.Default
-    private List<Task> tasks = new ArrayList<>();
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @Column(name = "updated_at")
-    private Instant updatedAt;
-
-    @PrePersist  void onCreate()  { createdAt = updatedAt = Instant.now(); }
-    @PreUpdate   void onUpdate()  { updatedAt = Instant.now(); }
-
-    public enum Status { TODO, IN_PROGRESS, DONE, ARCHIVED }
-}
-````
-
-## File: backend/src/main/java/com/clarity/model/Task.java
-````java
-package com.clarity.model;
-
-import jakarta.persistence.*;
-import lombok.*;
-
-import java.time.Instant;
-
-@Entity
-@Table(name = "tasks")
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-public class Task {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
-
-    @Column(nullable = false)
-    private String title;
-
-    @Column(columnDefinition = "TEXT")
-    private String description;
-
-    private boolean completed;
-
-    /** Optional hard deadline */
-    @Column(name = "due_at")
-    private Instant dueAt;
-
-    /** If set, the user gets an email reminder at this time */
-    @Column(name = "remind_at")
-    private Instant remindAt;
-
-    @Column(name = "reminder_sent")
-    private boolean reminderSent;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "project_id")
-    private Project project;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @Column(name = "updated_at")
-    private Instant updatedAt;
-
-    @PrePersist  void onCreate()  { createdAt = updatedAt = Instant.now(); }
-    @PreUpdate   void onUpdate()  { updatedAt = Instant.now(); }
-}
-````
-
-## File: backend/src/main/java/com/clarity/repository/CalendarEventRepository.java
-````java
-package com.clarity.repository;
-
-import com.clarity.model.CalendarEvent;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-
-import java.time.Instant;
-import java.time.LocalDate;
-import java.util.List;
-
-public interface CalendarEventRepository extends JpaRepository<CalendarEvent, Long> {
-    List<CalendarEvent> findByUserIdAndEventDateBetweenOrderByEventDateAsc(Long userId, LocalDate from, LocalDate to);
-    List<CalendarEvent> findByUserIdAndEventDateOrderByStartAtAsc(Long userId, LocalDate date);
-
-    /** Counts events per month for a given year — used by the year-view heatmap */
-    @Query("SELECT MONTH(e.eventDate) as month, COUNT(e) as total " +
-           "FROM CalendarEvent e " +
-           "WHERE e.user.id = :userId AND YEAR(e.eventDate) = :year " +
-           "GROUP BY MONTH(e.eventDate)")
-    List<Object[]> countByMonthForYear(Long userId, int year);
-
-    /** Used by the reminder scheduler */
-    List<CalendarEvent> findByReminderSentFalseAndRemindAtBefore(Instant now);
-}
-````
-
-## File: backend/src/main/java/com/clarity/repository/DiaryEntryRepository.java
-````java
-package com.clarity.repository;
-
-import com.clarity.model.DiaryEntry;
-import org.springframework.data.jpa.repository.JpaRepository;
-
-import java.time.LocalDate;
-import java.util.List;
-import java.util.Optional;
-
-public interface DiaryEntryRepository extends JpaRepository<DiaryEntry, Long> {
-    Optional<DiaryEntry> findByUserIdAndDate(Long userId, LocalDate date);
-    List<DiaryEntry> findByUserIdOrderByDateDesc(Long userId);
-    List<DiaryEntry> findByUserIdAndDateBetweenOrderByDateDesc(Long userId, LocalDate from, LocalDate to);
-}
-````
-
-## File: backend/src/main/java/com/clarity/repository/ExpenseRepository.java
-````java
-package com.clarity.repository;
-
-import com.clarity.model.Expense;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-
-import java.time.LocalDate;
-import java.util.List;
-
-public interface ExpenseRepository extends JpaRepository<Expense, Long> {
-    List<Expense> findByUserIdOrderByDateDesc(Long userId);
-    List<Expense> findByUserIdAndDateBetweenOrderByDateDesc(Long userId, LocalDate from, LocalDate to);
-
-    @Query("SELECT COALESCE(SUM(e.amount), 0) FROM Expense e WHERE e.user.id = :userId AND e.date BETWEEN :from AND :to")
-    java.math.BigDecimal sumAmountByUserIdAndDateBetween(Long userId, LocalDate from, LocalDate to);
-}
-````
-
-## File: backend/src/main/java/com/clarity/repository/ProjectRepository.java
-````java
-package com.clarity.repository;
-
-import com.clarity.model.Project;
-import org.springframework.data.jpa.repository.JpaRepository;
-
-import java.util.List;
-
-public interface ProjectRepository extends JpaRepository<Project, Long> {
-    List<Project> findByUserIdOrderByUpdatedAtDesc(Long userId);
-}
-````
-
-## File: backend/src/main/java/com/clarity/repository/TaskRepository.java
-````java
-package com.clarity.repository;
-
-import com.clarity.model.Task;
-import org.springframework.data.jpa.repository.JpaRepository;
-
-import java.time.Instant;
-import java.util.List;
-
-public interface TaskRepository extends JpaRepository<Task, Long> {
-    List<Task> findByUserIdOrderByDueAtAsc(Long userId);
-    List<Task> findByUserIdAndCompletedFalseOrderByDueAtAsc(Long userId);
-
-    /** Used by the reminder scheduler */
-    List<Task> findByReminderSentFalseAndRemindAtBefore(Instant now);
-}
-````
-
-## File: backend/src/main/java/com/clarity/security/JwtUtil.java
-````java
-package com.clarity.security;
-
-import io.jsonwebtoken.*;
-import io.jsonwebtoken.security.Keys;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.stereotype.Component;
-
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
-import java.util.Date;
-
-@Component
-public class JwtUtil {
-
-    private final SecretKey key;
-    private final long expirationMs;
-
-    public JwtUtil(
-            @Value("${clarity.jwt.secret}") String secret,
-            @Value("${clarity.jwt.expiration-ms}") long expirationMs) {
-        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-        this.expirationMs = expirationMs;
-    }
-
-    public String generateToken(UserDetails user) {
-        return Jwts.builder()
-                .subject(user.getUsername())
-                .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + expirationMs))
-                .signWith(key)
-                .compact();
-    }
-
-    public String extractUsername(String token) {
-        return parseClaims(token).getSubject();
-    }
-
-    public boolean isValid(String token, UserDetails user) {
-        try {
-            Claims claims = parseClaims(token);
-            return claims.getSubject().equals(user.getUsername())
-                    && !claims.getExpiration().before(new Date());
-        } catch (JwtException e) {
-            return false;
-        }
-    }
-
-    private Claims parseClaims(String token) {
-        return Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/service/CalendarService.java
-````java
-package com.clarity.service;
-
-import com.clarity.model.CalendarEvent;
-import com.clarity.model.User;
-import com.clarity.repository.CalendarEventRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-
-import java.time.LocalDate;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
-@Service
-@RequiredArgsConstructor
-public class CalendarService {
-
-    private final CalendarEventRepository repo;
-
-    public List<CalendarEvent> getDay(User user, LocalDate date) {
-        return repo.findByUserIdAndEventDateOrderByStartAtAsc(user.getId(), date);
-    }
-
-    public List<CalendarEvent> getRange(User user, LocalDate from, LocalDate to) {
-        return repo.findByUserIdAndEventDateBetweenOrderByEventDateAsc(user.getId(), from, to);
-    }
-
-    /**
-     * Returns a map of month (1–12) → event count for the year-view heatmap.
-     * Months with no events are included with count 0.
-     */
-    public Map<Integer, Long> getYearHeatmap(User user, int year) {
-        Map<Integer, Long> result = new LinkedHashMap<>();
-        for (int m = 1; m <= 12; m++) result.put(m, 0L);
-
-        repo.countByMonthForYear(user.getId(), year)
-            .forEach(row -> result.put(((Number) row[0]).intValue(), ((Number) row[1]).longValue()));
-
-        return result;
-    }
-
-    public CalendarEvent create(User user, CalendarEvent event) {
-        event.setUser(user);
-        return repo.save(event);
-    }
-
-    public CalendarEvent update(User user, Long id, CalendarEvent patch) {
-        CalendarEvent event = getOwned(user, id);
-        if (patch.getTitle()       != null) event.setTitle(patch.getTitle());
-        if (patch.getDescription() != null) event.setDescription(patch.getDescription());
-        if (patch.getEventDate()   != null) event.setEventDate(patch.getEventDate());
-        if (patch.getStartAt()     != null) event.setStartAt(patch.getStartAt());
-        if (patch.getEndAt()       != null) event.setEndAt(patch.getEndAt());
-        if (patch.getRemindAt()    != null) { event.setRemindAt(patch.getRemindAt()); event.setReminderSent(false); }
-        if (patch.getType()        != null) event.setType(patch.getType());
-        return repo.save(event);
-    }
-
-    public void delete(User user, Long id) {
-        repo.delete(getOwned(user, id));
-    }
-
-    private CalendarEvent getOwned(User user, Long id) {
-        CalendarEvent e = repo.findById(id).orElseThrow(() -> new RuntimeException("Event not found"));
-        if (!e.getUser().getId().equals(user.getId())) throw new SecurityException("Access denied");
-        return e;
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/service/DiaryService.java
-````java
-package com.clarity.service;
-
-import com.clarity.model.DiaryEntry;
-import com.clarity.model.User;
-import com.clarity.repository.DiaryEntryRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDate;
-import java.util.List;
-
-@Service
-@RequiredArgsConstructor
-public class DiaryService {
-
-    private final DiaryEntryRepository repo;
-    private final PasswordEncoder passwordEncoder;
-
-    /** Verify diary PIN before any diary operation */
-    public void verifyPin(User user, String rawPin) {
-        if (user.getDiaryPinHash() == null)
-            throw new IllegalStateException("Diary PIN not set");
-        if (!passwordEncoder.matches(rawPin, user.getDiaryPinHash()))
-            throw new SecurityException("Wrong PIN");
-    }
-
-    public List<DiaryEntry> getAll(User user) {
-        return repo.findByUserIdOrderByDateDesc(user.getId());
-    }
-
-    public List<DiaryEntry> getRange(User user, LocalDate from, LocalDate to) {
-        return repo.findByUserIdAndDateBetweenOrderByDateDesc(user.getId(), from, to);
-    }
-
-    public DiaryEntry getByDate(User user, LocalDate date) {
-        return repo.findByUserIdAndDate(user.getId(), date)
-                .orElseThrow(() -> new RuntimeException("No entry for " + date));
-    }
-
-    @Transactional
-    public DiaryEntry save(User user, LocalDate date, DiaryEntry incoming) {
-        if (incoming.getBody() == null || incoming.getBody().isBlank())
-            throw new IllegalArgumentException("Diary entry body must not be blank");
-        DiaryEntry entry = repo.findByUserIdAndDate(user.getId(), date)
-                .orElseGet(() -> DiaryEntry.builder().user(user).date(date).build());
-        entry.setBody(incoming.getBody());
-        entry.setMood(incoming.getMood());
-        return repo.save(entry);
-    }
-
-    public void delete(User user, Long id) {
-        DiaryEntry entry = repo.findById(id)
-                .orElseThrow(() -> new RuntimeException("Entry not found"));
-        if (!entry.getUser().getId().equals(user.getId()))
-            throw new SecurityException("Access denied");
-        repo.delete(entry);
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/service/ExpenseService.java
-````java
-package com.clarity.service;
-
-import com.clarity.model.Expense;
-import com.clarity.model.User;
-import com.clarity.repository.ExpenseRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.List;
-
-@Service
-@RequiredArgsConstructor
-public class ExpenseService {
-
-    private final ExpenseRepository repo;
-
-    public List<Expense> getAll(User user) {
-        return repo.findByUserIdOrderByDateDesc(user.getId());
-    }
-
-    public List<Expense> getRange(User user, LocalDate from, LocalDate to) {
-        return repo.findByUserIdAndDateBetweenOrderByDateDesc(user.getId(), from, to);
-    }
-
-    public BigDecimal sumForMonth(User user, int year, int month) {
-        LocalDate from = LocalDate.of(year, month, 1);
-        LocalDate to   = from.withDayOfMonth(from.lengthOfMonth());
-        return repo.sumAmountByUserIdAndDateBetween(user.getId(), from, to);
-    }
-
-    public Expense create(User user, Expense expense) {
-        expense.setUser(user);
-        return repo.save(expense);
-    }
-
-    public void delete(User user, Long id) {
-        Expense e = repo.findById(id).orElseThrow(() -> new RuntimeException("Expense not found"));
-        if (!e.getUser().getId().equals(user.getId())) throw new SecurityException("Access denied");
-        repo.delete(e);
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/service/ProjectService.java
-````java
-package com.clarity.service;
-
-import com.clarity.model.Project;
-import com.clarity.model.User;
-import com.clarity.repository.ProjectRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-
-import java.util.List;
-
-@Service
-@RequiredArgsConstructor
-public class ProjectService {
-
-    private final ProjectRepository repo;
-
-    public List<Project> getAll(User user) {
-        return repo.findByUserIdOrderByUpdatedAtDesc(user.getId());
-    }
-
-    public Project create(User user, Project project) {
-        project.setUser(user);
-        return repo.save(project);
-    }
-
-    public Project update(User user, Long id, Project patch) {
-        Project p = getOwned(user, id);
-        if (patch.getName()        != null) p.setName(patch.getName());
-        if (patch.getDescription() != null) p.setDescription(patch.getDescription());
-        if (patch.getStatus()      != null) p.setStatus(patch.getStatus());
-        return repo.save(p);
-    }
-
-    public void delete(User user, Long id) {
-        repo.delete(getOwned(user, id));
-    }
-
-    private Project getOwned(User user, Long id) {
-        Project p = repo.findById(id).orElseThrow(() -> new RuntimeException("Project not found"));
-        if (!p.getUser().getId().equals(user.getId())) throw new SecurityException("Access denied");
-        return p;
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/service/ReminderService.java
-````java
-package com.clarity.service;
-
-import com.clarity.model.CalendarEvent;
-import com.clarity.model.Task;
-import com.clarity.repository.CalendarEventRepository;
-import com.clarity.repository.TaskRepository;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.Instant;
-import java.util.List;
-
-/**
- * Runs every minute and sends email reminders for due tasks/calendar events.
- * Marks reminder_sent = true so the email is sent only once.
- */
-@Slf4j
-@Service
-@RequiredArgsConstructor
-public class ReminderService {
-
-    private final TaskRepository taskRepository;
-    private final CalendarEventRepository calendarEventRepository;
-    private final JavaMailSender mailSender;
-
-    @Scheduled(fixedDelay = 60_000)   // every 60 seconds
-    @Transactional(noRollbackFor = Exception.class)
-    public void sendTaskReminders() {
-        List<Task> due = taskRepository.findByReminderSentFalseAndRemindAtBefore(Instant.now());
-        for (Task task : due) {
-            try {
-                send(task.getUser().getEmail(),
-                     "Clarity reminder: " + task.getTitle(),
-                     "Hey! Just a reminder that your task \"" + task.getTitle() + "\" is due.\n\n" +
-                     (task.getDescription() != null ? task.getDescription() : ""));
-                task.setReminderSent(true);
-                taskRepository.save(task);
-            } catch (Exception e) {
-                log.error("Failed to send task reminder for task {}", task.getId(), e);
-            }
-        }
-    }
-
-    @Scheduled(fixedDelay = 60_000)
-    @Transactional(noRollbackFor = Exception.class)
-    public void sendCalendarReminders() {
-        List<CalendarEvent> due = calendarEventRepository.findByReminderSentFalseAndRemindAtBefore(Instant.now());
-        for (CalendarEvent event : due) {
-            try {
-                send(event.getUser().getEmail(),
-                     "Clarity reminder: " + event.getTitle(),
-                     "Hey! Reminder for your event \"" + event.getTitle() + "\" on " + event.getEventDate() + ".\n\n" +
-                     (event.getDescription() != null ? event.getDescription() : ""));
-                event.setReminderSent(true);
-                calendarEventRepository.save(event);
-            } catch (Exception e) {
-                log.error("Failed to send calendar reminder for event {}", event.getId(), e);
-            }
-        }
-    }
-
-    private void send(String to, String subject, String body) {
-        SimpleMailMessage msg = new SimpleMailMessage();
-        msg.setTo(to);
-        msg.setSubject(subject);
-        msg.setText(body);
-        mailSender.send(msg);
-        log.info("Reminder sent to {}", to);
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/service/TaskService.java
-````java
-package com.clarity.service;
-
-import com.clarity.model.Task;
-import com.clarity.model.User;
-import com.clarity.repository.TaskRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
-
-@Service
-@RequiredArgsConstructor
-public class TaskService {
-
-    private final TaskRepository taskRepository;
-
-    public List<Task> getAll(User user) {
-        return taskRepository.findByUserIdOrderByDueAtAsc(user.getId());
-    }
-
-    public List<Task> getPending(User user) {
-        return taskRepository.findByUserIdAndCompletedFalseOrderByDueAtAsc(user.getId());
-    }
-
-    public Task create(User user, Task task) {
-        task.setUser(user);
-        return taskRepository.save(task);
-    }
-
-    @Transactional
-    public Task update(User user, Long id, Task patch) {
-        Task task = getOwned(user, id);
-        if (patch.getTitle()       != null) task.setTitle(patch.getTitle());
-        if (patch.getDescription() != null) task.setDescription(patch.getDescription());
-        if (patch.getDueAt()       != null) task.setDueAt(patch.getDueAt());
-        if (patch.getRemindAt()    != null) { task.setRemindAt(patch.getRemindAt()); task.setReminderSent(false); }
-        task.setCompleted(patch.isCompleted());
-        return taskRepository.save(task);
-    }
-
-    public void delete(User user, Long id) {
-        taskRepository.delete(getOwned(user, id));
-    }
-
-    private Task getOwned(User user, Long id) {
-        Task task = taskRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Task not found"));
-        if (!task.getUser().getId().equals(user.getId()))
-            throw new SecurityException("Access denied");
-        return task;
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/service/UserService.java
-````java
-package com.clarity.service;
-
-import com.clarity.model.User;
-import com.clarity.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-@Service
-@RequiredArgsConstructor
-public class UserService {
-
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
-
-    /** Set or update the diary PIN for the given user */
-    @Transactional
-    public void setDiaryPin(User user, String rawPin) {
-        if (rawPin == null || rawPin.isBlank())
-            throw new IllegalArgumentException("PIN must not be blank");
-        user.setDiaryPinHash(passwordEncoder.encode(rawPin));
-        userRepository.save(user);
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/ClarityApplication.java
-````java
-package com.clarity;
-
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.scheduling.annotation.EnableScheduling;
-
-@SpringBootApplication
-@EnableScheduling   // enables @Scheduled for email reminders
-public class ClarityApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(ClarityApplication.class, args);
-    }
-}
-````
-
-## File: backend/.gitignore
-````
-# Maven
-target/
-*.class
-
-# IntelliJ
-.idea/
-*.iml
-*.iws
-
-# Secrets – never commit these
-.env
-application-local.yml
-application-prod.yml
-
-# OS
-.DS_Store
-Thumbs.db
-````
-
 ## File: desktop/public/clarity-icon.svg
 ````xml
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
@@ -1532,347 +215,265 @@ Thumbs.db
 </svg>
 ````
 
-## File: desktop/src/components/OpeningAnimation.tsx
+## File: desktop/src/lib/encryption.ts
 ````typescript
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { sound } from '@/lib/sound';
+/**
+ * Clarity Private Vault — AES-256-GCM End-to-End Encryption
+ * Uses Web Crypto API (supported natively in all modern browsers & Tauri WebView2).
+ */
 
-interface OpeningAnimationProps {
-  onComplete: () => void;
+const ENC_PREFIX = "clarity_enc:v1:";
+
+/**
+ * Derives a 256-bit AES-GCM CryptoKey from a 4-digit PIN and user-specific salt using PBKDF2 (100k iterations).
+ */
+async function deriveVaultKey(pin: string, userId: string): Promise<CryptoKey> {
+  const enc = new TextEncoder();
+  const baseKey = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(pin.trim()),
+    { name: "PBKDF2" },
+    false,
+    ["deriveKey"]
+  );
+
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: enc.encode(`clarity-vault-salt:${userId}`),
+      iterations: 100_000,
+      hash: "SHA-256",
+    },
+    baseKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
 }
 
-const LETTERS = ['C', 'l', 'a', 'r', 'i', 't', 'y'];
+/**
+ * Encrypts plaintext string using AES-256-GCM.
+ * Output format: clarity_enc:v1:<iv_b64>:<ciphertext_b64>
+ */
+export async function encryptVaultText(plainText: string, pin: string, userId: string): Promise<string> {
+  if (!plainText) return "";
+  const key = await deriveVaultKey(pin, userId);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = new TextEncoder();
 
-export const OpeningAnimation: React.FC<OpeningAnimationProps> = ({ onComplete }) => {
-  const [markEntered, setMarkEntered] = useState(false);
-  const [visibleLetters, setVisibleLetters] = useState(0);
-  const [showSubtitle, setShowSubtitle] = useState(false);
-  const [shimmerActive, setShimmerActive] = useState(false);
-  const [isExiting, setIsExiting] = useState(false);
-  const completedRef = useRef(false);
+  const encryptedBuf = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    enc.encode(plainText)
+  );
 
-  const handleFinish = useCallback(() => {
-    if (completedRef.current) return;
-    completedRef.current = true;
-    setIsExiting(true);
-    setTimeout(() => {
-      onComplete();
-    }, 320);
-  }, [onComplete]);
+  // Convert bytes to base64
+  let binaryIv = "";
+  for (let i = 0; i < iv.byteLength; i++) {
+    binaryIv += String.fromCharCode(iv[i]);
+  }
+  const ivB64 = btoa(binaryIv);
 
-  // Keyboard shortcut (Escape / Space / Enter) and skip click handler
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter') {
-        e.preventDefault();
-        handleFinish();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleFinish]);
+  const cipherBytes = new Uint8Array(encryptedBuf);
+  let binaryCipher = "";
+  for (let i = 0; i < cipherBytes.byteLength; i++) {
+    binaryCipher += String.fromCharCode(cipherBytes[i]);
+  }
+  const cipherB64 = btoa(binaryCipher);
 
-  // Main Choreography Sequence
-  useEffect(() => {
-    // Respect prefers-reduced-motion
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      const quickTimer = setTimeout(handleFinish, 300);
-      return () => clearTimeout(quickTimer);
+  return `${ENC_PREFIX}${ivB64}:${cipherB64}`;
+}
+
+/**
+ * Decrypts a vault ciphertext string.
+ * Supports transparent backward-compatibility: if the input does NOT start with `clarity_enc:v1:`,
+ * it treats it as legacy plaintext and returns it as-is.
+ */
+export async function decryptVaultText(cipherText: string, pin: string, userId: string): Promise<string> {
+  if (!cipherText) return "";
+  if (!cipherText.startsWith(ENC_PREFIX)) {
+    // Legacy plaintext entry — return as is
+    return cipherText;
+  }
+
+  const payload = cipherText.slice(ENC_PREFIX.length);
+  const colonIdx = payload.indexOf(":");
+  if (colonIdx === -1) return cipherText;
+
+  const ivB64 = payload.slice(0, colonIdx);
+  const cipherB64 = payload.slice(colonIdx + 1);
+
+  try {
+    const key = await deriveVaultKey(pin, userId);
+    const binaryIv = atob(ivB64);
+    const iv = new Uint8Array(binaryIv.length);
+    for (let i = 0; i < binaryIv.length; i++) {
+      iv[i] = binaryIv.charCodeAt(i);
     }
 
-    const timers: ReturnType<typeof setTimeout>[] = [];
+    const binaryCipher = atob(cipherB64);
+    const cipherBytes = new Uint8Array(binaryCipher.length);
+    for (let i = 0; i < binaryCipher.length; i++) {
+      cipherBytes[i] = binaryCipher.charCodeAt(i);
+    }
 
-    // T = 80ms: Mark ignites in center
-    timers.push(
-      setTimeout(() => {
-        setMarkEntered(true);
-      }, 80)
+    const decryptedBuf = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv },
+      key,
+      cipherBytes
     );
 
-    // T = 240ms: Mark ignition acoustic tick
-    timers.push(
-      setTimeout(() => {
-        sound.pop(0.9);
-      }, 240)
-    );
+    return new TextDecoder().decode(decryptedBuf);
+  } catch (err) {
+    console.error("Failed to decrypt vault entry with provided PIN:", err);
+    throw new Error("Failed to decrypt diary entry. Invalid PIN or corrupted data.");
+  }
+}
+````
 
-    // T = 680ms - 1460ms: Progressive typographic unfolding (C -> Cl -> Cla -> Clar -> Clari -> Clarit -> Clarity)
-    LETTERS.forEach((_, idx) => {
-      timers.push(
-        setTimeout(() => {
-          setVisibleLetters(idx + 1);
-          // Ascending acoustic pitch for each unfolding character
-          sound.pop(0.85 + idx * 0.08);
-        }, 680 + idx * 110)
-      );
-    });
+## File: desktop/src/lib/reminderService.ts
+````typescript
+/**
+ * Clarity Native Desktop Reminder Service
+ * Periodically checks tasks and calendar events with remind_at <= now,
+ * triggers native desktop notifications, plays an acoustic chime, and marks reminder_sent = true.
+ */
+import { api } from "./api";
+import { sound } from "./sound";
 
-    // T = 1550ms: Subtitle whisper and hairline rule reveal
-    timers.push(
-      setTimeout(() => {
-        setShowSubtitle(true);
-      }, 1550)
-    );
+let timerId: ReturnType<typeof setInterval> | null = null;
+let isChecking = false;
 
-    // T = 1700ms: Specular light sweep & harmonic chime
-    timers.push(
-      setTimeout(() => {
-        setShimmerActive(true);
-        sound.chime();
-      }, 1700)
-    );
+export async function requestNotificationPermission(): Promise<boolean> {
+  if (typeof window === "undefined" || !("Notification" in window)) return false;
+  if (Notification.permission === "granted") return true;
+  if (Notification.permission !== "denied") {
+    try {
+      const perm = await Notification.requestPermission();
+      return perm === "granted";
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
 
-    // T = 2850ms: Graceful workspace dissolve
-    timers.push(
-      setTimeout(() => {
-        handleFinish();
-      }, 2850)
-    );
+export function startReminderService(): void {
+  if (timerId) return;
 
-    return () => {
-      timers.forEach(clearTimeout);
-    };
-  }, [handleFinish]);
+  requestNotificationPermission().catch(() => {});
 
-  return (
-    <AnimatePresence>
-      {!completedRef.current || isExiting ? (
-        <motion.div
-          key="clarity-intro-curtain"
-          initial={{ opacity: 1 }}
-          animate={{ opacity: isExiting ? 0 : 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-          onClick={handleFinish}
-          className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-ground select-none overflow-hidden cursor-pointer"
-          style={{ willChange: 'opacity, transform' }}
-        >
-          {/* Ambient Studio Lighting (Warm Radial Aura) */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.85 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 1.2, ease: 'easeOut' }}
-            className="pointer-events-none absolute inset-0 flex items-center justify-center"
-          >
-            <div
-              className="w-[680px] h-[680px] rounded-full blur-3xl opacity-80"
-              style={{
-                background:
-                  'radial-gradient(circle, rgba(200, 116, 103, 0.16) 0%, rgba(200, 116, 103, 0.04) 45%, transparent 72%)',
-              }}
-            />
-          </motion.div>
+  // Initial check after 3 seconds, then check every 30 seconds
+  setTimeout(checkDueReminders, 3000);
+  timerId = setInterval(checkDueReminders, 30_000);
+}
 
-          {/* Master Lockup Container */}
-          <motion.div
-            layout
-            initial={{ scale: 0.94, opacity: 0, y: 10, filter: 'blur(8px)' }}
-            animate={{
-              scale: isExiting ? 1.04 : 1,
-              opacity: isExiting ? 0 : 1,
-              y: isExiting ? -8 : 0,
-              filter: isExiting ? 'blur(6px)' : 'blur(0px)',
-            }}
-            transition={{
-              type: 'spring',
-              stiffness: 340,
-              damping: 28,
-              mass: 0.8,
-            }}
-            className="relative z-10 flex flex-col items-center justify-center px-8 py-6"
-          >
-            {/* Horizontal Row: Mark + Expanding Kinetic Typography */}
-            <motion.div 
-              layout 
-              transition={{ type: 'spring', stiffness: 360, damping: 30 }}
-              className="flex items-center gap-3.5 sm:gap-4 md:gap-5"
-            >
-              {/* High-Fidelity Vector Squircle Mark */}
-              <motion.div
-                layout
-                initial={{ scale: 0.55, rotate: -6, opacity: 0 }}
-                animate={{
-                  scale: markEntered ? 1 : 0.55,
-                  rotate: markEntered ? 0 : -6,
-                  opacity: markEntered ? 1 : 0,
-                }}
-                transition={{
-                  type: 'spring',
-                  stiffness: 440,
-                  damping: 25,
-                  mass: 0.7,
-                }}
-                className="relative flex-shrink-0 w-13 h-13 md:w-15 md:h-15 drop-shadow-md"
-              >
-                <svg
-                  viewBox="0 0 40 40"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="w-full h-full"
-                >
-                  <defs>
-                    <linearGradient
-                      id="introTerra"
-                      x1="0"
-                      y1="0"
-                      x2="40"
-                      y2="40"
-                      gradientUnits="userSpaceOnUse"
-                    >
-                      <stop offset="0%" stopColor="#D98275" />
-                      <stop offset="100%" stopColor="#B65548" />
-                    </linearGradient>
-                  </defs>
+export function stopReminderService(): void {
+  if (timerId) {
+    clearInterval(timerId);
+    timerId = null;
+  }
+}
 
-                  {/* Terracotta Satin Squircle Chassis */}
-                  <rect width="40" height="40" rx="11" fill="url(#introTerra)" />
+async function checkDueReminders(): Promise<void> {
+  if (isChecking) return;
+  isChecking = true;
 
-                  {/* Specular Rim Highlight */}
-                  <rect
-                    x="0.5"
-                    y="0.5"
-                    width="39"
-                    height="39"
-                    rx="10.5"
-                    stroke="white"
-                    strokeOpacity="0.32"
-                    strokeWidth="1"
-                  />
+  try {
+    const now = new Date();
 
-                  {/* Geometric 'C' Arc */}
-                  <motion.path
-                    initial={{ pathLength: 0, opacity: 0 }}
-                    animate={{ pathLength: 1, opacity: 1 }}
-                    transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1], delay: 0.12 }}
-                    d="M 24.5 13.8 C 21.2 11.2 16.5 11.2 13.5 14.1 C 10.2 17.3 10.2 22.7 13.5 25.9 C 16.5 28.8 21.2 28.8 24.5 26.2"
-                    stroke="#FFFFFF"
-                    strokeWidth="2.9"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
+    // 1. Check pending tasks with due reminders
+    const tasks = await api.getTasks(true).catch(() => []);
+    for (const task of tasks) {
+      if (!task.reminder_sent && task.remind_at && !task.completed) {
+        const remindTime = new Date(task.remind_at);
+        if (remindTime <= now) {
+          triggerNotification("Task Reminder: " + task.title, task.description || "Task is due for completion.");
+          await api.updateTask(task.id, { reminder_sent: true }).catch(() => {});
+        }
+      }
+    }
 
-                  {/* Faceted Prism Spark */}
-                  <motion.g
-                    initial={{ scale: 0, rotate: -25 }}
-                    animate={{ scale: 1, rotate: 0 }}
-                    transition={{
-                      type: 'spring',
-                      stiffness: 480,
-                      damping: 18,
-                      delay: 0.26,
-                    }}
-                    className="origin-[23.2px_20px]"
-                  >
-                    {/* Left Facet (Bone White) */}
-                    <polygon points="23.2,16 23.2,24 18.5,20" fill="#FFFFFF" />
+    // 2. Check calendar events for today
+    const todayStr = now.toISOString().split("T")[0];
+    const events = await api.getCalendarDay(todayStr).catch(() => []);
+    for (const ev of events) {
+      if (!ev.reminder_sent && ev.remind_at) {
+        const remindTime = new Date(ev.remind_at);
+        if (remindTime <= now) {
+          triggerNotification("Event Reminder: " + ev.title, ev.description || `Scheduled event on ${ev.event_date}.`);
+          await api.updateCalendarEvent(ev.id, { reminder_sent: true } as any).catch(() => {});
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[Clarity Reminder] Check cycle encountered error:", err);
+  } finally {
+    isChecking = false;
+  }
+}
 
-                    {/* Right Facet (Specular Terracotta Tint) */}
-                    <polygon
-                      points="23.2,16 23.2,24 27.8,20"
-                      fill="#FFE5DC"
-                      fillOpacity="0.95"
-                    />
+function triggerNotification(title: string, body: string): void {
+  sound.pop();
+  if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+    try {
+      new Notification(title, {
+        body,
+        icon: "/icons/icon.ico",
+      });
+    } catch (e) {
+      console.warn("Could not dispatch native notification:", e);
+    }
+  }
+}
+````
 
-                    {/* Micro Spark Core */}
-                    <circle cx="23.2" cy="20" r="0.85" fill="#FFFFFF" />
-                  </motion.g>
-                </svg>
-              </motion.div>
+## File: desktop/src/lib/windowControls.ts
+````typescript
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
-              {/* Kinetic Typography Unfolding: C -> Cl -> Cla -> Clar -> Clari -> Clarit -> Clarity */}
-              <div className="relative flex items-baseline font-serif font-bold text-4xl sm:text-5xl md:text-[56px] leading-none text-ink tracking-tight overflow-hidden py-1">
-                {LETTERS.map((char, index) => {
-                  const isVisible = index < visibleLetters;
-                  return (
-                    <motion.span
-                      key={index}
-                      initial={false}
-                      animate={{
-                        width: isVisible ? 'auto' : 0,
-                        opacity: isVisible ? 1 : 0,
-                        y: isVisible ? 0 : 12,
-                        scale: isVisible ? 1 : 0.8,
-                        filter: isVisible ? 'blur(0px)' : 'blur(4px)',
-                      }}
-                      transition={{
-                        width: { type: 'spring', stiffness: 420, damping: 32 },
-                        opacity: { duration: 0.16, ease: 'easeOut' },
-                        y: { type: 'spring', stiffness: 460, damping: 26 },
-                        scale: { duration: 0.18, ease: 'easeOut' },
-                        filter: { duration: 0.2 },
-                      }}
-                      className="inline-block overflow-hidden whitespace-nowrap origin-bottom"
-                    >
-                      <span className="inline-block px-[0.5px]">{char}</span>
-                    </motion.span>
-                  );
-                })}
+/**
+ * Robust window controls for Clarity desktop frameless window.
+ * Uses native Rust IPC commands first for 100% reliability, with JS API fallback.
+ */
+export const windowControls = {
+  minimize: async () => {
+    try {
+      await invoke("window_minimize");
+    } catch {
+      try {
+        await getCurrentWindow().minimize();
+      } catch (e) {
+        console.warn("Minimize error:", e);
+      }
+    }
+  },
 
-                {/* Specular Light Sweep Shimmer */}
-                {shimmerActive && (
-                  <motion.div
-                    initial={{ x: '-120%', opacity: 0 }}
-                    animate={{ x: '240%', opacity: [0, 0.7, 0] }}
-                    transition={{ duration: 0.85, ease: 'easeInOut' }}
-                    className="absolute inset-0 pointer-events-none bg-gradient-to-r from-transparent via-white/50 to-transparent skew-x-[-24deg]"
-                  />
-                )}
-              </div>
-            </motion.div>
+  toggleMaximize: async () => {
+    try {
+      await invoke("window_toggle_maximize");
+    } catch {
+      try {
+        await getCurrentWindow().toggleMaximize();
+      } catch (e) {
+        console.warn("Toggle maximize error:", e);
+      }
+    }
+  },
 
-            {/* Subtitle Whisper & Terracotta Hairline Horizon */}
-            <motion.div
-              layout
-              initial={{ opacity: 0, y: 6 }}
-              animate={{
-                opacity: showSubtitle ? 1 : 0,
-                y: showSubtitle ? 0 : 6,
-              }}
-              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-col items-center mt-3.5 w-full max-w-[260px]"
-            >
-              {/* Hairline Horizon Rule */}
-              <motion.div
-                initial={{ scaleX: 0 }}
-                animate={{ scaleX: showSubtitle ? 1 : 0 }}
-                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                className="h-px w-full bg-gradient-to-r from-transparent via-accent/50 to-transparent mb-2.5 origin-center"
-              />
-
-              {/* Subtitle Monogram with Tracking Bloom */}
-              <motion.span
-                initial={{ letterSpacing: '0.14em' }}
-                animate={{ letterSpacing: showSubtitle ? '0.26em' : '0.14em' }}
-                transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
-                className="font-mono text-[9.5px] md:text-[11px] font-semibold tracking-[0.26em] text-ink-soft uppercase text-center select-none"
-              >
-                PERSONAL WORKSPACE
-              </motion.span>
-            </motion.div>
-          </motion.div>
-
-          {/* Discreet Skip Prompt */}
-          <motion.div
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: isExiting ? 0 : 0.5, y: 0 }}
-            whileHover={{ opacity: 0.9 }}
-            transition={{ delay: 0.7, duration: 0.3 }}
-            className="absolute bottom-7 flex items-center gap-1.5 px-3 py-1 rounded-full border border-rule/60 bg-surface/70 backdrop-blur-md text-[11px] text-ink-faint select-none transition-opacity"
-          >
-            <span>Press</span>
-            <kbd className="px-1.5 py-0.5 rounded bg-raised border border-rule text-[9.5px] font-mono text-ink-soft">
-              Esc
-            </kbd>
-            <span>or click to skip</span>
-          </motion.div>
-        </motion.div>
-      ) : null}
-    </AnimatePresence>
-  );
+  close: async () => {
+    try {
+      await invoke("window_close");
+    } catch {
+      try {
+        await getCurrentWindow().close();
+      } catch (e) {
+        console.warn("Close error:", e);
+      }
+    }
+  },
 };
-
-export default OpeningAnimation;
 ````
 
 ## File: desktop/src/main.tsx
@@ -1897,11 +498,6 @@ createRoot(document.getElementById("root")!).render(
 ## File: desktop/src-tauri/gen/schemas/acl-manifests.json
 ````json
 {"core":{"default_permission":{"identifier":"default","description":"Default core plugins set.","permissions":["core:path:default","core:event:default","core:window:default","core:webview:default","core:app:default","core:image:default","core:resources:default","core:menu:default","core:tray:default"]},"permissions":{},"permission_sets":{},"global_scope_schema":null},"core:app":{"default_permission":{"identifier":"default","description":"Default permissions for the plugin.","permissions":["allow-version","allow-name","allow-tauri-version","allow-identifier","allow-bundle-type","allow-register-listener","allow-remove-listener","allow-supports-multiple-windows"]},"permissions":{"allow-app-hide":{"identifier":"allow-app-hide","description":"Enables the app_hide command without any pre-configured scope.","commands":{"allow":["app_hide"],"deny":[]}},"allow-app-show":{"identifier":"allow-app-show","description":"Enables the app_show command without any pre-configured scope.","commands":{"allow":["app_show"],"deny":[]}},"allow-bundle-type":{"identifier":"allow-bundle-type","description":"Enables the bundle_type command without any pre-configured scope.","commands":{"allow":["bundle_type"],"deny":[]}},"allow-default-window-icon":{"identifier":"allow-default-window-icon","description":"Enables the default_window_icon command without any pre-configured scope.","commands":{"allow":["default_window_icon"],"deny":[]}},"allow-fetch-data-store-identifiers":{"identifier":"allow-fetch-data-store-identifiers","description":"Enables the fetch_data_store_identifiers command without any pre-configured scope.","commands":{"allow":["fetch_data_store_identifiers"],"deny":[]}},"allow-identifier":{"identifier":"allow-identifier","description":"Enables the identifier command without any pre-configured scope.","commands":{"allow":["identifier"],"deny":[]}},"allow-name":{"identifier":"allow-name","description":"Enables the name command without any pre-configured scope.","commands":{"allow":["name"],"deny":[]}},"allow-register-listener":{"identifier":"allow-register-listener","description":"Enables the register_listener command without any pre-configured scope.","commands":{"allow":["register_listener"],"deny":[]}},"allow-remove-data-store":{"identifier":"allow-remove-data-store","description":"Enables the remove_data_store command without any pre-configured scope.","commands":{"allow":["remove_data_store"],"deny":[]}},"allow-remove-listener":{"identifier":"allow-remove-listener","description":"Enables the remove_listener command without any pre-configured scope.","commands":{"allow":["remove_listener"],"deny":[]}},"allow-set-app-theme":{"identifier":"allow-set-app-theme","description":"Enables the set_app_theme command without any pre-configured scope.","commands":{"allow":["set_app_theme"],"deny":[]}},"allow-set-dock-visibility":{"identifier":"allow-set-dock-visibility","description":"Enables the set_dock_visibility command without any pre-configured scope.","commands":{"allow":["set_dock_visibility"],"deny":[]}},"allow-supports-multiple-windows":{"identifier":"allow-supports-multiple-windows","description":"Enables the supports_multiple_windows command without any pre-configured scope.","commands":{"allow":["supports_multiple_windows"],"deny":[]}},"allow-tauri-version":{"identifier":"allow-tauri-version","description":"Enables the tauri_version command without any pre-configured scope.","commands":{"allow":["tauri_version"],"deny":[]}},"allow-version":{"identifier":"allow-version","description":"Enables the version command without any pre-configured scope.","commands":{"allow":["version"],"deny":[]}},"deny-app-hide":{"identifier":"deny-app-hide","description":"Denies the app_hide command without any pre-configured scope.","commands":{"allow":[],"deny":["app_hide"]}},"deny-app-show":{"identifier":"deny-app-show","description":"Denies the app_show command without any pre-configured scope.","commands":{"allow":[],"deny":["app_show"]}},"deny-bundle-type":{"identifier":"deny-bundle-type","description":"Denies the bundle_type command without any pre-configured scope.","commands":{"allow":[],"deny":["bundle_type"]}},"deny-default-window-icon":{"identifier":"deny-default-window-icon","description":"Denies the default_window_icon command without any pre-configured scope.","commands":{"allow":[],"deny":["default_window_icon"]}},"deny-fetch-data-store-identifiers":{"identifier":"deny-fetch-data-store-identifiers","description":"Denies the fetch_data_store_identifiers command without any pre-configured scope.","commands":{"allow":[],"deny":["fetch_data_store_identifiers"]}},"deny-identifier":{"identifier":"deny-identifier","description":"Denies the identifier command without any pre-configured scope.","commands":{"allow":[],"deny":["identifier"]}},"deny-name":{"identifier":"deny-name","description":"Denies the name command without any pre-configured scope.","commands":{"allow":[],"deny":["name"]}},"deny-register-listener":{"identifier":"deny-register-listener","description":"Denies the register_listener command without any pre-configured scope.","commands":{"allow":[],"deny":["register_listener"]}},"deny-remove-data-store":{"identifier":"deny-remove-data-store","description":"Denies the remove_data_store command without any pre-configured scope.","commands":{"allow":[],"deny":["remove_data_store"]}},"deny-remove-listener":{"identifier":"deny-remove-listener","description":"Denies the remove_listener command without any pre-configured scope.","commands":{"allow":[],"deny":["remove_listener"]}},"deny-set-app-theme":{"identifier":"deny-set-app-theme","description":"Denies the set_app_theme command without any pre-configured scope.","commands":{"allow":[],"deny":["set_app_theme"]}},"deny-set-dock-visibility":{"identifier":"deny-set-dock-visibility","description":"Denies the set_dock_visibility command without any pre-configured scope.","commands":{"allow":[],"deny":["set_dock_visibility"]}},"deny-supports-multiple-windows":{"identifier":"deny-supports-multiple-windows","description":"Denies the supports_multiple_windows command without any pre-configured scope.","commands":{"allow":[],"deny":["supports_multiple_windows"]}},"deny-tauri-version":{"identifier":"deny-tauri-version","description":"Denies the tauri_version command without any pre-configured scope.","commands":{"allow":[],"deny":["tauri_version"]}},"deny-version":{"identifier":"deny-version","description":"Denies the version command without any pre-configured scope.","commands":{"allow":[],"deny":["version"]}}},"permission_sets":{},"global_scope_schema":null},"core:event":{"default_permission":{"identifier":"default","description":"Default permissions for the plugin, which enables all commands.","permissions":["allow-listen","allow-unlisten","allow-emit","allow-emit-to"]},"permissions":{"allow-emit":{"identifier":"allow-emit","description":"Enables the emit command without any pre-configured scope.","commands":{"allow":["emit"],"deny":[]}},"allow-emit-to":{"identifier":"allow-emit-to","description":"Enables the emit_to command without any pre-configured scope.","commands":{"allow":["emit_to"],"deny":[]}},"allow-listen":{"identifier":"allow-listen","description":"Enables the listen command without any pre-configured scope.","commands":{"allow":["listen"],"deny":[]}},"allow-unlisten":{"identifier":"allow-unlisten","description":"Enables the unlisten command without any pre-configured scope.","commands":{"allow":["unlisten"],"deny":[]}},"deny-emit":{"identifier":"deny-emit","description":"Denies the emit command without any pre-configured scope.","commands":{"allow":[],"deny":["emit"]}},"deny-emit-to":{"identifier":"deny-emit-to","description":"Denies the emit_to command without any pre-configured scope.","commands":{"allow":[],"deny":["emit_to"]}},"deny-listen":{"identifier":"deny-listen","description":"Denies the listen command without any pre-configured scope.","commands":{"allow":[],"deny":["listen"]}},"deny-unlisten":{"identifier":"deny-unlisten","description":"Denies the unlisten command without any pre-configured scope.","commands":{"allow":[],"deny":["unlisten"]}}},"permission_sets":{},"global_scope_schema":null},"core:image":{"default_permission":{"identifier":"default","description":"Default permissions for the plugin, which enables all commands.","permissions":["allow-new","allow-from-bytes","allow-from-path","allow-rgba","allow-size"]},"permissions":{"allow-from-bytes":{"identifier":"allow-from-bytes","description":"Enables the from_bytes command without any pre-configured scope.","commands":{"allow":["from_bytes"],"deny":[]}},"allow-from-path":{"identifier":"allow-from-path","description":"Enables the from_path command without any pre-configured scope.","commands":{"allow":["from_path"],"deny":[]}},"allow-new":{"identifier":"allow-new","description":"Enables the new command without any pre-configured scope.","commands":{"allow":["new"],"deny":[]}},"allow-rgba":{"identifier":"allow-rgba","description":"Enables the rgba command without any pre-configured scope.","commands":{"allow":["rgba"],"deny":[]}},"allow-size":{"identifier":"allow-size","description":"Enables the size command without any pre-configured scope.","commands":{"allow":["size"],"deny":[]}},"deny-from-bytes":{"identifier":"deny-from-bytes","description":"Denies the from_bytes command without any pre-configured scope.","commands":{"allow":[],"deny":["from_bytes"]}},"deny-from-path":{"identifier":"deny-from-path","description":"Denies the from_path command without any pre-configured scope.","commands":{"allow":[],"deny":["from_path"]}},"deny-new":{"identifier":"deny-new","description":"Denies the new command without any pre-configured scope.","commands":{"allow":[],"deny":["new"]}},"deny-rgba":{"identifier":"deny-rgba","description":"Denies the rgba command without any pre-configured scope.","commands":{"allow":[],"deny":["rgba"]}},"deny-size":{"identifier":"deny-size","description":"Denies the size command without any pre-configured scope.","commands":{"allow":[],"deny":["size"]}}},"permission_sets":{},"global_scope_schema":null},"core:menu":{"default_permission":{"identifier":"default","description":"Default permissions for the plugin, which enables all commands.","permissions":["allow-new","allow-append","allow-prepend","allow-insert","allow-remove","allow-remove-at","allow-items","allow-get","allow-popup","allow-create-default","allow-set-as-app-menu","allow-set-as-window-menu","allow-text","allow-set-text","allow-is-enabled","allow-set-enabled","allow-set-accelerator","allow-set-as-windows-menu-for-nsapp","allow-set-as-help-menu-for-nsapp","allow-is-checked","allow-set-checked","allow-set-icon"]},"permissions":{"allow-append":{"identifier":"allow-append","description":"Enables the append command without any pre-configured scope.","commands":{"allow":["append"],"deny":[]}},"allow-create-default":{"identifier":"allow-create-default","description":"Enables the create_default command without any pre-configured scope.","commands":{"allow":["create_default"],"deny":[]}},"allow-get":{"identifier":"allow-get","description":"Enables the get command without any pre-configured scope.","commands":{"allow":["get"],"deny":[]}},"allow-insert":{"identifier":"allow-insert","description":"Enables the insert command without any pre-configured scope.","commands":{"allow":["insert"],"deny":[]}},"allow-is-checked":{"identifier":"allow-is-checked","description":"Enables the is_checked command without any pre-configured scope.","commands":{"allow":["is_checked"],"deny":[]}},"allow-is-enabled":{"identifier":"allow-is-enabled","description":"Enables the is_enabled command without any pre-configured scope.","commands":{"allow":["is_enabled"],"deny":[]}},"allow-items":{"identifier":"allow-items","description":"Enables the items command without any pre-configured scope.","commands":{"allow":["items"],"deny":[]}},"allow-new":{"identifier":"allow-new","description":"Enables the new command without any pre-configured scope.","commands":{"allow":["new"],"deny":[]}},"allow-popup":{"identifier":"allow-popup","description":"Enables the popup command without any pre-configured scope.","commands":{"allow":["popup"],"deny":[]}},"allow-prepend":{"identifier":"allow-prepend","description":"Enables the prepend command without any pre-configured scope.","commands":{"allow":["prepend"],"deny":[]}},"allow-remove":{"identifier":"allow-remove","description":"Enables the remove command without any pre-configured scope.","commands":{"allow":["remove"],"deny":[]}},"allow-remove-at":{"identifier":"allow-remove-at","description":"Enables the remove_at command without any pre-configured scope.","commands":{"allow":["remove_at"],"deny":[]}},"allow-set-accelerator":{"identifier":"allow-set-accelerator","description":"Enables the set_accelerator command without any pre-configured scope.","commands":{"allow":["set_accelerator"],"deny":[]}},"allow-set-as-app-menu":{"identifier":"allow-set-as-app-menu","description":"Enables the set_as_app_menu command without any pre-configured scope.","commands":{"allow":["set_as_app_menu"],"deny":[]}},"allow-set-as-help-menu-for-nsapp":{"identifier":"allow-set-as-help-menu-for-nsapp","description":"Enables the set_as_help_menu_for_nsapp command without any pre-configured scope.","commands":{"allow":["set_as_help_menu_for_nsapp"],"deny":[]}},"allow-set-as-window-menu":{"identifier":"allow-set-as-window-menu","description":"Enables the set_as_window_menu command without any pre-configured scope.","commands":{"allow":["set_as_window_menu"],"deny":[]}},"allow-set-as-windows-menu-for-nsapp":{"identifier":"allow-set-as-windows-menu-for-nsapp","description":"Enables the set_as_windows_menu_for_nsapp command without any pre-configured scope.","commands":{"allow":["set_as_windows_menu_for_nsapp"],"deny":[]}},"allow-set-checked":{"identifier":"allow-set-checked","description":"Enables the set_checked command without any pre-configured scope.","commands":{"allow":["set_checked"],"deny":[]}},"allow-set-enabled":{"identifier":"allow-set-enabled","description":"Enables the set_enabled command without any pre-configured scope.","commands":{"allow":["set_enabled"],"deny":[]}},"allow-set-icon":{"identifier":"allow-set-icon","description":"Enables the set_icon command without any pre-configured scope.","commands":{"allow":["set_icon"],"deny":[]}},"allow-set-text":{"identifier":"allow-set-text","description":"Enables the set_text command without any pre-configured scope.","commands":{"allow":["set_text"],"deny":[]}},"allow-text":{"identifier":"allow-text","description":"Enables the text command without any pre-configured scope.","commands":{"allow":["text"],"deny":[]}},"deny-append":{"identifier":"deny-append","description":"Denies the append command without any pre-configured scope.","commands":{"allow":[],"deny":["append"]}},"deny-create-default":{"identifier":"deny-create-default","description":"Denies the create_default command without any pre-configured scope.","commands":{"allow":[],"deny":["create_default"]}},"deny-get":{"identifier":"deny-get","description":"Denies the get command without any pre-configured scope.","commands":{"allow":[],"deny":["get"]}},"deny-insert":{"identifier":"deny-insert","description":"Denies the insert command without any pre-configured scope.","commands":{"allow":[],"deny":["insert"]}},"deny-is-checked":{"identifier":"deny-is-checked","description":"Denies the is_checked command without any pre-configured scope.","commands":{"allow":[],"deny":["is_checked"]}},"deny-is-enabled":{"identifier":"deny-is-enabled","description":"Denies the is_enabled command without any pre-configured scope.","commands":{"allow":[],"deny":["is_enabled"]}},"deny-items":{"identifier":"deny-items","description":"Denies the items command without any pre-configured scope.","commands":{"allow":[],"deny":["items"]}},"deny-new":{"identifier":"deny-new","description":"Denies the new command without any pre-configured scope.","commands":{"allow":[],"deny":["new"]}},"deny-popup":{"identifier":"deny-popup","description":"Denies the popup command without any pre-configured scope.","commands":{"allow":[],"deny":["popup"]}},"deny-prepend":{"identifier":"deny-prepend","description":"Denies the prepend command without any pre-configured scope.","commands":{"allow":[],"deny":["prepend"]}},"deny-remove":{"identifier":"deny-remove","description":"Denies the remove command without any pre-configured scope.","commands":{"allow":[],"deny":["remove"]}},"deny-remove-at":{"identifier":"deny-remove-at","description":"Denies the remove_at command without any pre-configured scope.","commands":{"allow":[],"deny":["remove_at"]}},"deny-set-accelerator":{"identifier":"deny-set-accelerator","description":"Denies the set_accelerator command without any pre-configured scope.","commands":{"allow":[],"deny":["set_accelerator"]}},"deny-set-as-app-menu":{"identifier":"deny-set-as-app-menu","description":"Denies the set_as_app_menu command without any pre-configured scope.","commands":{"allow":[],"deny":["set_as_app_menu"]}},"deny-set-as-help-menu-for-nsapp":{"identifier":"deny-set-as-help-menu-for-nsapp","description":"Denies the set_as_help_menu_for_nsapp command without any pre-configured scope.","commands":{"allow":[],"deny":["set_as_help_menu_for_nsapp"]}},"deny-set-as-window-menu":{"identifier":"deny-set-as-window-menu","description":"Denies the set_as_window_menu command without any pre-configured scope.","commands":{"allow":[],"deny":["set_as_window_menu"]}},"deny-set-as-windows-menu-for-nsapp":{"identifier":"deny-set-as-windows-menu-for-nsapp","description":"Denies the set_as_windows_menu_for_nsapp command without any pre-configured scope.","commands":{"allow":[],"deny":["set_as_windows_menu_for_nsapp"]}},"deny-set-checked":{"identifier":"deny-set-checked","description":"Denies the set_checked command without any pre-configured scope.","commands":{"allow":[],"deny":["set_checked"]}},"deny-set-enabled":{"identifier":"deny-set-enabled","description":"Denies the set_enabled command without any pre-configured scope.","commands":{"allow":[],"deny":["set_enabled"]}},"deny-set-icon":{"identifier":"deny-set-icon","description":"Denies the set_icon command without any pre-configured scope.","commands":{"allow":[],"deny":["set_icon"]}},"deny-set-text":{"identifier":"deny-set-text","description":"Denies the set_text command without any pre-configured scope.","commands":{"allow":[],"deny":["set_text"]}},"deny-text":{"identifier":"deny-text","description":"Denies the text command without any pre-configured scope.","commands":{"allow":[],"deny":["text"]}}},"permission_sets":{},"global_scope_schema":null},"core:path":{"default_permission":{"identifier":"default","description":"Default permissions for the plugin, which enables all commands.","permissions":["allow-resolve-directory","allow-resolve","allow-normalize","allow-join","allow-dirname","allow-extname","allow-basename","allow-is-absolute"]},"permissions":{"allow-basename":{"identifier":"allow-basename","description":"Enables the basename command without any pre-configured scope.","commands":{"allow":["basename"],"deny":[]}},"allow-dirname":{"identifier":"allow-dirname","description":"Enables the dirname command without any pre-configured scope.","commands":{"allow":["dirname"],"deny":[]}},"allow-extname":{"identifier":"allow-extname","description":"Enables the extname command without any pre-configured scope.","commands":{"allow":["extname"],"deny":[]}},"allow-is-absolute":{"identifier":"allow-is-absolute","description":"Enables the is_absolute command without any pre-configured scope.","commands":{"allow":["is_absolute"],"deny":[]}},"allow-join":{"identifier":"allow-join","description":"Enables the join command without any pre-configured scope.","commands":{"allow":["join"],"deny":[]}},"allow-normalize":{"identifier":"allow-normalize","description":"Enables the normalize command without any pre-configured scope.","commands":{"allow":["normalize"],"deny":[]}},"allow-resolve":{"identifier":"allow-resolve","description":"Enables the resolve command without any pre-configured scope.","commands":{"allow":["resolve"],"deny":[]}},"allow-resolve-directory":{"identifier":"allow-resolve-directory","description":"Enables the resolve_directory command without any pre-configured scope.","commands":{"allow":["resolve_directory"],"deny":[]}},"deny-basename":{"identifier":"deny-basename","description":"Denies the basename command without any pre-configured scope.","commands":{"allow":[],"deny":["basename"]}},"deny-dirname":{"identifier":"deny-dirname","description":"Denies the dirname command without any pre-configured scope.","commands":{"allow":[],"deny":["dirname"]}},"deny-extname":{"identifier":"deny-extname","description":"Denies the extname command without any pre-configured scope.","commands":{"allow":[],"deny":["extname"]}},"deny-is-absolute":{"identifier":"deny-is-absolute","description":"Denies the is_absolute command without any pre-configured scope.","commands":{"allow":[],"deny":["is_absolute"]}},"deny-join":{"identifier":"deny-join","description":"Denies the join command without any pre-configured scope.","commands":{"allow":[],"deny":["join"]}},"deny-normalize":{"identifier":"deny-normalize","description":"Denies the normalize command without any pre-configured scope.","commands":{"allow":[],"deny":["normalize"]}},"deny-resolve":{"identifier":"deny-resolve","description":"Denies the resolve command without any pre-configured scope.","commands":{"allow":[],"deny":["resolve"]}},"deny-resolve-directory":{"identifier":"deny-resolve-directory","description":"Denies the resolve_directory command without any pre-configured scope.","commands":{"allow":[],"deny":["resolve_directory"]}}},"permission_sets":{},"global_scope_schema":null},"core:resources":{"default_permission":{"identifier":"default","description":"Default permissions for the plugin, which enables all commands.","permissions":["allow-close"]},"permissions":{"allow-close":{"identifier":"allow-close","description":"Enables the close command without any pre-configured scope.","commands":{"allow":["close"],"deny":[]}},"deny-close":{"identifier":"deny-close","description":"Denies the close command without any pre-configured scope.","commands":{"allow":[],"deny":["close"]}}},"permission_sets":{},"global_scope_schema":null},"core:tray":{"default_permission":{"identifier":"default","description":"Default permissions for the plugin, which enables all commands.","permissions":["allow-new","allow-get-by-id","allow-remove-by-id","allow-set-icon","allow-set-menu","allow-set-tooltip","allow-set-title","allow-set-visible","allow-set-temp-dir-path","allow-set-icon-as-template","allow-set-icon-with-as-template","allow-set-show-menu-on-left-click"]},"permissions":{"allow-get-by-id":{"identifier":"allow-get-by-id","description":"Enables the get_by_id command without any pre-configured scope.","commands":{"allow":["get_by_id"],"deny":[]}},"allow-new":{"identifier":"allow-new","description":"Enables the new command without any pre-configured scope.","commands":{"allow":["new"],"deny":[]}},"allow-remove-by-id":{"identifier":"allow-remove-by-id","description":"Enables the remove_by_id command without any pre-configured scope.","commands":{"allow":["remove_by_id"],"deny":[]}},"allow-set-icon":{"identifier":"allow-set-icon","description":"Enables the set_icon command without any pre-configured scope.","commands":{"allow":["set_icon"],"deny":[]}},"allow-set-icon-as-template":{"identifier":"allow-set-icon-as-template","description":"Enables the set_icon_as_template command without any pre-configured scope.","commands":{"allow":["set_icon_as_template"],"deny":[]}},"allow-set-icon-with-as-template":{"identifier":"allow-set-icon-with-as-template","description":"Enables the set_icon_with_as_template command without any pre-configured scope.","commands":{"allow":["set_icon_with_as_template"],"deny":[]}},"allow-set-menu":{"identifier":"allow-set-menu","description":"Enables the set_menu command without any pre-configured scope.","commands":{"allow":["set_menu"],"deny":[]}},"allow-set-show-menu-on-left-click":{"identifier":"allow-set-show-menu-on-left-click","description":"Enables the set_show_menu_on_left_click command without any pre-configured scope.","commands":{"allow":["set_show_menu_on_left_click"],"deny":[]}},"allow-set-temp-dir-path":{"identifier":"allow-set-temp-dir-path","description":"Enables the set_temp_dir_path command without any pre-configured scope.","commands":{"allow":["set_temp_dir_path"],"deny":[]}},"allow-set-title":{"identifier":"allow-set-title","description":"Enables the set_title command without any pre-configured scope.","commands":{"allow":["set_title"],"deny":[]}},"allow-set-tooltip":{"identifier":"allow-set-tooltip","description":"Enables the set_tooltip command without any pre-configured scope.","commands":{"allow":["set_tooltip"],"deny":[]}},"allow-set-visible":{"identifier":"allow-set-visible","description":"Enables the set_visible command without any pre-configured scope.","commands":{"allow":["set_visible"],"deny":[]}},"deny-get-by-id":{"identifier":"deny-get-by-id","description":"Denies the get_by_id command without any pre-configured scope.","commands":{"allow":[],"deny":["get_by_id"]}},"deny-new":{"identifier":"deny-new","description":"Denies the new command without any pre-configured scope.","commands":{"allow":[],"deny":["new"]}},"deny-remove-by-id":{"identifier":"deny-remove-by-id","description":"Denies the remove_by_id command without any pre-configured scope.","commands":{"allow":[],"deny":["remove_by_id"]}},"deny-set-icon":{"identifier":"deny-set-icon","description":"Denies the set_icon command without any pre-configured scope.","commands":{"allow":[],"deny":["set_icon"]}},"deny-set-icon-as-template":{"identifier":"deny-set-icon-as-template","description":"Denies the set_icon_as_template command without any pre-configured scope.","commands":{"allow":[],"deny":["set_icon_as_template"]}},"deny-set-icon-with-as-template":{"identifier":"deny-set-icon-with-as-template","description":"Denies the set_icon_with_as_template command without any pre-configured scope.","commands":{"allow":[],"deny":["set_icon_with_as_template"]}},"deny-set-menu":{"identifier":"deny-set-menu","description":"Denies the set_menu command without any pre-configured scope.","commands":{"allow":[],"deny":["set_menu"]}},"deny-set-show-menu-on-left-click":{"identifier":"deny-set-show-menu-on-left-click","description":"Denies the set_show_menu_on_left_click command without any pre-configured scope.","commands":{"allow":[],"deny":["set_show_menu_on_left_click"]}},"deny-set-temp-dir-path":{"identifier":"deny-set-temp-dir-path","description":"Denies the set_temp_dir_path command without any pre-configured scope.","commands":{"allow":[],"deny":["set_temp_dir_path"]}},"deny-set-title":{"identifier":"deny-set-title","description":"Denies the set_title command without any pre-configured scope.","commands":{"allow":[],"deny":["set_title"]}},"deny-set-tooltip":{"identifier":"deny-set-tooltip","description":"Denies the set_tooltip command without any pre-configured scope.","commands":{"allow":[],"deny":["set_tooltip"]}},"deny-set-visible":{"identifier":"deny-set-visible","description":"Denies the set_visible command without any pre-configured scope.","commands":{"allow":[],"deny":["set_visible"]}}},"permission_sets":{},"global_scope_schema":null},"core:webview":{"default_permission":{"identifier":"default","description":"Default permissions for the plugin.","permissions":["allow-get-all-webviews","allow-webview-position","allow-webview-size","allow-internal-toggle-devtools"]},"permissions":{"allow-clear-all-browsing-data":{"identifier":"allow-clear-all-browsing-data","description":"Enables the clear_all_browsing_data command without any pre-configured scope.","commands":{"allow":["clear_all_browsing_data"],"deny":[]}},"allow-create-webview":{"identifier":"allow-create-webview","description":"Enables the create_webview command without any pre-configured scope.","commands":{"allow":["create_webview"],"deny":[]}},"allow-create-webview-window":{"identifier":"allow-create-webview-window","description":"Enables the create_webview_window command without any pre-configured scope.","commands":{"allow":["create_webview_window"],"deny":[]}},"allow-get-all-webviews":{"identifier":"allow-get-all-webviews","description":"Enables the get_all_webviews command without any pre-configured scope.","commands":{"allow":["get_all_webviews"],"deny":[]}},"allow-internal-toggle-devtools":{"identifier":"allow-internal-toggle-devtools","description":"Enables the internal_toggle_devtools command without any pre-configured scope.","commands":{"allow":["internal_toggle_devtools"],"deny":[]}},"allow-print":{"identifier":"allow-print","description":"Enables the print command without any pre-configured scope.","commands":{"allow":["print"],"deny":[]}},"allow-reparent":{"identifier":"allow-reparent","description":"Enables the reparent command without any pre-configured scope.","commands":{"allow":["reparent"],"deny":[]}},"allow-set-webview-auto-resize":{"identifier":"allow-set-webview-auto-resize","description":"Enables the set_webview_auto_resize command without any pre-configured scope.","commands":{"allow":["set_webview_auto_resize"],"deny":[]}},"allow-set-webview-background-color":{"identifier":"allow-set-webview-background-color","description":"Enables the set_webview_background_color command without any pre-configured scope.","commands":{"allow":["set_webview_background_color"],"deny":[]}},"allow-set-webview-focus":{"identifier":"allow-set-webview-focus","description":"Enables the set_webview_focus command without any pre-configured scope.","commands":{"allow":["set_webview_focus"],"deny":[]}},"allow-set-webview-position":{"identifier":"allow-set-webview-position","description":"Enables the set_webview_position command without any pre-configured scope.","commands":{"allow":["set_webview_position"],"deny":[]}},"allow-set-webview-size":{"identifier":"allow-set-webview-size","description":"Enables the set_webview_size command without any pre-configured scope.","commands":{"allow":["set_webview_size"],"deny":[]}},"allow-set-webview-zoom":{"identifier":"allow-set-webview-zoom","description":"Enables the set_webview_zoom command without any pre-configured scope.","commands":{"allow":["set_webview_zoom"],"deny":[]}},"allow-webview-close":{"identifier":"allow-webview-close","description":"Enables the webview_close command without any pre-configured scope.","commands":{"allow":["webview_close"],"deny":[]}},"allow-webview-hide":{"identifier":"allow-webview-hide","description":"Enables the webview_hide command without any pre-configured scope.","commands":{"allow":["webview_hide"],"deny":[]}},"allow-webview-position":{"identifier":"allow-webview-position","description":"Enables the webview_position command without any pre-configured scope.","commands":{"allow":["webview_position"],"deny":[]}},"allow-webview-show":{"identifier":"allow-webview-show","description":"Enables the webview_show command without any pre-configured scope.","commands":{"allow":["webview_show"],"deny":[]}},"allow-webview-size":{"identifier":"allow-webview-size","description":"Enables the webview_size command without any pre-configured scope.","commands":{"allow":["webview_size"],"deny":[]}},"deny-clear-all-browsing-data":{"identifier":"deny-clear-all-browsing-data","description":"Denies the clear_all_browsing_data command without any pre-configured scope.","commands":{"allow":[],"deny":["clear_all_browsing_data"]}},"deny-create-webview":{"identifier":"deny-create-webview","description":"Denies the create_webview command without any pre-configured scope.","commands":{"allow":[],"deny":["create_webview"]}},"deny-create-webview-window":{"identifier":"deny-create-webview-window","description":"Denies the create_webview_window command without any pre-configured scope.","commands":{"allow":[],"deny":["create_webview_window"]}},"deny-get-all-webviews":{"identifier":"deny-get-all-webviews","description":"Denies the get_all_webviews command without any pre-configured scope.","commands":{"allow":[],"deny":["get_all_webviews"]}},"deny-internal-toggle-devtools":{"identifier":"deny-internal-toggle-devtools","description":"Denies the internal_toggle_devtools command without any pre-configured scope.","commands":{"allow":[],"deny":["internal_toggle_devtools"]}},"deny-print":{"identifier":"deny-print","description":"Denies the print command without any pre-configured scope.","commands":{"allow":[],"deny":["print"]}},"deny-reparent":{"identifier":"deny-reparent","description":"Denies the reparent command without any pre-configured scope.","commands":{"allow":[],"deny":["reparent"]}},"deny-set-webview-auto-resize":{"identifier":"deny-set-webview-auto-resize","description":"Denies the set_webview_auto_resize command without any pre-configured scope.","commands":{"allow":[],"deny":["set_webview_auto_resize"]}},"deny-set-webview-background-color":{"identifier":"deny-set-webview-background-color","description":"Denies the set_webview_background_color command without any pre-configured scope.","commands":{"allow":[],"deny":["set_webview_background_color"]}},"deny-set-webview-focus":{"identifier":"deny-set-webview-focus","description":"Denies the set_webview_focus command without any pre-configured scope.","commands":{"allow":[],"deny":["set_webview_focus"]}},"deny-set-webview-position":{"identifier":"deny-set-webview-position","description":"Denies the set_webview_position command without any pre-configured scope.","commands":{"allow":[],"deny":["set_webview_position"]}},"deny-set-webview-size":{"identifier":"deny-set-webview-size","description":"Denies the set_webview_size command without any pre-configured scope.","commands":{"allow":[],"deny":["set_webview_size"]}},"deny-set-webview-zoom":{"identifier":"deny-set-webview-zoom","description":"Denies the set_webview_zoom command without any pre-configured scope.","commands":{"allow":[],"deny":["set_webview_zoom"]}},"deny-webview-close":{"identifier":"deny-webview-close","description":"Denies the webview_close command without any pre-configured scope.","commands":{"allow":[],"deny":["webview_close"]}},"deny-webview-hide":{"identifier":"deny-webview-hide","description":"Denies the webview_hide command without any pre-configured scope.","commands":{"allow":[],"deny":["webview_hide"]}},"deny-webview-position":{"identifier":"deny-webview-position","description":"Denies the webview_position command without any pre-configured scope.","commands":{"allow":[],"deny":["webview_position"]}},"deny-webview-show":{"identifier":"deny-webview-show","description":"Denies the webview_show command without any pre-configured scope.","commands":{"allow":[],"deny":["webview_show"]}},"deny-webview-size":{"identifier":"deny-webview-size","description":"Denies the webview_size command without any pre-configured scope.","commands":{"allow":[],"deny":["webview_size"]}}},"permission_sets":{},"global_scope_schema":null},"core:window":{"default_permission":{"identifier":"default","description":"Default permissions for the plugin.","permissions":["allow-get-all-windows","allow-scale-factor","allow-inner-position","allow-outer-position","allow-inner-size","allow-outer-size","allow-is-fullscreen","allow-is-minimized","allow-is-maximized","allow-is-focused","allow-is-decorated","allow-is-resizable","allow-is-maximizable","allow-is-minimizable","allow-is-closable","allow-is-visible","allow-is-enabled","allow-title","allow-current-monitor","allow-primary-monitor","allow-monitor-from-point","allow-available-monitors","allow-cursor-position","allow-theme","allow-is-always-on-top","allow-activity-name","allow-scene-identifier","allow-internal-toggle-maximize"]},"permissions":{"allow-activity-name":{"identifier":"allow-activity-name","description":"Enables the activity_name command without any pre-configured scope.","commands":{"allow":["activity_name"],"deny":[]}},"allow-available-monitors":{"identifier":"allow-available-monitors","description":"Enables the available_monitors command without any pre-configured scope.","commands":{"allow":["available_monitors"],"deny":[]}},"allow-center":{"identifier":"allow-center","description":"Enables the center command without any pre-configured scope.","commands":{"allow":["center"],"deny":[]}},"allow-close":{"identifier":"allow-close","description":"Enables the close command without any pre-configured scope.","commands":{"allow":["close"],"deny":[]}},"allow-create":{"identifier":"allow-create","description":"Enables the create command without any pre-configured scope.","commands":{"allow":["create"],"deny":[]}},"allow-current-monitor":{"identifier":"allow-current-monitor","description":"Enables the current_monitor command without any pre-configured scope.","commands":{"allow":["current_monitor"],"deny":[]}},"allow-cursor-position":{"identifier":"allow-cursor-position","description":"Enables the cursor_position command without any pre-configured scope.","commands":{"allow":["cursor_position"],"deny":[]}},"allow-destroy":{"identifier":"allow-destroy","description":"Enables the destroy command without any pre-configured scope.","commands":{"allow":["destroy"],"deny":[]}},"allow-get-all-windows":{"identifier":"allow-get-all-windows","description":"Enables the get_all_windows command without any pre-configured scope.","commands":{"allow":["get_all_windows"],"deny":[]}},"allow-hide":{"identifier":"allow-hide","description":"Enables the hide command without any pre-configured scope.","commands":{"allow":["hide"],"deny":[]}},"allow-inner-position":{"identifier":"allow-inner-position","description":"Enables the inner_position command without any pre-configured scope.","commands":{"allow":["inner_position"],"deny":[]}},"allow-inner-size":{"identifier":"allow-inner-size","description":"Enables the inner_size command without any pre-configured scope.","commands":{"allow":["inner_size"],"deny":[]}},"allow-internal-toggle-maximize":{"identifier":"allow-internal-toggle-maximize","description":"Enables the internal_toggle_maximize command without any pre-configured scope.","commands":{"allow":["internal_toggle_maximize"],"deny":[]}},"allow-is-always-on-top":{"identifier":"allow-is-always-on-top","description":"Enables the is_always_on_top command without any pre-configured scope.","commands":{"allow":["is_always_on_top"],"deny":[]}},"allow-is-closable":{"identifier":"allow-is-closable","description":"Enables the is_closable command without any pre-configured scope.","commands":{"allow":["is_closable"],"deny":[]}},"allow-is-decorated":{"identifier":"allow-is-decorated","description":"Enables the is_decorated command without any pre-configured scope.","commands":{"allow":["is_decorated"],"deny":[]}},"allow-is-enabled":{"identifier":"allow-is-enabled","description":"Enables the is_enabled command without any pre-configured scope.","commands":{"allow":["is_enabled"],"deny":[]}},"allow-is-focused":{"identifier":"allow-is-focused","description":"Enables the is_focused command without any pre-configured scope.","commands":{"allow":["is_focused"],"deny":[]}},"allow-is-fullscreen":{"identifier":"allow-is-fullscreen","description":"Enables the is_fullscreen command without any pre-configured scope.","commands":{"allow":["is_fullscreen"],"deny":[]}},"allow-is-maximizable":{"identifier":"allow-is-maximizable","description":"Enables the is_maximizable command without any pre-configured scope.","commands":{"allow":["is_maximizable"],"deny":[]}},"allow-is-maximized":{"identifier":"allow-is-maximized","description":"Enables the is_maximized command without any pre-configured scope.","commands":{"allow":["is_maximized"],"deny":[]}},"allow-is-minimizable":{"identifier":"allow-is-minimizable","description":"Enables the is_minimizable command without any pre-configured scope.","commands":{"allow":["is_minimizable"],"deny":[]}},"allow-is-minimized":{"identifier":"allow-is-minimized","description":"Enables the is_minimized command without any pre-configured scope.","commands":{"allow":["is_minimized"],"deny":[]}},"allow-is-resizable":{"identifier":"allow-is-resizable","description":"Enables the is_resizable command without any pre-configured scope.","commands":{"allow":["is_resizable"],"deny":[]}},"allow-is-visible":{"identifier":"allow-is-visible","description":"Enables the is_visible command without any pre-configured scope.","commands":{"allow":["is_visible"],"deny":[]}},"allow-maximize":{"identifier":"allow-maximize","description":"Enables the maximize command without any pre-configured scope.","commands":{"allow":["maximize"],"deny":[]}},"allow-minimize":{"identifier":"allow-minimize","description":"Enables the minimize command without any pre-configured scope.","commands":{"allow":["minimize"],"deny":[]}},"allow-monitor-from-point":{"identifier":"allow-monitor-from-point","description":"Enables the monitor_from_point command without any pre-configured scope.","commands":{"allow":["monitor_from_point"],"deny":[]}},"allow-outer-position":{"identifier":"allow-outer-position","description":"Enables the outer_position command without any pre-configured scope.","commands":{"allow":["outer_position"],"deny":[]}},"allow-outer-size":{"identifier":"allow-outer-size","description":"Enables the outer_size command without any pre-configured scope.","commands":{"allow":["outer_size"],"deny":[]}},"allow-primary-monitor":{"identifier":"allow-primary-monitor","description":"Enables the primary_monitor command without any pre-configured scope.","commands":{"allow":["primary_monitor"],"deny":[]}},"allow-request-user-attention":{"identifier":"allow-request-user-attention","description":"Enables the request_user_attention command without any pre-configured scope.","commands":{"allow":["request_user_attention"],"deny":[]}},"allow-scale-factor":{"identifier":"allow-scale-factor","description":"Enables the scale_factor command without any pre-configured scope.","commands":{"allow":["scale_factor"],"deny":[]}},"allow-scene-identifier":{"identifier":"allow-scene-identifier","description":"Enables the scene_identifier command without any pre-configured scope.","commands":{"allow":["scene_identifier"],"deny":[]}},"allow-set-always-on-bottom":{"identifier":"allow-set-always-on-bottom","description":"Enables the set_always_on_bottom command without any pre-configured scope.","commands":{"allow":["set_always_on_bottom"],"deny":[]}},"allow-set-always-on-top":{"identifier":"allow-set-always-on-top","description":"Enables the set_always_on_top command without any pre-configured scope.","commands":{"allow":["set_always_on_top"],"deny":[]}},"allow-set-background-color":{"identifier":"allow-set-background-color","description":"Enables the set_background_color command without any pre-configured scope.","commands":{"allow":["set_background_color"],"deny":[]}},"allow-set-badge-count":{"identifier":"allow-set-badge-count","description":"Enables the set_badge_count command without any pre-configured scope.","commands":{"allow":["set_badge_count"],"deny":[]}},"allow-set-badge-label":{"identifier":"allow-set-badge-label","description":"Enables the set_badge_label command without any pre-configured scope.","commands":{"allow":["set_badge_label"],"deny":[]}},"allow-set-closable":{"identifier":"allow-set-closable","description":"Enables the set_closable command without any pre-configured scope.","commands":{"allow":["set_closable"],"deny":[]}},"allow-set-content-protected":{"identifier":"allow-set-content-protected","description":"Enables the set_content_protected command without any pre-configured scope.","commands":{"allow":["set_content_protected"],"deny":[]}},"allow-set-cursor-grab":{"identifier":"allow-set-cursor-grab","description":"Enables the set_cursor_grab command without any pre-configured scope.","commands":{"allow":["set_cursor_grab"],"deny":[]}},"allow-set-cursor-icon":{"identifier":"allow-set-cursor-icon","description":"Enables the set_cursor_icon command without any pre-configured scope.","commands":{"allow":["set_cursor_icon"],"deny":[]}},"allow-set-cursor-position":{"identifier":"allow-set-cursor-position","description":"Enables the set_cursor_position command without any pre-configured scope.","commands":{"allow":["set_cursor_position"],"deny":[]}},"allow-set-cursor-visible":{"identifier":"allow-set-cursor-visible","description":"Enables the set_cursor_visible command without any pre-configured scope.","commands":{"allow":["set_cursor_visible"],"deny":[]}},"allow-set-decorations":{"identifier":"allow-set-decorations","description":"Enables the set_decorations command without any pre-configured scope.","commands":{"allow":["set_decorations"],"deny":[]}},"allow-set-effects":{"identifier":"allow-set-effects","description":"Enables the set_effects command without any pre-configured scope.","commands":{"allow":["set_effects"],"deny":[]}},"allow-set-enabled":{"identifier":"allow-set-enabled","description":"Enables the set_enabled command without any pre-configured scope.","commands":{"allow":["set_enabled"],"deny":[]}},"allow-set-focus":{"identifier":"allow-set-focus","description":"Enables the set_focus command without any pre-configured scope.","commands":{"allow":["set_focus"],"deny":[]}},"allow-set-focusable":{"identifier":"allow-set-focusable","description":"Enables the set_focusable command without any pre-configured scope.","commands":{"allow":["set_focusable"],"deny":[]}},"allow-set-fullscreen":{"identifier":"allow-set-fullscreen","description":"Enables the set_fullscreen command without any pre-configured scope.","commands":{"allow":["set_fullscreen"],"deny":[]}},"allow-set-icon":{"identifier":"allow-set-icon","description":"Enables the set_icon command without any pre-configured scope.","commands":{"allow":["set_icon"],"deny":[]}},"allow-set-ignore-cursor-events":{"identifier":"allow-set-ignore-cursor-events","description":"Enables the set_ignore_cursor_events command without any pre-configured scope.","commands":{"allow":["set_ignore_cursor_events"],"deny":[]}},"allow-set-max-size":{"identifier":"allow-set-max-size","description":"Enables the set_max_size command without any pre-configured scope.","commands":{"allow":["set_max_size"],"deny":[]}},"allow-set-maximizable":{"identifier":"allow-set-maximizable","description":"Enables the set_maximizable command without any pre-configured scope.","commands":{"allow":["set_maximizable"],"deny":[]}},"allow-set-min-size":{"identifier":"allow-set-min-size","description":"Enables the set_min_size command without any pre-configured scope.","commands":{"allow":["set_min_size"],"deny":[]}},"allow-set-minimizable":{"identifier":"allow-set-minimizable","description":"Enables the set_minimizable command without any pre-configured scope.","commands":{"allow":["set_minimizable"],"deny":[]}},"allow-set-overlay-icon":{"identifier":"allow-set-overlay-icon","description":"Enables the set_overlay_icon command without any pre-configured scope.","commands":{"allow":["set_overlay_icon"],"deny":[]}},"allow-set-position":{"identifier":"allow-set-position","description":"Enables the set_position command without any pre-configured scope.","commands":{"allow":["set_position"],"deny":[]}},"allow-set-progress-bar":{"identifier":"allow-set-progress-bar","description":"Enables the set_progress_bar command without any pre-configured scope.","commands":{"allow":["set_progress_bar"],"deny":[]}},"allow-set-resizable":{"identifier":"allow-set-resizable","description":"Enables the set_resizable command without any pre-configured scope.","commands":{"allow":["set_resizable"],"deny":[]}},"allow-set-shadow":{"identifier":"allow-set-shadow","description":"Enables the set_shadow command without any pre-configured scope.","commands":{"allow":["set_shadow"],"deny":[]}},"allow-set-simple-fullscreen":{"identifier":"allow-set-simple-fullscreen","description":"Enables the set_simple_fullscreen command without any pre-configured scope.","commands":{"allow":["set_simple_fullscreen"],"deny":[]}},"allow-set-size":{"identifier":"allow-set-size","description":"Enables the set_size command without any pre-configured scope.","commands":{"allow":["set_size"],"deny":[]}},"allow-set-size-constraints":{"identifier":"allow-set-size-constraints","description":"Enables the set_size_constraints command without any pre-configured scope.","commands":{"allow":["set_size_constraints"],"deny":[]}},"allow-set-skip-taskbar":{"identifier":"allow-set-skip-taskbar","description":"Enables the set_skip_taskbar command without any pre-configured scope.","commands":{"allow":["set_skip_taskbar"],"deny":[]}},"allow-set-theme":{"identifier":"allow-set-theme","description":"Enables the set_theme command without any pre-configured scope.","commands":{"allow":["set_theme"],"deny":[]}},"allow-set-title":{"identifier":"allow-set-title","description":"Enables the set_title command without any pre-configured scope.","commands":{"allow":["set_title"],"deny":[]}},"allow-set-title-bar-style":{"identifier":"allow-set-title-bar-style","description":"Enables the set_title_bar_style command without any pre-configured scope.","commands":{"allow":["set_title_bar_style"],"deny":[]}},"allow-set-visible-on-all-workspaces":{"identifier":"allow-set-visible-on-all-workspaces","description":"Enables the set_visible_on_all_workspaces command without any pre-configured scope.","commands":{"allow":["set_visible_on_all_workspaces"],"deny":[]}},"allow-show":{"identifier":"allow-show","description":"Enables the show command without any pre-configured scope.","commands":{"allow":["show"],"deny":[]}},"allow-start-dragging":{"identifier":"allow-start-dragging","description":"Enables the start_dragging command without any pre-configured scope.","commands":{"allow":["start_dragging"],"deny":[]}},"allow-start-resize-dragging":{"identifier":"allow-start-resize-dragging","description":"Enables the start_resize_dragging command without any pre-configured scope.","commands":{"allow":["start_resize_dragging"],"deny":[]}},"allow-theme":{"identifier":"allow-theme","description":"Enables the theme command without any pre-configured scope.","commands":{"allow":["theme"],"deny":[]}},"allow-title":{"identifier":"allow-title","description":"Enables the title command without any pre-configured scope.","commands":{"allow":["title"],"deny":[]}},"allow-toggle-maximize":{"identifier":"allow-toggle-maximize","description":"Enables the toggle_maximize command without any pre-configured scope.","commands":{"allow":["toggle_maximize"],"deny":[]}},"allow-unmaximize":{"identifier":"allow-unmaximize","description":"Enables the unmaximize command without any pre-configured scope.","commands":{"allow":["unmaximize"],"deny":[]}},"allow-unminimize":{"identifier":"allow-unminimize","description":"Enables the unminimize command without any pre-configured scope.","commands":{"allow":["unminimize"],"deny":[]}},"deny-activity-name":{"identifier":"deny-activity-name","description":"Denies the activity_name command without any pre-configured scope.","commands":{"allow":[],"deny":["activity_name"]}},"deny-available-monitors":{"identifier":"deny-available-monitors","description":"Denies the available_monitors command without any pre-configured scope.","commands":{"allow":[],"deny":["available_monitors"]}},"deny-center":{"identifier":"deny-center","description":"Denies the center command without any pre-configured scope.","commands":{"allow":[],"deny":["center"]}},"deny-close":{"identifier":"deny-close","description":"Denies the close command without any pre-configured scope.","commands":{"allow":[],"deny":["close"]}},"deny-create":{"identifier":"deny-create","description":"Denies the create command without any pre-configured scope.","commands":{"allow":[],"deny":["create"]}},"deny-current-monitor":{"identifier":"deny-current-monitor","description":"Denies the current_monitor command without any pre-configured scope.","commands":{"allow":[],"deny":["current_monitor"]}},"deny-cursor-position":{"identifier":"deny-cursor-position","description":"Denies the cursor_position command without any pre-configured scope.","commands":{"allow":[],"deny":["cursor_position"]}},"deny-destroy":{"identifier":"deny-destroy","description":"Denies the destroy command without any pre-configured scope.","commands":{"allow":[],"deny":["destroy"]}},"deny-get-all-windows":{"identifier":"deny-get-all-windows","description":"Denies the get_all_windows command without any pre-configured scope.","commands":{"allow":[],"deny":["get_all_windows"]}},"deny-hide":{"identifier":"deny-hide","description":"Denies the hide command without any pre-configured scope.","commands":{"allow":[],"deny":["hide"]}},"deny-inner-position":{"identifier":"deny-inner-position","description":"Denies the inner_position command without any pre-configured scope.","commands":{"allow":[],"deny":["inner_position"]}},"deny-inner-size":{"identifier":"deny-inner-size","description":"Denies the inner_size command without any pre-configured scope.","commands":{"allow":[],"deny":["inner_size"]}},"deny-internal-toggle-maximize":{"identifier":"deny-internal-toggle-maximize","description":"Denies the internal_toggle_maximize command without any pre-configured scope.","commands":{"allow":[],"deny":["internal_toggle_maximize"]}},"deny-is-always-on-top":{"identifier":"deny-is-always-on-top","description":"Denies the is_always_on_top command without any pre-configured scope.","commands":{"allow":[],"deny":["is_always_on_top"]}},"deny-is-closable":{"identifier":"deny-is-closable","description":"Denies the is_closable command without any pre-configured scope.","commands":{"allow":[],"deny":["is_closable"]}},"deny-is-decorated":{"identifier":"deny-is-decorated","description":"Denies the is_decorated command without any pre-configured scope.","commands":{"allow":[],"deny":["is_decorated"]}},"deny-is-enabled":{"identifier":"deny-is-enabled","description":"Denies the is_enabled command without any pre-configured scope.","commands":{"allow":[],"deny":["is_enabled"]}},"deny-is-focused":{"identifier":"deny-is-focused","description":"Denies the is_focused command without any pre-configured scope.","commands":{"allow":[],"deny":["is_focused"]}},"deny-is-fullscreen":{"identifier":"deny-is-fullscreen","description":"Denies the is_fullscreen command without any pre-configured scope.","commands":{"allow":[],"deny":["is_fullscreen"]}},"deny-is-maximizable":{"identifier":"deny-is-maximizable","description":"Denies the is_maximizable command without any pre-configured scope.","commands":{"allow":[],"deny":["is_maximizable"]}},"deny-is-maximized":{"identifier":"deny-is-maximized","description":"Denies the is_maximized command without any pre-configured scope.","commands":{"allow":[],"deny":["is_maximized"]}},"deny-is-minimizable":{"identifier":"deny-is-minimizable","description":"Denies the is_minimizable command without any pre-configured scope.","commands":{"allow":[],"deny":["is_minimizable"]}},"deny-is-minimized":{"identifier":"deny-is-minimized","description":"Denies the is_minimized command without any pre-configured scope.","commands":{"allow":[],"deny":["is_minimized"]}},"deny-is-resizable":{"identifier":"deny-is-resizable","description":"Denies the is_resizable command without any pre-configured scope.","commands":{"allow":[],"deny":["is_resizable"]}},"deny-is-visible":{"identifier":"deny-is-visible","description":"Denies the is_visible command without any pre-configured scope.","commands":{"allow":[],"deny":["is_visible"]}},"deny-maximize":{"identifier":"deny-maximize","description":"Denies the maximize command without any pre-configured scope.","commands":{"allow":[],"deny":["maximize"]}},"deny-minimize":{"identifier":"deny-minimize","description":"Denies the minimize command without any pre-configured scope.","commands":{"allow":[],"deny":["minimize"]}},"deny-monitor-from-point":{"identifier":"deny-monitor-from-point","description":"Denies the monitor_from_point command without any pre-configured scope.","commands":{"allow":[],"deny":["monitor_from_point"]}},"deny-outer-position":{"identifier":"deny-outer-position","description":"Denies the outer_position command without any pre-configured scope.","commands":{"allow":[],"deny":["outer_position"]}},"deny-outer-size":{"identifier":"deny-outer-size","description":"Denies the outer_size command without any pre-configured scope.","commands":{"allow":[],"deny":["outer_size"]}},"deny-primary-monitor":{"identifier":"deny-primary-monitor","description":"Denies the primary_monitor command without any pre-configured scope.","commands":{"allow":[],"deny":["primary_monitor"]}},"deny-request-user-attention":{"identifier":"deny-request-user-attention","description":"Denies the request_user_attention command without any pre-configured scope.","commands":{"allow":[],"deny":["request_user_attention"]}},"deny-scale-factor":{"identifier":"deny-scale-factor","description":"Denies the scale_factor command without any pre-configured scope.","commands":{"allow":[],"deny":["scale_factor"]}},"deny-scene-identifier":{"identifier":"deny-scene-identifier","description":"Denies the scene_identifier command without any pre-configured scope.","commands":{"allow":[],"deny":["scene_identifier"]}},"deny-set-always-on-bottom":{"identifier":"deny-set-always-on-bottom","description":"Denies the set_always_on_bottom command without any pre-configured scope.","commands":{"allow":[],"deny":["set_always_on_bottom"]}},"deny-set-always-on-top":{"identifier":"deny-set-always-on-top","description":"Denies the set_always_on_top command without any pre-configured scope.","commands":{"allow":[],"deny":["set_always_on_top"]}},"deny-set-background-color":{"identifier":"deny-set-background-color","description":"Denies the set_background_color command without any pre-configured scope.","commands":{"allow":[],"deny":["set_background_color"]}},"deny-set-badge-count":{"identifier":"deny-set-badge-count","description":"Denies the set_badge_count command without any pre-configured scope.","commands":{"allow":[],"deny":["set_badge_count"]}},"deny-set-badge-label":{"identifier":"deny-set-badge-label","description":"Denies the set_badge_label command without any pre-configured scope.","commands":{"allow":[],"deny":["set_badge_label"]}},"deny-set-closable":{"identifier":"deny-set-closable","description":"Denies the set_closable command without any pre-configured scope.","commands":{"allow":[],"deny":["set_closable"]}},"deny-set-content-protected":{"identifier":"deny-set-content-protected","description":"Denies the set_content_protected command without any pre-configured scope.","commands":{"allow":[],"deny":["set_content_protected"]}},"deny-set-cursor-grab":{"identifier":"deny-set-cursor-grab","description":"Denies the set_cursor_grab command without any pre-configured scope.","commands":{"allow":[],"deny":["set_cursor_grab"]}},"deny-set-cursor-icon":{"identifier":"deny-set-cursor-icon","description":"Denies the set_cursor_icon command without any pre-configured scope.","commands":{"allow":[],"deny":["set_cursor_icon"]}},"deny-set-cursor-position":{"identifier":"deny-set-cursor-position","description":"Denies the set_cursor_position command without any pre-configured scope.","commands":{"allow":[],"deny":["set_cursor_position"]}},"deny-set-cursor-visible":{"identifier":"deny-set-cursor-visible","description":"Denies the set_cursor_visible command without any pre-configured scope.","commands":{"allow":[],"deny":["set_cursor_visible"]}},"deny-set-decorations":{"identifier":"deny-set-decorations","description":"Denies the set_decorations command without any pre-configured scope.","commands":{"allow":[],"deny":["set_decorations"]}},"deny-set-effects":{"identifier":"deny-set-effects","description":"Denies the set_effects command without any pre-configured scope.","commands":{"allow":[],"deny":["set_effects"]}},"deny-set-enabled":{"identifier":"deny-set-enabled","description":"Denies the set_enabled command without any pre-configured scope.","commands":{"allow":[],"deny":["set_enabled"]}},"deny-set-focus":{"identifier":"deny-set-focus","description":"Denies the set_focus command without any pre-configured scope.","commands":{"allow":[],"deny":["set_focus"]}},"deny-set-focusable":{"identifier":"deny-set-focusable","description":"Denies the set_focusable command without any pre-configured scope.","commands":{"allow":[],"deny":["set_focusable"]}},"deny-set-fullscreen":{"identifier":"deny-set-fullscreen","description":"Denies the set_fullscreen command without any pre-configured scope.","commands":{"allow":[],"deny":["set_fullscreen"]}},"deny-set-icon":{"identifier":"deny-set-icon","description":"Denies the set_icon command without any pre-configured scope.","commands":{"allow":[],"deny":["set_icon"]}},"deny-set-ignore-cursor-events":{"identifier":"deny-set-ignore-cursor-events","description":"Denies the set_ignore_cursor_events command without any pre-configured scope.","commands":{"allow":[],"deny":["set_ignore_cursor_events"]}},"deny-set-max-size":{"identifier":"deny-set-max-size","description":"Denies the set_max_size command without any pre-configured scope.","commands":{"allow":[],"deny":["set_max_size"]}},"deny-set-maximizable":{"identifier":"deny-set-maximizable","description":"Denies the set_maximizable command without any pre-configured scope.","commands":{"allow":[],"deny":["set_maximizable"]}},"deny-set-min-size":{"identifier":"deny-set-min-size","description":"Denies the set_min_size command without any pre-configured scope.","commands":{"allow":[],"deny":["set_min_size"]}},"deny-set-minimizable":{"identifier":"deny-set-minimizable","description":"Denies the set_minimizable command without any pre-configured scope.","commands":{"allow":[],"deny":["set_minimizable"]}},"deny-set-overlay-icon":{"identifier":"deny-set-overlay-icon","description":"Denies the set_overlay_icon command without any pre-configured scope.","commands":{"allow":[],"deny":["set_overlay_icon"]}},"deny-set-position":{"identifier":"deny-set-position","description":"Denies the set_position command without any pre-configured scope.","commands":{"allow":[],"deny":["set_position"]}},"deny-set-progress-bar":{"identifier":"deny-set-progress-bar","description":"Denies the set_progress_bar command without any pre-configured scope.","commands":{"allow":[],"deny":["set_progress_bar"]}},"deny-set-resizable":{"identifier":"deny-set-resizable","description":"Denies the set_resizable command without any pre-configured scope.","commands":{"allow":[],"deny":["set_resizable"]}},"deny-set-shadow":{"identifier":"deny-set-shadow","description":"Denies the set_shadow command without any pre-configured scope.","commands":{"allow":[],"deny":["set_shadow"]}},"deny-set-simple-fullscreen":{"identifier":"deny-set-simple-fullscreen","description":"Denies the set_simple_fullscreen command without any pre-configured scope.","commands":{"allow":[],"deny":["set_simple_fullscreen"]}},"deny-set-size":{"identifier":"deny-set-size","description":"Denies the set_size command without any pre-configured scope.","commands":{"allow":[],"deny":["set_size"]}},"deny-set-size-constraints":{"identifier":"deny-set-size-constraints","description":"Denies the set_size_constraints command without any pre-configured scope.","commands":{"allow":[],"deny":["set_size_constraints"]}},"deny-set-skip-taskbar":{"identifier":"deny-set-skip-taskbar","description":"Denies the set_skip_taskbar command without any pre-configured scope.","commands":{"allow":[],"deny":["set_skip_taskbar"]}},"deny-set-theme":{"identifier":"deny-set-theme","description":"Denies the set_theme command without any pre-configured scope.","commands":{"allow":[],"deny":["set_theme"]}},"deny-set-title":{"identifier":"deny-set-title","description":"Denies the set_title command without any pre-configured scope.","commands":{"allow":[],"deny":["set_title"]}},"deny-set-title-bar-style":{"identifier":"deny-set-title-bar-style","description":"Denies the set_title_bar_style command without any pre-configured scope.","commands":{"allow":[],"deny":["set_title_bar_style"]}},"deny-set-visible-on-all-workspaces":{"identifier":"deny-set-visible-on-all-workspaces","description":"Denies the set_visible_on_all_workspaces command without any pre-configured scope.","commands":{"allow":[],"deny":["set_visible_on_all_workspaces"]}},"deny-show":{"identifier":"deny-show","description":"Denies the show command without any pre-configured scope.","commands":{"allow":[],"deny":["show"]}},"deny-start-dragging":{"identifier":"deny-start-dragging","description":"Denies the start_dragging command without any pre-configured scope.","commands":{"allow":[],"deny":["start_dragging"]}},"deny-start-resize-dragging":{"identifier":"deny-start-resize-dragging","description":"Denies the start_resize_dragging command without any pre-configured scope.","commands":{"allow":[],"deny":["start_resize_dragging"]}},"deny-theme":{"identifier":"deny-theme","description":"Denies the theme command without any pre-configured scope.","commands":{"allow":[],"deny":["theme"]}},"deny-title":{"identifier":"deny-title","description":"Denies the title command without any pre-configured scope.","commands":{"allow":[],"deny":["title"]}},"deny-toggle-maximize":{"identifier":"deny-toggle-maximize","description":"Denies the toggle_maximize command without any pre-configured scope.","commands":{"allow":[],"deny":["toggle_maximize"]}},"deny-unmaximize":{"identifier":"deny-unmaximize","description":"Denies the unmaximize command without any pre-configured scope.","commands":{"allow":[],"deny":["unmaximize"]}},"deny-unminimize":{"identifier":"deny-unminimize","description":"Denies the unminimize command without any pre-configured scope.","commands":{"allow":[],"deny":["unminimize"]}}},"permission_sets":{},"global_scope_schema":null},"shell":{"default_permission":{"identifier":"default","description":"This permission set configures which\nshell functionality is exposed by default.\n\n#### Granted Permissions\n\nIt allows to use the `open` functionality with a reasonable\nscope pre-configured. It will allow opening `http(s)://`,\n`tel:` and `mailto:` links.\n","permissions":["allow-open"]},"permissions":{"allow-execute":{"identifier":"allow-execute","description":"Enables the execute command without any pre-configured scope.","commands":{"allow":["execute"],"deny":[]}},"allow-kill":{"identifier":"allow-kill","description":"Enables the kill command without any pre-configured scope.","commands":{"allow":["kill"],"deny":[]}},"allow-open":{"identifier":"allow-open","description":"Enables the open command without any pre-configured scope.","commands":{"allow":["open"],"deny":[]}},"allow-spawn":{"identifier":"allow-spawn","description":"Enables the spawn command without any pre-configured scope.","commands":{"allow":["spawn"],"deny":[]}},"allow-stdin-write":{"identifier":"allow-stdin-write","description":"Enables the stdin_write command without any pre-configured scope.","commands":{"allow":["stdin_write"],"deny":[]}},"deny-execute":{"identifier":"deny-execute","description":"Denies the execute command without any pre-configured scope.","commands":{"allow":[],"deny":["execute"]}},"deny-kill":{"identifier":"deny-kill","description":"Denies the kill command without any pre-configured scope.","commands":{"allow":[],"deny":["kill"]}},"deny-open":{"identifier":"deny-open","description":"Denies the open command without any pre-configured scope.","commands":{"allow":[],"deny":["open"]}},"deny-spawn":{"identifier":"deny-spawn","description":"Denies the spawn command without any pre-configured scope.","commands":{"allow":[],"deny":["spawn"]}},"deny-stdin-write":{"identifier":"deny-stdin-write","description":"Denies the stdin_write command without any pre-configured scope.","commands":{"allow":[],"deny":["stdin_write"]}}},"permission_sets":{},"global_scope_schema":{"$schema":"http://json-schema.org/draft-07/schema#","anyOf":[{"additionalProperties":false,"properties":{"args":{"allOf":[{"$ref":"#/definitions/ShellScopeEntryAllowedArgs"}],"description":"The allowed arguments for the command execution."},"cmd":{"description":"The command name. It can start with a variable that resolves to a system base directory. The variables are: `$AUDIO`, `$CACHE`, `$CONFIG`, `$DATA`, `$LOCALDATA`, `$DESKTOP`, `$DOCUMENT`, `$DOWNLOAD`, `$EXE`, `$FONT`, `$HOME`, `$PICTURE`, `$PUBLIC`, `$RUNTIME`, `$TEMPLATE`, `$VIDEO`, `$RESOURCE`, `$LOG`, `$TEMP`, `$APPCONFIG`, `$APPDATA`, `$APPLOCALDATA`, `$APPCACHE`, `$APPLOG`.","type":"string"},"name":{"description":"The name for this allowed shell command configuration.\n\nThis name will be used inside of the webview API to call this command along with any specified arguments.","type":"string"}},"required":["cmd","name"],"type":"object"},{"additionalProperties":false,"properties":{"args":{"allOf":[{"$ref":"#/definitions/ShellScopeEntryAllowedArgs"}],"description":"The allowed arguments for the command execution."},"name":{"description":"The name for this allowed shell command configuration.\n\nThis name will be used inside of the webview API to call this command along with any specified arguments.","type":"string"},"sidecar":{"description":"If this command is a sidecar command.","type":"boolean"}},"required":["name","sidecar"],"type":"object"}],"definitions":{"ShellScopeEntryAllowedArg":{"anyOf":[{"description":"A non-configurable argument that is passed to the command in the order it was specified.","type":"string"},{"additionalProperties":false,"description":"A variable that is set while calling the command from the webview API.","properties":{"raw":{"default":false,"description":"Marks the validator as a raw regex, meaning the plugin should not make any modification at runtime.\n\nThis means the regex will not match on the entire string by default, which might be exploited if your regex allow unexpected input to be considered valid. When using this option, make sure your regex is correct.","type":"boolean"},"validator":{"description":"[regex] validator to require passed values to conform to an expected input.\n\nThis will require the argument value passed to this variable to match the `validator` regex before it will be executed.\n\nThe regex string is by default surrounded by `^...$` to match the full string. For example the `https?://\\w+` regex would be registered as `^https?://\\w+$`.\n\n[regex]: <https://docs.rs/regex/latest/regex/#syntax>","type":"string"}},"required":["validator"],"type":"object"}],"description":"A command argument allowed to be executed by the webview API."},"ShellScopeEntryAllowedArgs":{"anyOf":[{"description":"Use a simple boolean to allow all or disable all arguments to this command configuration.","type":"boolean"},{"description":"A specific set of [`ShellScopeEntryAllowedArg`] that are valid to call for the command configuration.","items":{"$ref":"#/definitions/ShellScopeEntryAllowedArg"},"type":"array"}],"description":"A set of command arguments allowed to be executed by the webview API.\n\nA value of `true` will allow any arguments to be passed to the command. `false` will disable all arguments. A list of [`ShellScopeEntryAllowedArg`] will set those arguments as the only valid arguments to be passed to the attached command configuration."}},"description":"Shell scope entry.","title":"ShellScopeEntry"}}}
-````
-
-## File: desktop/src-tauri/gen/schemas/capabilities.json
-````json
-{}
 ````
 
 ## File: desktop/src-tauri/gen/schemas/desktop-schema.json
@@ -8014,184 +6610,6 @@ CREATE POLICY "Users can delete own project tasks"
   );
 ````
 
-## File: docs/supabase-schema.sql
-````sql
--- Clarity Supabase Schema Migration
--- Run this in Supabase SQL Editor after creating your project
-
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- ============================================================================
--- PROFILES TABLE
--- ============================================================================
--- Supabase Auth creates auth.users automatically
--- We create a profiles table for additional user data
-CREATE TABLE profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  username TEXT UNIQUE NOT NULL,
-  email TEXT UNIQUE NOT NULL,
-  avatar_url TEXT,
-  diary_pin_hash TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ============================================================================
--- TASKS TABLE
--- ============================================================================
-CREATE TABLE tasks (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  description TEXT,
-  completed BOOLEAN DEFAULT FALSE,
-  due_at TIMESTAMPTZ,
-  remind_at TIMESTAMPTZ,
-  reminder_sent BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  deleted_at TIMESTAMPTZ
-);
-
--- ============================================================================
--- DIARY ENTRIES TABLE
--- ============================================================================
-CREATE TABLE diary_entries (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  date DATE NOT NULL,
-  body TEXT DEFAULT '',
-  mood TEXT CHECK (mood IN ('HAPPY', 'NEUTRAL', 'SAD', 'ANXIOUS', 'EXCITED')),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  deleted_at TIMESTAMPTZ,
-  UNIQUE(user_id, date)
-);
-
--- ============================================================================
--- CALENDAR EVENTS TABLE
--- ============================================================================
-CREATE TABLE calendar_events (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  description TEXT,
-  event_date DATE NOT NULL,
-  start_at TIMESTAMPTZ,
-  end_at TIMESTAMPTZ,
-  event_type TEXT DEFAULT 'NOTE' CHECK (event_type IN ('TASK', 'NOTE')),
-  remind_at TIMESTAMPTZ,
-  reminder_sent BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  deleted_at TIMESTAMPTZ
-);
-
--- ============================================================================
--- EXPENSES TABLE
--- ============================================================================
-CREATE TABLE expenses (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  amount NUMERIC(12,2) NOT NULL,
-  category TEXT NOT NULL,
-  description TEXT,
-  date DATE NOT NULL,
-  expense_type TEXT DEFAULT 'EXPENSE' CHECK (expense_type IN ('EXPENSE', 'INCOME')),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  deleted_at TIMESTAMPTZ
-);
-
--- ============================================================================
--- PROJECTS TABLE
--- ============================================================================
-CREATE TABLE projects (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  description TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  deleted_at TIMESTAMPTZ
-);
-
--- ============================================================================
--- PROJECT TASKS TABLE
--- ============================================================================
-CREATE TABLE project_tasks (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  description TEXT,
-  status TEXT DEFAULT 'TODO' CHECK (status IN ('TODO', 'IN_PROGRESS', 'DONE')),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  deleted_at TIMESTAMPTZ
-);
-
--- ============================================================================
--- INDEXES FOR PERFORMANCE
--- ============================================================================
-CREATE INDEX idx_tasks_user_id ON tasks(user_id) WHERE deleted_at IS NULL;
-CREATE INDEX idx_tasks_due_at ON tasks(due_at) WHERE deleted_at IS NULL;
-CREATE INDEX idx_tasks_updated_at ON tasks(updated_at);
-
-CREATE INDEX idx_diary_user_date ON diary_entries(user_id, date) WHERE deleted_at IS NULL;
-CREATE INDEX idx_diary_updated_at ON diary_entries(updated_at);
-
-CREATE INDEX idx_calendar_user_date ON calendar_events(user_id, event_date) WHERE deleted_at IS NULL;
-CREATE INDEX idx_calendar_updated_at ON calendar_events(updated_at);
-
-CREATE INDEX idx_expenses_user_date ON expenses(user_id, date) WHERE deleted_at IS NULL;
-CREATE INDEX idx_expenses_updated_at ON expenses(updated_at);
-
-CREATE INDEX idx_projects_user_id ON projects(user_id) WHERE deleted_at IS NULL;
-CREATE INDEX idx_projects_updated_at ON projects(updated_at);
-
-CREATE INDEX idx_project_tasks_project_id ON project_tasks(project_id) WHERE deleted_at IS NULL;
-
--- ============================================================================
--- TRIGGERS TO AUTO-UPDATE updated_at
--- ============================================================================
-CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER profiles_updated_at
-  BEFORE UPDATE ON profiles
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
-CREATE TRIGGER tasks_updated_at
-  BEFORE UPDATE ON tasks
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
-CREATE TRIGGER diary_updated_at
-  BEFORE UPDATE ON diary_entries
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
-CREATE TRIGGER calendar_updated_at
-  BEFORE UPDATE ON calendar_events
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
-CREATE TRIGGER expenses_updated_at
-  BEFORE UPDATE ON expenses
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
-CREATE TRIGGER projects_updated_at
-  BEFORE UPDATE ON projects
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
-CREATE TRIGGER project_tasks_updated_at
-  BEFORE UPDATE ON project_tasks
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-````
-
 ## File: AUDIT_SYNTHESIS_AND_ACTION_PLAN.md
 ````markdown
 # Clarity — Comprehensive Multi-Agent Audit Analysis & Action Plan
@@ -8681,475 +7099,108 @@ This document archives the planned micro-interactions, sensory animations, and k
 *Catalog created: 2026-09-24*
 ````
 
-## File: backend/src/main/java/com/clarity/controller/AuthController.java
-````java
-package com.clarity.controller;
-
-import com.clarity.dto.AuthDto;
-import com.clarity.service.AuthService;
-import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-@RestController
-@RequestMapping("/api/auth")
-@RequiredArgsConstructor
-public class AuthController {
-
-    private final AuthService authService;
-
-    @PostMapping("/register")
-    public ResponseEntity<AuthDto.TokenResponse> register(@Valid @RequestBody AuthDto.RegisterRequest req) {
-        return ResponseEntity.ok(authService.register(req));
-    }
-
-    @PostMapping("/login")
-    public ResponseEntity<AuthDto.TokenResponse> login(@Valid @RequestBody AuthDto.LoginRequest req) {
-        return ResponseEntity.ok(authService.login(req));
-    }
-
-    @PostMapping("/google")
-    public ResponseEntity<AuthDto.TokenResponse> googleLogin(@Valid @RequestBody AuthDto.GoogleAuthRequest req) {
-        return ResponseEntity.ok(authService.googleLogin(req.getIdToken()));
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/dto/AuthDto.java
-````java
-package com.clarity.dto;
-
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
-import lombok.Data;
-
-public class AuthDto {
-
-    @Data
-    public static class RegisterRequest {
-        @NotBlank @Size(min = 3, max = 50)
-        private String username;
-
-        @NotBlank @Email
-        private String email;
-
-        @NotBlank @Size(min = 6)
-        private String password;
-    }
-
-    @Data
-    public static class LoginRequest {
-        @NotBlank private String username;
-        @NotBlank private String password;
-    }
-
-    @Data
-    public static class GoogleAuthRequest {
-        @NotBlank
-        private String idToken;
-    }
-
-    @Data
-    public static class TokenResponse {
-        private final String token;
-        private final Long userId;
-        private final String username;
-        private final String email;
-        private final String avatarUrl;
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/model/User.java
-````java
-package com.clarity.model;
-
-import jakarta.persistence.*;
-import lombok.*;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.userdetails.UserDetails;
-
-import java.time.Instant;
-import java.util.Collection;
-import java.util.List;
-
-@Entity
-@Table(name = "users")
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-public class User implements UserDetails {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Column(nullable = false, unique = true, length = 50)
-    private String username;
-
-    @Column(nullable = false, unique = true)
-    private String email;
-
-    @Column
-    private String password;
-
-    @Column(name = "google_id", unique = true)
-    private String googleId;
-
-    @Column(name = "avatar_url")
-    private String avatarUrl;
-
-    @Column(name = "auth_provider", nullable = false)
-    private String authProvider = "LOCAL";
-
-    /** BCrypt hash of the 4–6 digit diary PIN */
-    @Column(name = "diary_pin_hash")
-    private String diaryPinHash;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @PrePersist
-    void onCreate() { this.createdAt = Instant.now(); }
-
-    // --- UserDetails boilerplate ---
-    @Override public Collection<? extends GrantedAuthority> getAuthorities() { return List.of(); }
-    @Override public boolean isAccountNonExpired()    { return true; }
-    @Override public boolean isAccountNonLocked()    { return true; }
-    @Override public boolean isCredentialsNonExpired(){ return true; }
-    @Override public boolean isEnabled()             { return true; }
-}
-````
-
-## File: backend/src/main/java/com/clarity/repository/UserRepository.java
-````java
-package com.clarity.repository;
-
-import com.clarity.model.User;
-import org.springframework.data.jpa.repository.JpaRepository;
-
-import java.util.Optional;
-
-public interface UserRepository extends JpaRepository<User, Long> {
-    Optional<User> findByUsername(String username);
-    Optional<User> findByEmail(String email);
-    Optional<User> findByGoogleId(String googleId);
-    boolean existsByUsername(String username);
-    boolean existsByEmail(String email);
-}
-````
-
-## File: backend/src/main/java/com/clarity/security/JwtAuthFilter.java
-````java
-package com.clarity.security;
-
-import com.clarity.repository.UserRepository;
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
-import org.springframework.stereotype.Component;
-import org.springframework.web.filter.OncePerRequestFilter;
-import io.jsonwebtoken.JwtException;
-
-import java.io.IOException;
-
-@Component
-@RequiredArgsConstructor
-public class JwtAuthFilter extends OncePerRequestFilter {
-
-    private final JwtUtil jwtUtil;
-    private final UserRepository userRepository;
-
-    @Override
-    protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain chain)
-            throws ServletException, IOException {
-
-        String authHeader = request.getHeader("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            chain.doFilter(request, response);
-            return;
-        }
-
-        String token = authHeader.substring(7);
-        String username;
-        try {
-            username = jwtUtil.extractUsername(token);
-        } catch (JwtException e) {
-            chain.doFilter(request, response);
-            return;
-        }
-
-        if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails user = userRepository.findByUsername(username).orElse(null);
-            if (user != null && jwtUtil.isValid(token, user)) {
-                var auth = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
-                auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(auth);
-            }
-        }
-        chain.doFilter(request, response);
-    }
-}
-````
-
-## File: backend/src/main/java/com/clarity/service/AuthService.java
-````java
-package com.clarity.service;
-
-import com.clarity.dto.AuthDto;
-import com.clarity.model.User;
-import com.clarity.repository.UserRepository;
-import com.clarity.security.JwtUtil;
-import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
-import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
-import com.google.api.client.http.javanet.NetHttpTransport;
-import com.google.api.client.json.gson.GsonFactory;
-import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
-
-import java.util.Collections;
-
-@Service
-@RequiredArgsConstructor
-public class AuthService {
-
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final JwtUtil jwtUtil;
-    private final AuthenticationManager authenticationManager;
-
-    @Value("${clarity.google.client-id}")
-    private String googleClientId;
-
-    public AuthDto.TokenResponse register(AuthDto.RegisterRequest req) {
-        if (userRepository.existsByUsername(req.getUsername()))
-            throw new IllegalArgumentException("Username already taken");
-        if (userRepository.existsByEmail(req.getEmail()))
-            throw new IllegalArgumentException("Email already registered");
-
-        User user = User.builder()
-                .username(req.getUsername())
-                .email(req.getEmail())
-                .password(passwordEncoder.encode(req.getPassword()))
-                .authProvider("LOCAL")
-                .build();
-        userRepository.save(user);
-
-        return new AuthDto.TokenResponse(
-                jwtUtil.generateToken(user),
-                user.getId(),
-                user.getUsername(),
-                user.getEmail(),
-                user.getAvatarUrl()
-        );
-    }
-
-    public AuthDto.TokenResponse login(AuthDto.LoginRequest req) {
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(req.getUsername(), req.getPassword()));
-
-        User user = userRepository.findByUsername(req.getUsername())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        return new AuthDto.TokenResponse(
-                jwtUtil.generateToken(user),
-                user.getId(),
-                user.getUsername(),
-                user.getEmail(),
-                user.getAvatarUrl()
-        );
-    }
-
-    public AuthDto.TokenResponse googleLogin(String idToken) {
-        try {
-            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(
-                    new NetHttpTransport(), GsonFactory.getDefaultInstance())
-                    .setAudience(Collections.singletonList(googleClientId))
-                    .build();
-
-            GoogleIdToken googleToken = verifier.verify(idToken);
-            if (googleToken == null) {
-                throw new IllegalArgumentException("Invalid Google ID token");
-            }
-
-            GoogleIdToken.Payload payload = googleToken.getPayload();
-            String googleId = payload.getSubject();
-            String email = payload.getEmail();
-            String name = (String) payload.get("name");
-            String pictureUrl = (String) payload.get("picture");
-
-            // Find by googleId first, then by email (to link existing accounts)
-            User user = userRepository.findByGoogleId(googleId)
-                    .or(() -> userRepository.findByEmail(email))
-                    .orElse(null);
-
-            if (user == null) {
-                // Create new Google user
-                String username = email.split("@")[0];
-                // Ensure unique username
-                if (userRepository.existsByUsername(username)) {
-                    username = username + "_" + googleId.substring(0, 6);
-                }
-                user = User.builder()
-                        .username(username)
-                        .email(email)
-                        .googleId(googleId)
-                        .avatarUrl(pictureUrl)
-                        .authProvider("GOOGLE")
-                        .password(null)
-                        .build();
-                userRepository.save(user);
-            } else {
-                // Link Google account if not already linked
-                if (user.getGoogleId() == null) {
-                    user.setGoogleId(googleId);
-                    user.setAuthProvider("GOOGLE");
-                }
-                if (pictureUrl != null) {
-                    user.setAvatarUrl(pictureUrl);
-                }
-                userRepository.save(user);
-            }
-
-            return new AuthDto.TokenResponse(
-                    jwtUtil.generateToken(user),
-                    user.getId(),
-                    user.getUsername(),
-                    user.getEmail(),
-                    user.getAvatarUrl()
-            );
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Google authentication failed: " + e.getMessage());
-        }
-    }
-}
-````
-
-## File: desktop/src/lib/sound.ts
+## File: desktop/src/lib/dataCache.ts
 ````typescript
-// Tactile Synthesized Audio Engine for Clarity
-// Uses browser Web Audio API - Zero external files, zero latency, zero bandwidth
+/**
+ * Clarity SWR In-Memory Cache
+ * Provides zero-latency tab switching (0ms) by serving fresh in-memory data
+ * while silently revalidating in the background.
+ */
 
-class SoundEngine {
-  private ctx: AudioContext | null = null;
-  private muted: boolean = false;
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
 
-  constructor() {
-    // Check user preference in localStorage
-    try {
-      this.muted = localStorage.getItem('clarity_sound_muted') === 'true';
-    } catch {
-      this.muted = false;
+const cache = new Map<string, CacheEntry<unknown>>();
+const listeners = new Map<string, Set<(data: any) => void>>();
+
+// Default TTL: 30 seconds
+const DEFAULT_MAX_AGE_MS = 30_000;
+
+export const dataCache = {
+  get<T>(key: string, maxAgeMs = DEFAULT_MAX_AGE_MS): T | null {
+    const entry = cache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > maxAgeMs) {
+      // Stale, but caller can still use it for SWR if desired
+      return entry.data as T;
     }
-  }
+    return entry.data as T;
+  },
 
-  private getContext(): AudioContext | null {
-    if (this.muted) return null;
-    if (!this.ctx) {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (AudioCtx) {
-        this.ctx = new AudioCtx();
+  isStale(key: string, maxAgeMs = DEFAULT_MAX_AGE_MS): boolean {
+    const entry = cache.get(key);
+    if (!entry) return true;
+    return Date.now() - entry.timestamp > maxAgeMs;
+  },
+
+  set<T>(key: string, data: T): void {
+    cache.set(key, { data, timestamp: Date.now() });
+    const callbacks = listeners.get(key);
+    if (callbacks) {
+      callbacks.forEach((cb) => cb(data));
+    }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("clarity:data-updated", { detail: { prefix: key } })
+      );
+    }
+  },
+
+  invalidate(prefix?: string): void {
+    if (!prefix) {
+      cache.clear();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("clarity:data-updated", { detail: { prefix: "" } })
+        );
+      }
+      return;
+    }
+    for (const key of cache.keys()) {
+      if (key.startsWith(prefix)) {
+        cache.delete(key);
       }
     }
-    if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("clarity:data-updated", { detail: { prefix } })
+      );
     }
-    return this.ctx;
-  }
+  },
 
-  public isMuted(): boolean {
-    return this.muted;
-  }
+  subscribe<T>(key: string, callback: (data: T) => void): () => void {
+    if (!listeners.has(key)) {
+      listeners.set(key, new Set());
+    }
+    listeners.get(key)!.add(callback);
+    return () => {
+      listeners.get(key)?.delete(callback);
+    };
+  },
+};
+````
 
-  public toggleMute(): boolean {
-    this.muted = !this.muted;
-    try {
-      localStorage.setItem('clarity_sound_muted', String(this.muted));
-    } catch {}
-    return this.muted;
-  }
-
-  // 15ms tactile organic pop (checkboxes, mood chips, buttons)
-  public pop(pitch: number = 1) {
-    const ctx = this.getContext();
-    if (!ctx) return;
-    try {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'triangle';
-      const baseFreq = 650 * pitch;
-      const endFreq = 180 * pitch;
-      osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(endFreq, ctx.currentTime + 0.025);
-      
-      gain.gain.setValueAtTime(0.045, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.025);
-      
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.025);
-    } catch {}
-  }
-
-  // Paper turn / gentle navigation swoosh
-  public pageTurn() {
-    const ctx = this.getContext();
-    if (!ctx) return;
-    try {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(320, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(140, ctx.currentTime + 0.04);
-      
-      gain.gain.setValueAtTime(0.03, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.04);
-      
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.04);
-    } catch {}
-  }
-
-  // Satisfying harmonic chime (All tasks completed / Milestone)
-  public chime() {
-    const ctx = this.getContext();
-    if (!ctx) return;
-    try {
-      const now = ctx.currentTime;
-      [523.25, 659.25, 783.99].forEach((freq, i) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, now + i * 0.06);
-        
-        gain.gain.setValueAtTime(0.04, now + i * 0.06);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.35);
-        
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(now + i * 0.06);
-        osc.stop(now + i * 0.06 + 0.35);
-      });
-    } catch {}
-  }
+## File: desktop/src-tauri/capabilities/default.json
+````json
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default permissions for Clarity window controls",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "shell:default"
+  ]
 }
-
-export const sound = new SoundEngine();
 ````
 
 ## File: desktop/src-tauri/Cargo.toml
@@ -9235,388 +7286,1296 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 ````
 
-## File: backend/src/main/java/com/clarity/config/CorsConfig.java
-````java
-package com.clarity.config;
+## File: docs/supabase-schema.sql
+````sql
+-- Clarity Supabase Schema Migration
+-- Run this in Supabase SQL Editor after creating your project
 
-import org.springframework.context.annotation.Configuration;
-import org.springframework.web.servlet.config.annotation.CorsRegistry;
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+-- Enable UUID extension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-@Configuration
-public class CorsConfig implements WebMvcConfigurer {
+-- ============================================================================
+-- PROFILES TABLE
+-- ============================================================================
+-- Supabase Auth creates auth.users automatically
+-- We create a profiles table for additional user data
+CREATE TABLE IF NOT EXISTS profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  username TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  avatar_url TEXT,
+  diary_pin_hash TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
-    @Override
-    public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/api/**")
-                .allowedOrigins(
-                        "http://localhost:5173",
-                        "http://localhost:8081",
-                        "http://localhost:19000",
-                        "http://localhost:19006",
-                        "tauri://localhost",
-                        "http://tauri.localhost",
-                        "https://tauri.localhost",
-                        "exp://localhost:19000"
-                )
-                .allowedOriginPatterns(
-                        "http://localhost:*",
-                        "http://127.0.0.1:*",
-                        "http://192.168.*:*",
-                        "http://10.0.2.2:*"
-                )
-                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-                .allowedHeaders("*")
-                .allowCredentials(true);
-    }
-}
+-- ============================================================================
+-- PROJECTS TABLE (Declared before tasks for foreign key reference)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS projects (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ
+);
+
+-- ============================================================================
+-- TASKS TABLE
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS tasks (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  completed BOOLEAN DEFAULT FALSE,
+  status TEXT DEFAULT 'TODO' CHECK (status IN ('TODO', 'IN_PROGRESS', 'DONE')),
+  due_at TIMESTAMPTZ,
+  remind_at TIMESTAMPTZ,
+  reminder_sent BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ
+);
+
+-- ============================================================================
+-- DIARY ENTRIES TABLE
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS diary_entries (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  date DATE NOT NULL,
+  body TEXT DEFAULT '',
+  mood TEXT CHECK (mood IN ('Energized', 'Peaceful', 'Productive', 'Chilled', 'Tired', 'Thoughtful')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ,
+  UNIQUE(user_id, date)
+);
+
+-- ============================================================================
+-- CALENDAR EVENTS TABLE
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS calendar_events (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  event_date DATE NOT NULL,
+  start_at TIMESTAMPTZ,
+  end_at TIMESTAMPTZ,
+  event_type TEXT DEFAULT 'NOTE' CHECK (event_type IN ('TASK', 'NOTE')),
+  remind_at TIMESTAMPTZ,
+  reminder_sent BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ
+);
+
+-- ============================================================================
+-- EXPENSES TABLE
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS expenses (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  amount NUMERIC(12,2) NOT NULL,
+  category TEXT NOT NULL,
+  description TEXT,
+  date DATE NOT NULL,
+  expense_type TEXT DEFAULT 'EXPENSE' CHECK (expense_type IN ('EXPENSE', 'INCOME')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ
+);
+
+-- ============================================================================
+-- PROJECT TASKS TABLE (Legacy / direct mapping)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS project_tasks (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'TODO' CHECK (status IN ('TODO', 'IN_PROGRESS', 'DONE')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ
+);
+
+-- ============================================================================
+-- INDEXES FOR PERFORMANCE
+-- ============================================================================
+CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_due_at ON tasks(due_at) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at);
+
+CREATE INDEX IF NOT EXISTS idx_diary_user_date ON diary_entries(user_id, date) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_diary_updated_at ON diary_entries(updated_at);
+
+CREATE INDEX IF NOT EXISTS idx_calendar_user_date ON calendar_events(user_id, event_date) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_calendar_updated_at ON calendar_events(updated_at);
+
+CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses(user_id, date) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_expenses_updated_at ON expenses(updated_at);
+
+CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects(updated_at);
+
+CREATE INDEX IF NOT EXISTS idx_project_tasks_project_id ON project_tasks(project_id) WHERE deleted_at IS NULL;
+
+-- ============================================================================
+-- TRIGGERS TO AUTO-UPDATE updated_at
+-- ============================================================================
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS profiles_updated_at ON profiles;
+CREATE TRIGGER profiles_updated_at
+  BEFORE UPDATE ON profiles
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS tasks_updated_at ON tasks;
+CREATE TRIGGER tasks_updated_at
+  BEFORE UPDATE ON tasks
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS diary_updated_at ON diary_entries;
+CREATE TRIGGER diary_updated_at
+  BEFORE UPDATE ON diary_entries
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS calendar_updated_at ON calendar_events;
+CREATE TRIGGER calendar_updated_at
+  BEFORE UPDATE ON calendar_events
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS expenses_updated_at ON expenses;
+CREATE TRIGGER expenses_updated_at
+  BEFORE UPDATE ON expenses
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS projects_updated_at ON projects;
+CREATE TRIGGER projects_updated_at
+  BEFORE UPDATE ON projects
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+DROP TRIGGER IF EXISTS project_tasks_updated_at ON project_tasks;
+CREATE TRIGGER project_tasks_updated_at
+  BEFORE UPDATE ON project_tasks
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 ````
 
-## File: backend/src/main/resources/application.yml
-````yaml
-spring:
-  datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/clarity}
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:postgres}
-    driver-class-name: org.postgresql.Driver
+## File: desktop/src/components/OpeningAnimation.tsx
+````typescript
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { sound } from '@/lib/sound';
 
-  jpa:
-    hibernate:
-      ddl-auto: update          # use 'validate' in prod
-    show-sql: false
-    properties:
-      hibernate:
-        format_sql: true
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-
-  mail:
-    host: smtp.gmail.com
-    port: 587
-    username: ${MAIL_USERNAME}
-    password: ${MAIL_PASSWORD}      # Gmail App Password
-    properties:
-      mail.smtp.auth: true
-      mail.smtp.starttls.enable: true
-
-server:
-  port: 8080
-
-clarity:
-  jwt:
-    secret: ${JWT_SECRET:changeme-use-a-long-random-string-in-production}
-    expiration-ms: 86400000        # 24 hours
-  diary:
-    pin-hash-rounds: 10            # BCrypt rounds for diary PIN
-  google:
-    client-id: ${GOOGLE_CLIENT_ID:your-google-client-id}
-    client-secret: ${GOOGLE_CLIENT_SECRET:}
-````
-
-## File: backend/.env.example
-````
-# Copy this to .env and fill in your values (never commit .env)
-
-# Database - JDBC format (use Supabase connection string or local PostgreSQL)
-# Note: URL must start with jdbc:postgresql:// (e.g., jdbc:postgresql://db.xxxx.supabase.co:5432/postgres)
-DATABASE_URL=jdbc:postgresql://localhost:5432/clarity
-DB_USERNAME=postgres
-DB_PASSWORD=your_db_password
-
-# JWT Secret - Generate with: openssl rand -hex 32
-JWT_SECRET=changeme-use-a-long-random-string
-
-# Google OAuth2 Client ID (from Google Cloud Console)
-GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
-
-# Gmail App Password (not your real password) - for email reminders
-MAIL_USERNAME=youremail@gmail.com
-MAIL_PASSWORD=your_app_password
-````
-
-## File: backend/pom.xml
-````xml
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-  <modelVersion>4.0.0</modelVersion>
-
-  <parent>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.5.3</version>
-    <relativePath/>
-  </parent>
-
-  <groupId>com.clarity</groupId>
-  <artifactId>clarity-backend</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
-  <name>clarity-backend</name>
-  <description>Clarity – personal diary, tasks, expenses and calendar backend</description>
-
-  <properties>
-    <java.version>25</java.version>
-    <jjwt.version>0.12.6</jjwt.version>
-  </properties>
-
-  <dependencies>
-    <!-- Web -->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-web</artifactId>
-    </dependency>
-
-    <!-- Security -->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-security</artifactId>
-    </dependency>
-
-    <!-- JPA + PostgreSQL -->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-data-jpa</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.postgresql</groupId>
-      <artifactId>postgresql</artifactId>
-      <scope>runtime</scope>
-    </dependency>
-
-    <!-- Validation -->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-validation</artifactId>
-    </dependency>
-
-    <!-- JWT (jjwt) -->
-    <dependency>
-      <groupId>io.jsonwebtoken</groupId>
-      <artifactId>jjwt-api</artifactId>
-      <version>${jjwt.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>io.jsonwebtoken</groupId>
-      <artifactId>jjwt-impl</artifactId>
-      <version>${jjwt.version}</version>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>io.jsonwebtoken</groupId>
-      <artifactId>jjwt-jackson</artifactId>
-      <version>${jjwt.version}</version>
-      <scope>runtime</scope>
-    </dependency>
-
-    <!-- Email (for reminders) -->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-mail</artifactId>
-    </dependency>
-
-    <!-- Google OAuth2 token verification -->
-    <dependency>
-      <groupId>com.google.api-client</groupId>
-      <artifactId>google-api-client</artifactId>
-      <version>2.7.0</version>
-    </dependency>
-
-    <!-- Scheduling (built into Spring, just needs the annotation) -->
-
-    <!-- Lombok -->
-    <dependency>
-      <groupId>org.projectlombok</groupId>
-      <artifactId>lombok</artifactId>
-      <optional>true</optional>
-    </dependency>
-
-    <!-- DevTools -->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-devtools</artifactId>
-      <scope>runtime</scope>
-      <optional>true</optional>
-    </dependency>
-
-    <!-- Test -->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-test</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.security</groupId>
-      <artifactId>spring-security-test</artifactId>
-      <scope>test</scope>
-    </dependency>
-  </dependencies>
-
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <configuration>
-          <annotationProcessorPaths>
-            <path>
-              <groupId>org.projectlombok</groupId>
-              <artifactId>lombok</artifactId>
-              <version>${lombok.version}</version>
-            </path>
-          </annotationProcessorPaths>
-        </configuration>
-      </plugin>
-      <plugin>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-maven-plugin</artifactId>
-        <configuration>
-          <excludes>
-            <exclude>
-              <groupId>org.projectlombok</groupId>
-              <artifactId>lombok</artifactId>
-            </exclude>
-          </excludes>
-        </configuration>
-      </plugin>
-    </plugins>
-  </build>
-</project>
-````
-
-## File: desktop/src-tauri/src/models.rs
-````rust
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct User {
-    pub id: i64,
-    pub username: String,
-    pub email: String,
-    pub diary_pin: Option<String>,
-    pub created_at: String,
+interface OpeningAnimationProps {
+  onComplete: () => void;
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Task {
-    pub id: i64,
-    pub title: String,
-    pub description: Option<String>,
-    pub completed: bool,
-    pub due_at: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-}
+const LETTERS = ['C', 'l', 'a', 'r', 'i', 't', 'y'];
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct DiaryEntry {
-    pub id: i64,
-    pub date: String,
-    pub body: String,
-    pub mood: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-}
+export const OpeningAnimation: React.FC<OpeningAnimationProps> = ({ onComplete }) => {
+  const [markEntered, setMarkEntered] = useState(false);
+  const [visibleLetters, setVisibleLetters] = useState(0);
+  const [showSubtitle, setShowSubtitle] = useState(false);
+  const [shimmerActive, setShimmerActive] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
+  const completedRef = useRef(false);
+  const onCompleteRef = useRef(onComplete);
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct CalendarEvent {
-    pub id: i64,
-    pub title: String,
-    pub description: Option<String>,
-    pub event_date: String,
-    pub start_at: Option<String>,
-    pub end_at: Option<String>,
-    #[serde(rename = "type")]
-    pub event_type: String,
-    pub created_at: String,
-}
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AuthResponse {
-    pub user_id: i64,
-    pub username: String,
-}
+  const handleFinish = useCallback(() => {
+    if (completedRef.current) return;
+    completedRef.current = true;
+    setIsExiting(true);
+    setTimeout(() => {
+      onCompleteRef.current?.();
+    }, 320);
+  }, []);
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Expense {
-    pub id: i64,
-    pub amount: f64,
-    pub category: String,
-    pub description: Option<String>,
-    pub date: String,
-    pub expense_type: String, // EXPENSE or INCOME
-    pub created_at: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Project {
-    pub id: i64,
-    pub title: String,
-    pub description: Option<String>,
-    pub created_at: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectTask {
-    pub id: i64,
-    pub project_id: i64,
-    pub title: String,
-    pub description: Option<String>,
-    pub status: String,
-    pub created_at: String,
-}
-````
-
-## File: desktop/src-tauri/tauri.conf.json
-````json
-{
-  "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Clarity",
-  "version": "0.1.0",
-  "identifier": "com.clarity.app",
-  "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist",
-    "devUrl": "http://localhost:5173"
-  },
-  "app": {
-    "windows": [
-      {
-        "title": "Clarity",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 900,
-        "minHeight": 600,
-        "resizable": true,
-        "decorations": true,
-        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+  // Keyboard shortcut (Escape / Space / Enter) and skip click handler
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        handleFinish();
       }
-    ],
-    "security": {
-      "csp": null
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleFinish]);
+
+  // Main Choreography Sequence
+  useEffect(() => {
+    // Respect prefers-reduced-motion
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const quickTimer = setTimeout(handleFinish, 300);
+      return () => clearTimeout(quickTimer);
     }
-  },
-  "bundle": {
-    "active": true,
-    "targets": "all",
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ]
+
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    // T = 80ms: Mark ignites in center
+    timers.push(
+      setTimeout(() => {
+        setMarkEntered(true);
+      }, 80)
+    );
+
+    // T = 240ms: Mark ignition acoustic tick
+    timers.push(
+      setTimeout(() => {
+        sound.pop(0.9);
+      }, 240)
+    );
+
+    // T = 680ms - 1460ms: Progressive typographic unfolding (C -> Cl -> Cla -> Clar -> Clari -> Clarit -> Clarity)
+    LETTERS.forEach((_, idx) => {
+      timers.push(
+        setTimeout(() => {
+          setVisibleLetters(idx + 1);
+          // Ascending acoustic pitch for each unfolding character
+          sound.pop(0.85 + idx * 0.08);
+        }, 680 + idx * 110)
+      );
+    });
+
+    // T = 1550ms: Subtitle whisper and hairline rule reveal
+    timers.push(
+      setTimeout(() => {
+        setShowSubtitle(true);
+      }, 1550)
+    );
+
+    // T = 1700ms: Specular light sweep & harmonic chime
+    timers.push(
+      setTimeout(() => {
+        setShimmerActive(true);
+        sound.chime();
+      }, 1700)
+    );
+
+    // T = 2850ms: Graceful workspace dissolve
+    timers.push(
+      setTimeout(() => {
+        handleFinish();
+      }, 2850)
+    );
+
+    // Hard fallback safety timer
+    timers.push(
+      setTimeout(() => {
+        handleFinish();
+      }, 3300)
+    );
+
+    return () => {
+      timers.forEach(clearTimeout);
+    };
+  }, [handleFinish]);
+
+  return (
+    <AnimatePresence>
+      {!completedRef.current || isExiting ? (
+        <motion.div
+          key="clarity-intro-curtain"
+          initial={{ opacity: 1 }}
+          animate={{ opacity: isExiting ? 0 : 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+          onClick={handleFinish}
+          className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-ground select-none overflow-hidden cursor-pointer"
+          style={{ willChange: 'opacity, transform' }}
+        >
+          {/* Ambient Studio Lighting (Warm Radial Aura) */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.85 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 1.2, ease: 'easeOut' }}
+            className="pointer-events-none absolute inset-0 flex items-center justify-center"
+          >
+            <div
+              className="w-[680px] h-[680px] rounded-full blur-3xl opacity-80"
+              style={{
+                background:
+                  'radial-gradient(circle, rgba(200, 116, 103, 0.16) 0%, rgba(200, 116, 103, 0.04) 45%, transparent 72%)',
+              }}
+            />
+          </motion.div>
+
+          {/* Master Lockup Container */}
+          <motion.div
+            layout
+            initial={{ scale: 0.94, opacity: 0, y: 10, filter: 'blur(8px)' }}
+            animate={{
+              scale: isExiting ? 1.04 : 1,
+              opacity: isExiting ? 0 : 1,
+              y: isExiting ? -8 : 0,
+              filter: isExiting ? 'blur(6px)' : 'blur(0px)',
+            }}
+            transition={{
+              type: 'spring',
+              stiffness: 340,
+              damping: 28,
+              mass: 0.8,
+            }}
+            className="relative z-10 flex flex-col items-center justify-center px-8 py-6"
+          >
+            {/* Horizontal Row: Mark + Expanding Kinetic Typography */}
+            <motion.div 
+              layout 
+              transition={{ type: 'spring', stiffness: 360, damping: 30 }}
+              className="flex items-center gap-3.5 sm:gap-4 md:gap-5"
+            >
+              {/* High-Fidelity Vector Squircle Mark */}
+              <motion.div
+                layout
+                initial={{ scale: 0.55, rotate: -6, opacity: 0 }}
+                animate={{
+                  scale: markEntered ? 1 : 0.55,
+                  rotate: markEntered ? 0 : -6,
+                  opacity: markEntered ? 1 : 0,
+                }}
+                transition={{
+                  type: 'spring',
+                  stiffness: 440,
+                  damping: 25,
+                  mass: 0.7,
+                }}
+                className="relative flex-shrink-0 w-13 h-13 md:w-15 md:h-15 drop-shadow-md"
+              >
+                <svg
+                  viewBox="0 0 40 40"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="w-full h-full"
+                >
+                  <defs>
+                    <linearGradient
+                      id="introTerra"
+                      x1="0"
+                      y1="0"
+                      x2="40"
+                      y2="40"
+                      gradientUnits="userSpaceOnUse"
+                    >
+                      <stop offset="0%" stopColor="#D98275" />
+                      <stop offset="100%" stopColor="#B65548" />
+                    </linearGradient>
+                  </defs>
+
+                  {/* Terracotta Satin Squircle Chassis */}
+                  <rect width="40" height="40" rx="11" fill="url(#introTerra)" />
+
+                  {/* Specular Rim Highlight */}
+                  <rect
+                    x="0.5"
+                    y="0.5"
+                    width="39"
+                    height="39"
+                    rx="10.5"
+                    stroke="white"
+                    strokeOpacity="0.32"
+                    strokeWidth="1"
+                  />
+
+                  {/* Geometric 'C' Arc */}
+                  <motion.path
+                    initial={{ pathLength: 0, opacity: 0 }}
+                    animate={{ pathLength: 1, opacity: 1 }}
+                    transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1], delay: 0.12 }}
+                    d="M 24.5 13.8 C 21.2 11.2 16.5 11.2 13.5 14.1 C 10.2 17.3 10.2 22.7 13.5 25.9 C 16.5 28.8 21.2 28.8 24.5 26.2"
+                    stroke="#FFFFFF"
+                    strokeWidth="2.9"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+
+                  {/* Faceted Prism Spark */}
+                  <motion.g
+                    initial={{ scale: 0, rotate: -25 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    transition={{
+                      type: 'spring',
+                      stiffness: 480,
+                      damping: 18,
+                      delay: 0.26,
+                    }}
+                    className="origin-[23.2px_20px]"
+                  >
+                    {/* Left Facet (Bone White) */}
+                    <polygon points="23.2,16 23.2,24 18.5,20" fill="#FFFFFF" />
+
+                    {/* Right Facet (Specular Terracotta Tint) */}
+                    <polygon
+                      points="23.2,16 23.2,24 27.8,20"
+                      fill="#FFE5DC"
+                      fillOpacity="0.95"
+                    />
+
+                    {/* Micro Spark Core */}
+                    <circle cx="23.2" cy="20" r="0.85" fill="#FFFFFF" />
+                  </motion.g>
+                </svg>
+              </motion.div>
+
+              {/* Kinetic Typography Unfolding: C -> Cl -> Cla -> Clar -> Clari -> Clarit -> Clarity */}
+              <div className="relative flex items-baseline font-serif font-bold text-4xl sm:text-5xl md:text-[56px] leading-none text-ink tracking-tight overflow-hidden py-1">
+                {LETTERS.map((char, index) => {
+                  const isVisible = index < visibleLetters;
+                  return (
+                    <motion.span
+                      key={index}
+                      initial={false}
+                      animate={{
+                        width: isVisible ? 'auto' : 0,
+                        opacity: isVisible ? 1 : 0,
+                        y: isVisible ? 0 : 12,
+                        scale: isVisible ? 1 : 0.8,
+                        filter: isVisible ? 'blur(0px)' : 'blur(4px)',
+                      }}
+                      transition={{
+                        width: { type: 'spring', stiffness: 420, damping: 32 },
+                        opacity: { duration: 0.16, ease: 'easeOut' },
+                        y: { type: 'spring', stiffness: 460, damping: 26 },
+                        scale: { duration: 0.18, ease: 'easeOut' },
+                        filter: { duration: 0.2 },
+                      }}
+                      className="inline-block overflow-hidden whitespace-nowrap origin-bottom"
+                    >
+                      <span className="inline-block px-[0.5px]">{char}</span>
+                    </motion.span>
+                  );
+                })}
+
+                {/* Specular Light Sweep Shimmer */}
+                {shimmerActive && (
+                  <motion.div
+                    initial={{ x: '-120%', opacity: 0 }}
+                    animate={{ x: '240%', opacity: [0, 0.7, 0] }}
+                    transition={{ duration: 0.85, ease: 'easeInOut' }}
+                    className="absolute inset-0 pointer-events-none bg-gradient-to-r from-transparent via-white/50 to-transparent skew-x-[-24deg]"
+                  />
+                )}
+              </div>
+            </motion.div>
+
+            {/* Subtitle Whisper & Terracotta Hairline Horizon */}
+            <motion.div
+              layout
+              initial={{ opacity: 0, y: 6 }}
+              animate={{
+                opacity: showSubtitle ? 1 : 0,
+                y: showSubtitle ? 0 : 6,
+              }}
+              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+              className="flex flex-col items-center mt-3.5 w-full max-w-[260px]"
+            >
+              {/* Hairline Horizon Rule */}
+              <motion.div
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: showSubtitle ? 1 : 0 }}
+                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                className="h-px w-full bg-gradient-to-r from-transparent via-accent/50 to-transparent mb-2.5 origin-center"
+              />
+
+              {/* Subtitle Monogram with Tracking Bloom */}
+              <motion.span
+                initial={{ letterSpacing: '0.14em' }}
+                animate={{ letterSpacing: showSubtitle ? '0.26em' : '0.14em' }}
+                transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
+                className="font-mono text-[9.5px] md:text-[11px] font-semibold tracking-[0.26em] text-ink-soft uppercase text-center select-none"
+              >
+                PERSONAL WORKSPACE
+              </motion.span>
+            </motion.div>
+          </motion.div>
+
+          {/* Discreet Skip Prompt */}
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: isExiting ? 0 : 0.5, y: 0 }}
+            whileHover={{ opacity: 0.9 }}
+            transition={{ delay: 0.7, duration: 0.3 }}
+            className="absolute bottom-7 flex items-center gap-1.5 px-3 py-1 rounded-full border border-rule/60 bg-surface/70 backdrop-blur-md text-[11px] text-ink-faint select-none transition-opacity"
+          >
+            <span>Press</span>
+            <kbd className="px-1.5 py-0.5 rounded bg-raised border border-rule text-[9.5px] font-mono text-ink-soft">
+              Esc
+            </kbd>
+            <span>or click to skip</span>
+          </motion.div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+};
+
+export default OpeningAnimation;
+````
+
+## File: desktop/src/lib/localDb.ts
+````typescript
+import type {
+  Task,
+  TaskStatus,
+  Project,
+  ProjectTask,
+  ProjectTaskStatus,
+  Expense,
+  ExpenseType,
+  CalendarEvent,
+  DiaryEntry,
+  DiaryMood,
+  Profile,
+} from './types';
+
+const LOCAL_USER_ID = '1';
+
+function getItem<T>(key: string, defaultValue: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return defaultValue;
+    return JSON.parse(raw);
+  } catch {
+    return defaultValue;
   }
 }
+
+function setItem<T>(key: string, value: T): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.warn('[LocalDb] Failed to persist key:', key, e);
+  }
+}
+
+function getSeedProjects(): Project[] {
+  const now = new Date().toISOString();
+  return [
+    {
+      id: '1',
+      user_id: LOCAL_USER_ID,
+      title: 'Clarity Ledger & Stationery Overhaul',
+      description: 'Tactile editorial workspace refinement, hairline rules, zero-latency local operations',
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    },
+    {
+      id: '2',
+      user_id: LOCAL_USER_ID,
+      title: 'Writings & Philosophy Journal',
+      description: 'Analog reflections, typography studies, and daily mindfulness dockets',
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    },
+  ];
+}
+
+function getSeedProjectTasks(): ProjectTask[] {
+  const now = new Date().toISOString();
+  return [
+    {
+      id: '101',
+      project_id: '1',
+      title: 'Calibrate terracotta accents & warm paper ground',
+      description: 'Ensure warm editorial palette #F5F2EB and hairline rule borders',
+      status: 'DONE',
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    },
+    {
+      id: '102',
+      project_id: '1',
+      title: 'Test tactile Web Audio transients on Enter key',
+      description: 'Zero latency organic pops and paper clicks',
+      status: 'IN_PROGRESS',
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    },
+    {
+      id: '103',
+      project_id: '1',
+      title: 'Verify frameless window minimize & maximize',
+      description: 'Custom ruled header titlebar controls',
+      status: 'TODO',
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    },
+    {
+      id: '104',
+      project_id: '2',
+      title: 'Draft chapter on mindful digital stationery',
+      description: 'Analog craftsmanship translated into modern desktop tools',
+      status: 'TODO',
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    },
+  ];
+}
+
+function getSeedTasks(): Task[] {
+  const now = new Date().toISOString();
+  return [
+    {
+      id: '1',
+      user_id: LOCAL_USER_ID,
+      title: 'Inscribe morning thoughts into leather-bound diary',
+      description: 'Reflect on deliberate focus and analog craftsmanship',
+      completed: true,
+      status: 'DONE',
+      project_id: null,
+      due_at: null,
+      remind_at: null,
+      reminder_sent: false,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    },
+    {
+      id: '2',
+      user_id: LOCAL_USER_ID,
+      title: 'Review monthly ledger and balance accounts',
+      description: 'Ledger entries for ink, heavy paper, and workshop tools',
+      completed: false,
+      status: 'TODO',
+      project_id: null,
+      due_at: null,
+      remind_at: null,
+      reminder_sent: false,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    },
+    {
+      id: '3',
+      user_id: LOCAL_USER_ID,
+      title: 'Curate typeface choices and analog paper palette',
+      description: 'Editorial serifs and monospace numerals',
+      completed: false,
+      status: 'TODO',
+      project_id: '1',
+      due_at: null,
+      remind_at: null,
+      reminder_sent: false,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    },
+  ];
+}
+
+function getSeedExpenses(): Expense[] {
+  const now = new Date().toISOString();
+  const today = new Date().toISOString().split('T')[0];
+  return [
+    {
+      id: '1',
+      user_id: LOCAL_USER_ID,
+      amount: 45.0,
+      category: 'Stationery',
+      description: 'Fountain pen ink & heavy laid paper',
+      date: today,
+      expense_type: 'EXPENSE',
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    },
+    {
+      id: '2',
+      user_id: LOCAL_USER_ID,
+      amount: 120.0,
+      category: 'Books',
+      description: 'Typography & bookbinding monographs',
+      date: today,
+      expense_type: 'EXPENSE',
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    },
+  ];
+}
+
+function getSeedCalendarEvents(): CalendarEvent[] {
+  const now = new Date().toISOString();
+  const today = new Date().toISOString().split('T')[0];
+  return [
+    {
+      id: '1',
+      user_id: LOCAL_USER_ID,
+      title: 'Desk Setup & Morning Docket',
+      description: 'Calm organization of workspace and tasks',
+      event_date: today,
+      start_at: '09:00',
+      end_at: '10:00',
+      event_type: 'NOTE',
+      remind_at: null,
+      reminder_sent: false,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    },
+    {
+      id: '2',
+      user_id: LOCAL_USER_ID,
+      title: 'Deep Focus: Analog Ledger Architecture',
+      description: 'Refining local-first data model and zero-latency UI',
+      event_date: today,
+      start_at: '14:00',
+      end_at: '17:00',
+      event_type: 'TASK',
+      remind_at: null,
+      reminder_sent: false,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    },
+  ];
+}
+
+export const localDb = {
+  // Profiles
+  getProfile(): Profile {
+    const defaultProfile: Profile = {
+      id: LOCAL_USER_ID,
+      username: 'Sahil',
+      email: 'sahil@clarity.local',
+      avatar_url: null,
+      diary_pin_hash: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    return getItem('clarity_profile', defaultProfile);
+  },
+
+  upsertProfile(patch: Partial<Profile>): Profile {
+    const cur = this.getProfile();
+    const updated = { ...cur, ...patch, updated_at: new Date().toISOString() };
+    setItem('clarity_profile', updated);
+    return updated;
+  },
+
+  // Tasks
+  getTasks(pendingOnly = false): Task[] {
+    const tasks = getItem<Task[]>('clarity_tasks', getSeedTasks());
+    const valid = tasks.filter((t) => !t.deleted_at);
+    return pendingOnly ? valid.filter((t) => !t.completed) : valid;
+  },
+
+  createTask(task: Partial<Task>): Task {
+    const tasks = getItem<Task[]>('clarity_tasks', getSeedTasks());
+    const now = new Date().toISOString();
+    const status: TaskStatus = task.status || (task.completed ? 'DONE' : 'TODO');
+    const today = new Date().toISOString().split('T')[0];
+    const created: Task = {
+      id: String(Date.now()),
+      user_id: LOCAL_USER_ID,
+      title: task.title?.trim() || 'Untitled Task',
+      description: task.description?.trim() || null,
+      completed: Boolean(task.completed) || status === 'DONE',
+      status,
+      project_id: task.project_id || null,
+      due_at: task.due_at !== undefined ? task.due_at : today,
+      remind_at: task.remind_at || null,
+      reminder_sent: false,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    };
+    tasks.unshift(created);
+    setItem('clarity_tasks', tasks);
+    return created;
+  },
+
+  updateTask(id: string, patch: Partial<Task>): Task {
+    const tasks = getItem<Task[]>('clarity_tasks', getSeedTasks());
+    const idx = tasks.findIndex((t) => t.id === id);
+    const now = new Date().toISOString();
+    if (idx === -1) {
+      const created = this.createTask({ id, ...patch });
+      return created;
+    }
+    const cur = tasks[idx];
+    const completed = patch.completed !== undefined
+      ? patch.completed
+      : patch.status ? patch.status === 'DONE' : cur.completed;
+    const status: TaskStatus = patch.status || (completed ? 'DONE' : 'TODO');
+
+    const updated: Task = {
+      ...cur,
+      ...patch,
+      completed,
+      status,
+      updated_at: now,
+    };
+    tasks[idx] = updated;
+    setItem('clarity_tasks', tasks);
+    return updated;
+  },
+
+  deleteTask(id: string): void {
+    const tasks = getItem<Task[]>('clarity_tasks', getSeedTasks());
+    const filtered = tasks.filter((t) => t.id !== id);
+    setItem('clarity_tasks', filtered);
+  },
+
+  // Projects
+  getProjects(): Project[] {
+    const projects = getItem<Project[]>('clarity_projects', getSeedProjects());
+    return projects.filter((p) => !p.deleted_at);
+  },
+
+  createProject(project: { title: string; description?: string | null }): Project {
+    const projects = getItem<Project[]>('clarity_projects', getSeedProjects());
+    const now = new Date().toISOString();
+    const created: Project = {
+      id: String(Date.now()),
+      user_id: LOCAL_USER_ID,
+      title: project.title.trim() || 'New Docket',
+      description: project.description?.trim() || null,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    };
+    projects.unshift(created);
+    setItem('clarity_projects', projects);
+    return created;
+  },
+
+  deleteProject(id: string): void {
+    const projects = getItem<Project[]>('clarity_projects', getSeedProjects());
+    const filtered = projects.filter((p) => p.id !== id);
+    setItem('clarity_projects', filtered);
+
+    const ptasks = getItem<ProjectTask[]>('clarity_project_tasks', getSeedProjectTasks());
+    setItem(
+      'clarity_project_tasks',
+      ptasks.filter((t) => t.project_id !== id)
+    );
+  },
+
+  // Project Tasks
+  getProjectTasks(projectId: string): ProjectTask[] {
+    const all = getItem<ProjectTask[]>('clarity_project_tasks', getSeedProjectTasks());
+    return all.filter((t) => t.project_id === projectId && !t.deleted_at);
+  },
+
+  createProjectTask(task: {
+    projectId: string;
+    title: string;
+    description?: string | null;
+    status?: ProjectTaskStatus;
+  }): ProjectTask {
+    const all = getItem<ProjectTask[]>('clarity_project_tasks', getSeedProjectTasks());
+    const now = new Date().toISOString();
+    const created: ProjectTask = {
+      id: String(Date.now()),
+      project_id: task.projectId,
+      title: task.title.trim() || 'Untitled Task',
+      description: task.description?.trim() || null,
+      status: task.status || 'TODO',
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    };
+    all.push(created);
+    setItem('clarity_project_tasks', all);
+    return created;
+  },
+
+  updateProjectTaskStatus(id: string, status: ProjectTaskStatus): void {
+    const all = getItem<ProjectTask[]>('clarity_project_tasks', getSeedProjectTasks());
+    const idx = all.findIndex((t) => t.id === id);
+    if (idx !== -1) {
+      all[idx].status = status;
+      all[idx].updated_at = new Date().toISOString();
+      setItem('clarity_project_tasks', all);
+    }
+  },
+
+  deleteProjectTask(id: string): void {
+    const all = getItem<ProjectTask[]>('clarity_project_tasks', getSeedProjectTasks());
+    setItem(
+      'clarity_project_tasks',
+      all.filter((t) => t.id !== id)
+    );
+  },
+
+  // Expenses
+  getExpenses(): Expense[] {
+    const exp = getItem<Expense[]>('clarity_expenses', getSeedExpenses());
+    return exp.filter((e) => !e.deleted_at);
+  },
+
+  createExpense(expense: {
+    amount: number;
+    category: string;
+    description?: string | null;
+    date: string;
+    expense_type: ExpenseType;
+  }): Expense {
+    const exp = getItem<Expense[]>('clarity_expenses', getSeedExpenses());
+    const now = new Date().toISOString();
+    const created: Expense = {
+      id: String(Date.now()),
+      user_id: LOCAL_USER_ID,
+      amount: Number(expense.amount),
+      category: expense.category,
+      description: expense.description || null,
+      date: expense.date,
+      expense_type: expense.expense_type,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    };
+    exp.unshift(created);
+    setItem('clarity_expenses', exp);
+    return created;
+  },
+
+  deleteExpense(id: string): void {
+    const exp = getItem<Expense[]>('clarity_expenses', getSeedExpenses());
+    setItem(
+      'clarity_expenses',
+      exp.filter((e) => e.id !== id)
+    );
+  },
+
+  // Calendar
+  getCalendarDay(date: string): CalendarEvent[] {
+    const all = getItem<CalendarEvent[]>('clarity_calendar', getSeedCalendarEvents());
+    return all.filter((c) => c.event_date === date && !c.deleted_at);
+  },
+
+  getCalendarRange(from: string, to: string): CalendarEvent[] {
+    const all = getItem<CalendarEvent[]>('clarity_calendar', getSeedCalendarEvents());
+    return all.filter((c) => c.event_date >= from && c.event_date <= to && !c.deleted_at);
+  },
+
+  getYearHeatmap(year: number): Record<number, number> {
+    const from = year + '-01-01';
+    const to = year + '-12-31';
+    const events = this.getCalendarRange(from, to);
+    const heatmap: Record<number, number> = {};
+    for (const ev of events) {
+      const dayOfYear =
+        Math.floor(
+          (new Date(ev.event_date).getTime() - new Date(year + '-01-01').getTime()) /
+            (1000 * 60 * 60 * 24)
+        ) + 1;
+      heatmap[dayOfYear] = (heatmap[dayOfYear] || 0) + 1;
+    }
+    return heatmap;
+  },
+
+  createCalendarEvent(event: {
+    title: string;
+    description?: string | null;
+    event_date: string;
+    start_at?: string | null;
+    end_at?: string | null;
+    event_type?: 'TASK' | 'NOTE';
+    remind_at?: string | null;
+    reminder_sent?: boolean;
+  }): CalendarEvent {
+    const all = getItem<CalendarEvent[]>('clarity_calendar', getSeedCalendarEvents());
+    const now = new Date().toISOString();
+    const created: CalendarEvent = {
+      id: String(Date.now()),
+      user_id: LOCAL_USER_ID,
+      title: event.title.trim(),
+      description: event.description || null,
+      event_date: event.event_date,
+      start_at: event.start_at || null,
+      end_at: event.end_at || null,
+      event_type: event.event_type || 'NOTE',
+      remind_at: event.remind_at || null,
+      reminder_sent: Boolean(event.reminder_sent),
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    };
+    all.push(created);
+    setItem('clarity_calendar', all);
+    return created;
+  },
+
+  updateCalendarEvent(id: string, patch: Partial<CalendarEvent>): CalendarEvent {
+    const all = getItem<CalendarEvent[]>('clarity_calendar', getSeedCalendarEvents());
+    const idx = all.findIndex((c) => c.id === id);
+    const now = new Date().toISOString();
+    if (idx !== -1) {
+      all[idx] = { ...all[idx], ...patch, updated_at: now };
+      setItem('clarity_calendar', all);
+      return all[idx];
+    }
+    return this.createCalendarEvent({
+      title: patch.title || 'Updated Note',
+      description: patch.description || null,
+      event_date: patch.event_date || new Date().toISOString().split('T')[0],
+      start_at: patch.start_at || null,
+      end_at: patch.end_at || null,
+      event_type: patch.event_type || 'NOTE',
+    });
+  },
+
+  deleteCalendarEvent(id: string): void {
+    const all = getItem<CalendarEvent[]>('clarity_calendar', getSeedCalendarEvents());
+    setItem(
+      'clarity_calendar',
+      all.filter((c) => c.id !== id)
+    );
+  },
+
+  // Diary & Vault
+  checkDiaryPin(): boolean {
+    return Boolean(localStorage.getItem('clarity_diary_pin'));
+  },
+
+  verifyDiaryPin(pin: string): boolean {
+    const saved = localStorage.getItem('clarity_diary_pin');
+    if (!saved) return true;
+    return saved === pin.trim();
+  },
+
+  setDiaryPin(pin: string): void {
+    localStorage.setItem('clarity_diary_pin', pin.trim());
+  },
+
+  removeDiaryPin(): void {
+    localStorage.removeItem('clarity_diary_pin');
+  },
+
+  getDiaryEntries(): DiaryEntry[] {
+    const now = new Date().toISOString();
+    const today = new Date().toISOString().split('T')[0];
+    const defaultEntries: DiaryEntry[] = [
+      {
+        id: '1',
+        user_id: LOCAL_USER_ID,
+        date: today,
+        body: 'The desk is quiet today. Clean lines, warm paper textures, and tactile feedback make all the difference. Building software that feels tangible and intentional.',
+        mood: 'Productive',
+        created_at: now,
+        updated_at: now,
+        deleted_at: null,
+      },
+    ];
+    return getItem<DiaryEntry[]>('clarity_diary_entries', defaultEntries);
+  },
+
+  saveDiaryEntry(date: string, body: Partial<DiaryEntry>): DiaryEntry {
+    const entries = this.getDiaryEntries();
+    const existingIdx = entries.findIndex((e) => e.date === date);
+    const now = new Date().toISOString();
+
+    const entry: DiaryEntry = {
+      id: existingIdx >= 0 ? entries[existingIdx].id : String(Date.now()),
+      user_id: LOCAL_USER_ID,
+      date,
+      body: body.body || '',
+      mood: (body.mood as DiaryMood) || null,
+      created_at: existingIdx >= 0 ? entries[existingIdx].created_at : now,
+      updated_at: now,
+      deleted_at: null,
+    };
+
+    if (existingIdx >= 0) {
+      entries[existingIdx] = entry;
+    } else {
+      entries.unshift(entry);
+    }
+    setItem('clarity_diary_entries', entries);
+    return entry;
+  },
+};
+````
+
+## File: desktop/src/lib/sound.ts
+````typescript
+// Tactile Synthesized Audio Engine for Clarity
+// Uses browser Web Audio API - Zero external files, zero latency, zero bandwidth
+
+class SoundEngine {
+  private ctx: AudioContext | null = null;
+  private muted: boolean = false;
+
+  constructor() {
+    try {
+      this.muted = localStorage.getItem('clarity_sound_muted') === 'true';
+    } catch {
+      this.muted = false;
+    }
+  }
+
+  private getContext(): AudioContext | null {
+    if (this.muted) return null;
+    if (!this.ctx) {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        this.ctx = new AudioCtx();
+      }
+    }
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
+    return this.ctx;
+  }
+
+  public isMuted(): boolean {
+    return this.muted;
+  }
+
+  public toggleMute(): boolean {
+    this.muted = !this.muted;
+    try {
+      localStorage.setItem('clarity_sound_muted', String(this.muted));
+    } catch {}
+    return this.muted;
+  }
+
+  // Tactile paper / mechanical key click (used on buttons, Enter key, quick inscribe)
+  public click(pitch: number = 1) {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      const baseFreq = 950 * pitch;
+      const endFreq = 300 * pitch;
+      osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(endFreq, ctx.currentTime + 0.015);
+
+      gain.gain.setValueAtTime(0.04, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.015);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.015);
+    } catch {}
+  }
+
+  // 15ms tactile organic pop (checkboxes, mood chips, navigation tags)
+  public pop(pitch: number = 1) {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      const baseFreq = 650 * pitch;
+      const endFreq = 180 * pitch;
+      osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(endFreq, ctx.currentTime + 0.025);
+
+      gain.gain.setValueAtTime(0.045, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.025);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.025);
+    } catch {}
+  }
+
+  // Subtle tap
+  public tap(pitch: number = 1) {
+    this.click(pitch * 1.1);
+  }
+
+  // Paper turn / gentle navigation swoosh
+  public pageTurn() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(320, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(140, ctx.currentTime + 0.04);
+
+      gain.gain.setValueAtTime(0.03, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.04);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.04);
+    } catch {}
+  }
+
+  // Satisfying harmonic chime (All tasks completed / Milestone)
+  public chime() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      [523.25, 659.25, 783.99].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + i * 0.06);
+
+        gain.gain.setValueAtTime(0.04, now + i * 0.06);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.06 + 0.35);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + i * 0.06);
+        osc.stop(now + i * 0.06 + 0.35);
+      });
+    } catch {}
+  }
+
+  public success() {
+    this.chime();
+  }
+}
+
+const engineInstance = new SoundEngine();
+
+// Proxy wraps sound engine so any undefined sound method call safely defaults to no-op instead of throwing TypeError
+export const sound: SoundEngine & Record<string, any> = new Proxy(engineInstance, {
+  get(target, prop, receiver) {
+    if (prop in target) {
+      const val = Reflect.get(target, prop, receiver);
+      if (typeof val === 'function') {
+        return val.bind(target);
+      }
+      return val;
+    }
+    // Return a safe no-op callable function for any unforeseen sound method
+    return () => {};
+  },
+});
+````
+
+## File: desktop/src-tauri/gen/schemas/capabilities.json
+````json
+{"default":{"identifier":"default","description":"Default permissions for Clarity window controls","local":true,"windows":["main"],"permissions":["core:default","core:window:default","core:window:allow-start-dragging","core:window:allow-minimize","core:window:allow-maximize","core:window:allow-unmaximize","core:window:allow-toggle-maximize","core:window:allow-close","shell:default"]}}
 ````
 
 ## File: desktop/.env.example
@@ -10983,6 +9942,350 @@ export const ClarityLogo: React.FC<ClarityLogoProps> = ({
 export default ClarityLogo;
 ````
 
+## File: desktop/src/components/OmniInscribeModal.tsx
+````typescript
+import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import {
+  CheckSquare, DollarSign, BookOpen, Calendar, FolderKanban,
+  CornerDownLeft, X, Sparkles
+} from "lucide-react";
+import { api } from "@/lib/api";
+import { sound } from "@/lib/sound";
+import { dataCache } from "@/lib/dataCache";
+import dayjs from "dayjs";
+
+interface OmniInscribeModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export function OmniInscribeModal({ isOpen, onClose }: OmniInscribeModalProps) {
+  const [query, setQuery] = useState("");
+  const [activeTab, setActiveTab] = useState<"task" | "expense" | "nav">("task");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [successMsg, setSuccessMsg] = useState("");
+  
+  // Expense fields
+  const [amount, setAmount] = useState("");
+  const [category, setCategory] = useState("Food & Meals");
+  
+  const inputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (isOpen) {
+      sound.pop();
+      setQuery("");
+      setAmount("");
+      setCategory("Food & Meals");
+      setSuccessMsg("");
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [isOpen]);
+
+  // Global Ctrl+K / Cmd+K and Esc listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (isOpen) {
+          onClose();
+        } else {
+          // Trigger open via CustomEvent or parent prop
+          window.dispatchEvent(new CustomEvent("clarity:open-omni"));
+        }
+      }
+      if (e.key === "Escape" && isOpen) {
+        e.preventDefault();
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  const handleInscribeTask = async () => {
+    if (!query.trim() || isSubmitting) return;
+    setIsSubmitting(true);
+    sound.click();
+
+    try {
+      await api.createTask({
+        title: query.trim(),
+        completed: false,
+        status: "TODO",
+        due_at: dayjs().format("YYYY-MM-DD"),
+      });
+      dataCache.invalidate("tasks");
+      sound.chime();
+      setSuccessMsg("Task inscribed to Ledger");
+      setTimeout(() => {
+        onClose();
+        navigate("/tasks");
+      }, 500);
+    } catch (err: any) {
+      console.error("Omni task error:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleLogExpense = async () => {
+    const num = parseFloat(amount);
+    if (isNaN(num) || num <= 0 || isSubmitting) return;
+    setIsSubmitting(true);
+    sound.click();
+
+    try {
+      await api.createExpense({
+        amount: num,
+        category: category || "General",
+        description: query.trim() || "Omni-inscribed expense",
+        date: dayjs().format("YYYY-MM-DD"),
+        expense_type: "EXPENSE",
+      });
+      dataCache.invalidate("expenses");
+      sound.chime();
+      setSuccessMsg("Expense logged to Ledger");
+      setTimeout(() => {
+        onClose();
+        navigate("/expenses");
+      }, 500);
+    } catch (err: any) {
+      console.error("Omni expense error:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleNavigate = (path: string) => {
+    sound.pageTurn();
+    navigate(path);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 px-4 bg-ink/30 backdrop-blur-xs select-none">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: -10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: -10 }}
+        transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full max-w-xl bg-surface border border-rule rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+      >
+        {/* Header Tabs */}
+        <div className="flex items-center justify-between px-4 pt-3.5 pb-2.5 border-b border-rule bg-raised/50">
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-[10px] text-ink-faint tracking-wider uppercase mr-2 flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-accent" /> Omni-Inscribe
+            </span>
+            <button
+              type="button"
+              onClick={() => { setActiveTab("task"); sound.click(); }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                activeTab === "task" ? "bg-accent text-white" : "text-ink-soft hover:text-ink hover:bg-raised"
+              }`}
+            >
+              Task
+            </button>
+            <button
+              type="button"
+              onClick={() => { setActiveTab("expense"); sound.click(); }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                activeTab === "expense" ? "bg-accent text-white" : "text-ink-soft hover:text-ink hover:bg-raised"
+              }`}
+            >
+              Expense
+            </button>
+            <button
+              type="button"
+              onClick={() => { setActiveTab("nav"); sound.click(); }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                activeTab === "nav" ? "bg-accent text-white" : "text-ink-soft hover:text-ink hover:bg-raised"
+              }`}
+            >
+              Jump View
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg text-ink-faint hover:text-ink hover:bg-raised transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Input Body */}
+        <div className="p-4 space-y-3">
+          {activeTab === "task" && (
+            <div>
+              <div className="relative flex items-center">
+                <CheckSquare className="w-4.5 h-4.5 absolute left-3 text-accent stroke-[2]" />
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleInscribeTask();
+                  }}
+                  placeholder="Inscribe a task title into your Ledger..."
+                  className="w-full pl-10 pr-24 py-3 rounded-xl bg-ground border border-rule text-[14px] text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent transition-colors font-sans"
+                />
+                <button
+                  type="button"
+                  onClick={handleInscribeTask}
+                  disabled={!query.trim() || isSubmitting}
+                  className="absolute right-2 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-40 transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Inscribe</span>
+                  <CornerDownLeft className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "expense" && (
+            <div className="space-y-2.5">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="relative flex items-center">
+                  <span className="absolute left-3 font-mono text-sm text-accent font-bold">₹</span>
+                  <input
+                    ref={inputRef}
+                    type="number"
+                    step="0.01"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full pl-8 pr-3 py-2.5 rounded-xl bg-ground border border-rule text-[14px] font-mono text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent transition-colors"
+                  />
+                </div>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="px-3 py-2.5 rounded-xl bg-ground border border-rule text-xs font-medium text-ink focus:outline-none focus:border-accent transition-colors cursor-pointer"
+                >
+                  <option value="Chai & Coffee">Chai & Coffee</option>
+                  <option value="Snacks">Snacks</option>
+                  <option value="Food & Meals">Food & Meals</option>
+                  <option value="Groceries">Groceries</option>
+                  <option value="Transport & Fuel">Transport & Fuel</option>
+                  <option value="Buying / Shopping">Buying / Shopping</option>
+                  <option value="Bills & Utilities">Bills & Utilities</option>
+                  <option value="Rent">Rent</option>
+                  <option value="Entertainment">Entertainment</option>
+                  <option value="Health & Meds">Health & Meds</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleLogExpense();
+                  }}
+                  placeholder="Expense memo or voucher description..."
+                  className="w-full px-3 py-2.5 rounded-xl bg-ground border border-rule text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent transition-colors font-sans"
+                />
+                <button
+                  type="button"
+                  onClick={handleLogExpense}
+                  disabled={!amount || isSubmitting}
+                  className="absolute right-2 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-40 transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Record</span>
+                  <CornerDownLeft className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "nav" && (
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => handleNavigate("/calendar")}
+                className="flex items-center gap-2.5 p-2.5 rounded-xl bg-ground border border-rule hover:border-accent text-left group transition-all cursor-pointer"
+              >
+                <Calendar className="w-4 h-4 text-accent" />
+                <div>
+                  <p className="text-xs font-bold text-ink group-hover:text-accent">Calendar Folio</p>
+                  <p className="text-[10.5px] text-ink-faint">Agenda & 365-day heatmap</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleNavigate("/diary")}
+                className="flex items-center gap-2.5 p-2.5 rounded-xl bg-ground border border-rule hover:border-accent text-left group transition-all cursor-pointer"
+              >
+                <BookOpen className="w-4 h-4 text-accent" />
+                <div>
+                  <p className="text-xs font-bold text-ink group-hover:text-accent">Private Vault</p>
+                  <p className="text-[10.5px] text-ink-faint">Daily journal & reflections</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleNavigate("/tasks")}
+                className="flex items-center gap-2.5 p-2.5 rounded-xl bg-ground border border-rule hover:border-accent text-left group transition-all cursor-pointer"
+              >
+                <CheckSquare className="w-4 h-4 text-accent" />
+                <div>
+                  <p className="text-xs font-bold text-ink group-hover:text-accent">Tasks Ledger</p>
+                  <p className="text-[10.5px] text-ink-faint">Ruled action dockets</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleNavigate("/expenses")}
+                className="flex items-center gap-2.5 p-2.5 rounded-xl bg-ground border border-rule hover:border-accent text-left group transition-all cursor-pointer"
+              >
+                <DollarSign className="w-4 h-4 text-accent" />
+                <div>
+                  <p className="text-xs font-bold text-ink group-hover:text-accent">Ruled Ledger</p>
+                  <p className="text-[10.5px] text-ink-faint">Expenses & monthly velocity</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleNavigate("/projects")}
+                className="col-span-2 flex items-center gap-2.5 p-2.5 rounded-xl bg-ground border border-rule hover:border-accent text-left group transition-all cursor-pointer"
+              >
+                <FolderKanban className="w-4 h-4 text-accent" />
+                <div>
+                  <p className="text-xs font-bold text-ink group-hover:text-accent">Craft Dockets (Kanban)</p>
+                  <p className="text-[10.5px] text-ink-faint">Multi-stage initiative boards</p>
+                </div>
+              </button>
+            </div>
+          )}
+
+          {successMsg && (
+            <p className="text-xs font-semibold text-accent flex items-center gap-1.5 animate-fadeIn">
+              <CornerDownLeft className="w-3.5 h-3.5" /> {successMsg}
+            </p>
+          )}
+        </div>
+
+        {/* Footer shortcuts helper */}
+        <div className="px-4 py-2 bg-raised/30 border-t border-rule flex items-center justify-between text-[11px] font-mono text-ink-faint">
+          <span>Tip: Press Enter to inscribe</span>
+          <span>ESC to close</span>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+````
+
 ## File: desktop/src/lib/supabase.ts
 ````typescript
 import { createClient, type User as SupabaseUser, type Session } from '@supabase/supabase-js';
@@ -11110,162 +10413,145 @@ export async function signOut() {
 }
 ````
 
-## File: desktop/src-tauri/src/db.rs
+## File: desktop/src-tauri/src/models.rs
 ````rust
-use rusqlite::Connection;
-use std::path::PathBuf;
-use std::sync::Mutex;
-use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 
-fn db_path() -> PathBuf {
-    let mut dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-    dir.push("com.clarity.app");
-    std::fs::create_dir_all(&dir).ok();
-    dir.push("clarity.db");
-    dir
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct User {
+    pub id: i64,
+    pub username: String,
+    pub email: String,
+    pub diary_pin: Option<String>,
+    pub created_at: String,
 }
 
-static DB: Lazy<Mutex<Connection>> = Lazy::new(|| {
-    let conn = Connection::open(db_path()).expect("Failed to open database");
-    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;").ok();
-    init_tables(&conn);
-    Mutex::new(conn)
-});
-
-pub fn get_db() -> std::sync::MutexGuard<'static, Connection> {
-    DB.lock().expect("DB lock poisoned")
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Task {
+    pub id: i64,
+    pub title: String,
+    pub description: Option<String>,
+    pub completed: bool,
+    pub status: Option<String>,
+    pub project_id: Option<String>,
+    pub due_at: Option<String>,
+    pub remind_at: Option<String>,
+    pub reminder_sent: Option<bool>,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
-fn init_tables(conn: &Connection) {
-    conn.execute_batch("
-        CREATE TABLE IF NOT EXISTS users (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            username    TEXT NOT NULL UNIQUE,
-            email       TEXT NOT NULL UNIQUE,
-            password    TEXT NOT NULL,
-            diary_pin   TEXT,
-            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-        );
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DiaryEntry {
+    pub id: i64,
+    pub date: String,
+    pub body: String,
+    pub mood: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
 
-        CREATE TABLE IF NOT EXISTS tasks (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id     INTEGER NOT NULL REFERENCES users(id),
-            title       TEXT NOT NULL,
-            description TEXT,
-            completed   INTEGER NOT NULL DEFAULT 0,
-            due_at      TEXT,
-            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-        );
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarEvent {
+    pub id: i64,
+    pub title: String,
+    pub description: Option<String>,
+    pub event_date: String,
+    pub start_at: Option<String>,
+    pub end_at: Option<String>,
+    #[serde(rename = "type")]
+    pub event_type: String,
+    pub remind_at: Option<String>,
+    pub reminder_sent: Option<bool>,
+    pub created_at: String,
+}
 
-        CREATE TABLE IF NOT EXISTS diary_entries (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id     INTEGER NOT NULL REFERENCES users(id),
-            date        TEXT NOT NULL,
-            body        TEXT NOT NULL DEFAULT '',
-            mood        TEXT,
-            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
-            UNIQUE(user_id, date)
-        );
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthResponse {
+    pub user_id: i64,
+    pub username: String,
+}
 
-        CREATE TABLE IF NOT EXISTS calendar_events (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id     INTEGER NOT NULL REFERENCES users(id),
-            title       TEXT NOT NULL,
-            description TEXT,
-            event_date  TEXT NOT NULL,
-            start_at    TEXT,
-            end_at      TEXT,
-            event_type  TEXT NOT NULL DEFAULT 'NOTE',
-            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-        );
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Expense {
+    pub id: i64,
+    pub amount: f64,
+    pub category: String,
+    pub description: Option<String>,
+    pub date: String,
+    pub expense_type: String, // EXPENSE or INCOME
+    pub created_at: String,
+}
 
-        CREATE TABLE IF NOT EXISTS expenses (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id     INTEGER NOT NULL REFERENCES users(id),
-            amount      REAL NOT NULL,
-            category    TEXT NOT NULL,
-            description TEXT,
-            date        TEXT NOT NULL,
-            type        TEXT NOT NULL DEFAULT 'EXPENSE',
-            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-        );
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Project {
+    pub id: i64,
+    pub title: String,
+    pub description: Option<String>,
+    pub created_at: String,
+}
 
-        CREATE TABLE IF NOT EXISTS projects (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id     INTEGER NOT NULL REFERENCES users(id),
-            title       TEXT NOT NULL,
-            description TEXT,
-            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-        );
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectTask {
+    pub id: i64,
+    pub project_id: i64,
+    pub title: String,
+    pub description: Option<String>,
+    pub status: String,
+    pub created_at: String,
+}
+````
 
-        CREATE TABLE IF NOT EXISTS project_tasks (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            title       TEXT NOT NULL,
-            description TEXT,
-            status      TEXT NOT NULL DEFAULT 'TODO',
-            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        -- Sync metadata table
-        CREATE TABLE IF NOT EXISTS sync_meta (
-            key   TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-    ").expect("Failed to create tables");
-
-    // Add sync columns to all tables (safe to re-run — ALTERs silently fail if column exists)
-    let sync_migrations = vec![
-        // tasks
-        "ALTER TABLE tasks ADD COLUMN server_id TEXT",
-        "ALTER TABLE tasks ADD COLUMN client_id TEXT",
-        "ALTER TABLE tasks ADD COLUMN deleted_at TEXT",
-        "ALTER TABLE tasks ADD COLUMN sync_status TEXT DEFAULT 'pending'",
-        // diary_entries
-        "ALTER TABLE diary_entries ADD COLUMN server_id TEXT",
-        "ALTER TABLE diary_entries ADD COLUMN client_id TEXT",
-        "ALTER TABLE diary_entries ADD COLUMN deleted_at TEXT",
-        "ALTER TABLE diary_entries ADD COLUMN sync_status TEXT DEFAULT 'pending'",
-        // calendar_events
-        "ALTER TABLE calendar_events ADD COLUMN server_id TEXT",
-        "ALTER TABLE calendar_events ADD COLUMN client_id TEXT",
-        "ALTER TABLE calendar_events ADD COLUMN deleted_at TEXT",
-        "ALTER TABLE calendar_events ADD COLUMN sync_status TEXT DEFAULT 'pending'",
-        "ALTER TABLE calendar_events ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))",
-        // expenses
-        "ALTER TABLE expenses ADD COLUMN server_id TEXT",
-        "ALTER TABLE expenses ADD COLUMN client_id TEXT",
-        "ALTER TABLE expenses ADD COLUMN deleted_at TEXT",
-        "ALTER TABLE expenses ADD COLUMN sync_status TEXT DEFAULT 'pending'",
-        "ALTER TABLE expenses ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))",
-        // projects
-        "ALTER TABLE projects ADD COLUMN server_id TEXT",
-        "ALTER TABLE projects ADD COLUMN client_id TEXT",
-        "ALTER TABLE projects ADD COLUMN deleted_at TEXT",
-        "ALTER TABLE projects ADD COLUMN sync_status TEXT DEFAULT 'pending'",
-        "ALTER TABLE projects ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))",
-        // project_tasks
-        "ALTER TABLE project_tasks ADD COLUMN server_id TEXT",
-        "ALTER TABLE project_tasks ADD COLUMN client_id TEXT",
-        "ALTER TABLE project_tasks ADD COLUMN deleted_at TEXT",
-        "ALTER TABLE project_tasks ADD COLUMN sync_status TEXT DEFAULT 'pending'",
-        "ALTER TABLE project_tasks ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))",
-    ];
-
-    for migration in sync_migrations {
-        // Ignore "duplicate column" errors — means migration already ran
-        let _ = conn.execute(migration, []);
+## File: desktop/src-tauri/tauri.conf.json
+````json
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Clarity",
+  "version": "0.1.0",
+  "identifier": "com.clarity.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Clarity",
+        "label": "main",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "decorations": false,
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+      }
+    ],
+    "security": {
+      "csp": null
     }
-
-    // Purge any orphaned task calendar events where the underlying task was deleted
-    let _ = conn.execute(
-        "DELETE FROM calendar_events WHERE event_type = 'TASK' AND NOT EXISTS (
-            SELECT 1 FROM tasks WHERE tasks.user_id = calendar_events.user_id AND tasks.title = calendar_events.title
-        )",
-        [],
-    );
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
 }
 ````
 
@@ -11436,152 +10722,6 @@ Clarity includes pre-configured SQL migration scripts in the [`docs/`](docs/) di
 This project is licensed under the **MIT License** — open-source and free forever.
 ````
 
-## File: desktop/src/App.tsx
-````typescript
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { useEffect, useState } from "react";
-import { useAuth } from "./lib/store";
-import { supabase } from "./lib/supabase";
-import AuthPage from "./pages/AuthPage";
-import Layout from "./components/Layout";
-import CalendarPage from "./pages/CalendarPage";
-import DiaryPage from "./pages/DiaryPage";
-import TasksPage from "./pages/TasksPage";
-import ExpensesPage from "./pages/ExpensesPage";
-import ProjectsPage from "./pages/ProjectsPage";
-import { Loader2 } from "lucide-react";
-import { OpeningAnimation } from "./components/OpeningAnimation";
-
-function App() {
-  const isAuthenticated = useAuth((s) => s.isAuthenticated);
-  const isLoading = useAuth((s) => s.isLoading);
-  const initAuth = useAuth((s) => s.initAuth);
-  const [slowNotice, setSlowNotice] = useState(false);
-
-  const [showIntro, setShowIntro] = useState(() => {
-    try {
-      return !sessionStorage.getItem("clarity_intro_seen");
-    } catch {
-      return true;
-    }
-  });
-
-  useEffect(() => {
-    // Initialize auth state from Supabase session
-    initAuth();
-
-    const slowTimer = setTimeout(() => {
-      setSlowNotice(true);
-    }, 3500);
-
-    // Listen for auth state changes (login, logout, token refresh, OAuth redirect)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, _session) => {
-        if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-          await initAuth();
-        } else if (event === "SIGNED_OUT") {
-          useAuth.setState({
-            supabaseUser: null,
-            username: null,
-            email: null,
-            avatarUrl: null,
-            isAuthenticated: false,
-            isLoading: false,
-          });
-        }
-      }
-    );
-
-    // Replay opening animation listeners (custom event + Ctrl+Shift+O shortcut)
-    const replayListener = () => {
-      setShowIntro(true);
-    };
-    window.addEventListener("clarity:replay-intro", replayListener);
-    (window as any).__clarityReplayIntro = () => setShowIntro(true);
-
-    const handleGlobalKeys = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "O" || e.key === "o")) {
-        e.preventDefault();
-        setShowIntro(true);
-      }
-    };
-    window.addEventListener("keydown", handleGlobalKeys);
-
-    return () => {
-      clearTimeout(slowTimer);
-      subscription.unsubscribe();
-      window.removeEventListener("clarity:replay-intro", replayListener);
-      window.removeEventListener("keydown", handleGlobalKeys);
-      delete (window as any).__clarityReplayIntro;
-    };
-  }, []);
-
-  return (
-    <>
-      {showIntro && (
-        <OpeningAnimation
-          onComplete={() => {
-            setShowIntro(false);
-            try {
-              sessionStorage.setItem("clarity_intro_seen", "true");
-            } catch {}
-          }}
-        />
-      )}
-
-      {isLoading ? (
-        <div className="bg-ground text-ink min-h-screen flex items-center justify-center p-6">
-          <div className="flex flex-col items-center gap-3 max-w-sm text-center">
-            <Loader2 className="w-6 h-6 animate-spin text-accent" />
-            <span className="text-xs font-medium text-ink-faint">Loading Clarity...</span>
-            {slowNotice && (
-              <div className="mt-2 flex flex-col items-center gap-2">
-                <p className="text-[11px] text-ink-soft">
-                  Network connection is taking longer than expected.
-                </p>
-                <div className="flex items-center gap-2 mt-1">
-                  <button
-                    type="button"
-                    onClick={() => { setSlowNotice(false); initAuth(); }}
-                    className="px-2.5 py-1 text-xs border border-rule bg-surface hover:bg-raised text-ink rounded-lg transition cursor-pointer"
-                  >
-                    Retry Connection
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => useAuth.setState({ isLoading: false, isAuthenticated: false })}
-                    className="px-2.5 py-1 text-xs text-ink-faint hover:text-ink underline cursor-pointer"
-                  >
-                    Go to Login
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : !isAuthenticated ? (
-        <AuthPage />
-      ) : (
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Layout />}>
-              <Route index element={<Navigate to="/calendar" replace />} />
-              <Route path="calendar" element={<CalendarPage />} />
-              <Route path="diary" element={<DiaryPage />} />
-              <Route path="tasks" element={<TasksPage />} />
-              <Route path="expenses" element={<ExpensesPage />} />
-              <Route path="projects" element={<ProjectsPage />} />
-            </Route>
-          </Routes>
-        </BrowserRouter>
-      )}
-    </>
-  );
-}
-
-export default App;
-````
-
 ## File: .gitignore
 ````
 # OS & System
@@ -11646,6 +10786,177 @@ backend/.env
 !*.env.example
 ````
 
+## File: desktop/src-tauri/src/db.rs
+````rust
+use rusqlite::Connection;
+use std::path::PathBuf;
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
+
+fn db_path() -> PathBuf {
+    let mut dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    dir.push("com.clarity.app");
+    std::fs::create_dir_all(&dir).ok();
+    dir.push("clarity.db");
+    dir
+}
+
+static DB: Lazy<Mutex<Connection>> = Lazy::new(|| {
+    let conn = Connection::open(db_path()).expect("Failed to open database");
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;").ok();
+    init_tables(&conn);
+    Mutex::new(conn)
+});
+
+pub fn get_db() -> std::sync::MutexGuard<'static, Connection> {
+    DB.lock().expect("DB lock poisoned")
+}
+
+fn init_tables(conn: &Connection) {
+    conn.execute_batch("
+        CREATE TABLE IF NOT EXISTS users (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            username    TEXT NOT NULL UNIQUE,
+            email       TEXT NOT NULL UNIQUE,
+            password    TEXT NOT NULL,
+            diary_pin   TEXT,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS tasks (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL REFERENCES users(id),
+            title       TEXT NOT NULL,
+            description TEXT,
+            completed   INTEGER NOT NULL DEFAULT 0,
+            due_at      TEXT,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS diary_entries (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL REFERENCES users(id),
+            date        TEXT NOT NULL,
+            body        TEXT NOT NULL DEFAULT '',
+            mood        TEXT,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(user_id, date)
+        );
+
+        CREATE TABLE IF NOT EXISTS calendar_events (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL REFERENCES users(id),
+            title       TEXT NOT NULL,
+            description TEXT,
+            event_date  TEXT NOT NULL,
+            start_at    TEXT,
+            end_at      TEXT,
+            event_type  TEXT NOT NULL DEFAULT 'NOTE',
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS expenses (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL REFERENCES users(id),
+            amount      REAL NOT NULL,
+            category    TEXT NOT NULL,
+            description TEXT,
+            date        TEXT NOT NULL,
+            type        TEXT NOT NULL DEFAULT 'EXPENSE',
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS projects (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL REFERENCES users(id),
+            title       TEXT NOT NULL,
+            description TEXT,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS project_tasks (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            title       TEXT NOT NULL,
+            description TEXT,
+            status      TEXT NOT NULL DEFAULT 'TODO',
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        -- Sync metadata table
+        CREATE TABLE IF NOT EXISTS sync_meta (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+    ").expect("Failed to create tables");
+
+    // Add sync columns to all tables (safe to re-run — ALTERs silently fail if column exists)
+    let sync_migrations = vec![
+        // tasks
+        "ALTER TABLE tasks ADD COLUMN status TEXT DEFAULT 'TODO'",
+        "ALTER TABLE tasks ADD COLUMN project_id TEXT",
+        "ALTER TABLE tasks ADD COLUMN remind_at TEXT",
+        "ALTER TABLE tasks ADD COLUMN reminder_sent INTEGER DEFAULT 0",
+        "ALTER TABLE tasks ADD COLUMN server_id TEXT",
+        "ALTER TABLE tasks ADD COLUMN client_id TEXT",
+        "ALTER TABLE tasks ADD COLUMN deleted_at TEXT",
+        "ALTER TABLE tasks ADD COLUMN sync_status TEXT DEFAULT 'pending'",
+        // diary_entries
+        "ALTER TABLE diary_entries ADD COLUMN server_id TEXT",
+        "ALTER TABLE diary_entries ADD COLUMN client_id TEXT",
+        "ALTER TABLE diary_entries ADD COLUMN deleted_at TEXT",
+        "ALTER TABLE diary_entries ADD COLUMN sync_status TEXT DEFAULT 'pending'",
+        // calendar_events
+        "ALTER TABLE calendar_events ADD COLUMN remind_at TEXT",
+        "ALTER TABLE calendar_events ADD COLUMN reminder_sent INTEGER DEFAULT 0",
+        "ALTER TABLE calendar_events ADD COLUMN server_id TEXT",
+        "ALTER TABLE calendar_events ADD COLUMN client_id TEXT",
+        "ALTER TABLE calendar_events ADD COLUMN deleted_at TEXT",
+        "ALTER TABLE calendar_events ADD COLUMN sync_status TEXT DEFAULT 'pending'",
+        "ALTER TABLE calendar_events ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))",
+        // expenses
+        "ALTER TABLE expenses ADD COLUMN server_id TEXT",
+        "ALTER TABLE expenses ADD COLUMN client_id TEXT",
+        "ALTER TABLE expenses ADD COLUMN deleted_at TEXT",
+        "ALTER TABLE expenses ADD COLUMN sync_status TEXT DEFAULT 'pending'",
+        "ALTER TABLE expenses ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))",
+        // projects
+        "ALTER TABLE projects ADD COLUMN server_id TEXT",
+        "ALTER TABLE projects ADD COLUMN client_id TEXT",
+        "ALTER TABLE projects ADD COLUMN deleted_at TEXT",
+        "ALTER TABLE projects ADD COLUMN sync_status TEXT DEFAULT 'pending'",
+        "ALTER TABLE projects ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))",
+        // project_tasks
+        "ALTER TABLE project_tasks ADD COLUMN server_id TEXT",
+        "ALTER TABLE project_tasks ADD COLUMN client_id TEXT",
+        "ALTER TABLE project_tasks ADD COLUMN deleted_at TEXT",
+        "ALTER TABLE project_tasks ADD COLUMN sync_status TEXT DEFAULT 'pending'",
+        "ALTER TABLE project_tasks ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))",
+    ];
+
+    for migration in sync_migrations {
+        // Ignore "duplicate column" errors — means migration already ran
+        let _ = conn.execute(migration, []);
+    }
+
+    // Purge any orphaned task calendar events where the underlying task was deleted
+    let _ = conn.execute(
+        "DELETE FROM calendar_events WHERE event_type = 'TASK' AND NOT EXISTS (
+            SELECT 1 FROM tasks WHERE tasks.user_id = calendar_events.user_id AND tasks.title = calendar_events.title
+        )",
+        [],
+    );
+
+    // Ensure default local user exists for offline desktop operations
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO users (id, username, email, password) VALUES (1, 'Sahil', 'sahil@clarity.local', 'local_pass')",
+        [],
+    );
+}
+````
+
 ## File: desktop/index.html
 ````html
 <!doctype html>
@@ -11679,6 +10990,220 @@ backend/.env
 </html>
 ````
 
+## File: desktop/src/App.tsx
+````typescript
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useEffect, useState, useCallback } from "react";
+import { useAuth } from "./lib/store";
+import { supabase } from "./lib/supabase";
+import AuthPage from "./pages/AuthPage";
+import Layout from "./components/Layout";
+import CalendarPage from "./pages/CalendarPage";
+import DiaryPage from "./pages/DiaryPage";
+import TasksPage from "./pages/TasksPage";
+import ExpensesPage from "./pages/ExpensesPage";
+import ProjectsPage from "./pages/ProjectsPage";
+import { Loader2 } from "lucide-react";
+import { OpeningAnimation } from "./components/OpeningAnimation";
+
+function App() {
+  const isAuthenticated = useAuth((s) => s.isAuthenticated);
+  const isLoading = useAuth((s) => s.isLoading);
+  const initAuth = useAuth((s) => s.initAuth);
+  const [slowNotice, setSlowNotice] = useState(false);
+
+  const [showIntro, setShowIntro] = useState(() => {
+    try {
+      const seen = sessionStorage.getItem("clarity_intro_seen");
+      if (!seen) {
+        // Mark immediately so re-renders during boot never re-trigger it
+        sessionStorage.setItem("clarity_intro_seen", "true");
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  });
+
+  const handleIntroComplete = useCallback(() => {
+    setShowIntro(false);
+  }, []);
+
+  useEffect(() => {
+    // Initialize auth state from Supabase session
+    initAuth();
+
+    const slowTimer = setTimeout(() => {
+      setSlowNotice(true);
+    }, 3500);
+
+    // Listen for auth state changes (login, logout, token refresh, OAuth redirect)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, _session) => {
+        if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+          await initAuth();
+        } else if (event === "SIGNED_OUT") {
+          useAuth.setState({
+            supabaseUser: null,
+            username: null,
+            email: null,
+            avatarUrl: null,
+            isAuthenticated: false,
+            isLoading: false,
+          });
+        }
+      }
+    );
+
+    // Replay opening animation listeners (custom event + Ctrl+Shift+O shortcut)
+    const replayListener = () => {
+      setShowIntro(true);
+    };
+    window.addEventListener("clarity:replay-intro", replayListener);
+    (window as any).__clarityReplayIntro = () => setShowIntro(true);
+
+    const handleGlobalKeys = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "O" || e.key === "o")) {
+        e.preventDefault();
+        setShowIntro(true);
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeys);
+
+    return () => {
+      clearTimeout(slowTimer);
+      subscription.unsubscribe();
+      window.removeEventListener("clarity:replay-intro", replayListener);
+      window.removeEventListener("keydown", handleGlobalKeys);
+      delete (window as any).__clarityReplayIntro;
+    };
+  }, []);
+
+  return (
+    <>
+      {showIntro && (
+        <OpeningAnimation onComplete={handleIntroComplete} />
+      )}
+
+      {isLoading ? (
+        <div className="bg-ground text-ink min-h-screen flex items-center justify-center p-6">
+          <div className="flex flex-col items-center gap-3 max-w-sm text-center">
+            <Loader2 className="w-6 h-6 animate-spin text-accent" />
+            <span className="text-xs font-medium text-ink-faint">Loading Clarity...</span>
+            {slowNotice && (
+              <div className="mt-2 flex flex-col items-center gap-2">
+                <p className="text-[11px] text-ink-soft">
+                  Network connection is taking longer than expected.
+                </p>
+                <div className="flex items-center gap-2 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => { setSlowNotice(false); initAuth(); }}
+                    className="px-2.5 py-1 text-xs border border-rule bg-surface hover:bg-raised text-ink rounded-lg transition cursor-pointer"
+                  >
+                    Retry Connection
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => useAuth.setState({ isLoading: false, isAuthenticated: false })}
+                    className="px-2.5 py-1 text-xs text-ink-faint hover:text-ink underline cursor-pointer"
+                  >
+                    Go to Login
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : !isAuthenticated ? (
+        <AuthPage />
+      ) : (
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Layout />}>
+              <Route index element={<Navigate to="/calendar" replace />} />
+              <Route path="calendar" element={<CalendarPage />} />
+              <Route path="diary" element={<DiaryPage />} />
+              <Route path="tasks" element={<TasksPage />} />
+              <Route path="expenses" element={<ExpensesPage />} />
+              <Route path="projects" element={<ProjectsPage />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      )}
+    </>
+  );
+}
+
+export default App;
+````
+
+## File: desktop/src-tauri/src/lib.rs
+````rust
+pub mod db;
+pub mod models;
+pub mod commands;
+pub mod sync_commands;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .invoke_handler(tauri::generate_handler![
+            commands::register,
+            commands::login,
+            commands::ensure_oauth_user,
+            commands::ensure_supabase_user,
+            commands::get_tasks,
+            commands::create_task,
+            commands::update_task,
+            commands::delete_task,
+            commands::set_diary_pin,
+            commands::reset_diary_pin,
+            commands::remove_diary_pin,
+            commands::check_diary_pin,
+            commands::verify_diary_pin,
+            commands::get_diary_entries,
+            commands::save_diary_entry,
+            commands::get_calendar_day,
+            commands::get_calendar_range,
+            commands::get_year_heatmap,
+            commands::create_calendar_event,
+            commands::delete_calendar_event,
+            commands::update_calendar_event,
+            commands::get_expenses,
+            commands::create_expense,
+            commands::delete_expense,
+            commands::get_projects,
+            commands::create_project,
+            commands::delete_project,
+            commands::get_project_tasks,
+            commands::create_project_task,
+            commands::update_project_task_status,
+            commands::delete_project_task,
+            commands::window_minimize,
+            commands::window_toggle_maximize,
+            commands::window_close,
+            // Sync commands
+            sync_commands::get_pending_tasks,
+            sync_commands::get_pending_diary_entries,
+            sync_commands::get_pending_calendar_events,
+            sync_commands::get_pending_expenses,
+            sync_commands::get_pending_projects,
+            sync_commands::get_pending_project_tasks,
+            sync_commands::mark_synced,
+            sync_commands::set_server_id,
+            sync_commands::upsert_from_server,
+            sync_commands::delete_from_server,
+            sync_commands::get_last_sync_time,
+            sync_commands::set_last_sync_time,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error running Clarity");
+}
+````
+
 ## File: desktop/src/lib/types.ts
 ````typescript
 export interface Profile {
@@ -11691,12 +11216,16 @@ export interface Profile {
   updated_at: string;
 }
 
+export type TaskStatus = "TODO" | "IN_PROGRESS" | "DONE";
+
 export interface Task {
   id: string;
   user_id: string;
   title: string;
   description: string | null;
   completed: boolean;
+  status?: TaskStatus;
+  project_id?: string | null;
   due_at: string | null;
   remind_at: string | null;
   reminder_sent: boolean;
@@ -11705,12 +11234,21 @@ export interface Task {
   deleted_at: string | null;
 }
 
+export type DiaryMood =
+  | "Energized"
+  | "Peaceful"
+  | "Productive"
+  | "Chilled"
+  | "Tired"
+  | "Thoughtful";
+
 export interface DiaryEntry {
   id: string;
   user_id: string;
   date: string; // YYYY-MM-DD
   body: string;
-  mood: "HAPPY" | "NEUTRAL" | "SAD" | "ANXIOUS" | "EXCITED" | null;
+  mood: DiaryMood | null;
+  readOnly?: boolean;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -11771,898 +11309,6 @@ export interface ProjectTask {
   updated_at: string;
   deleted_at: string | null;
 }
-````
-
-## File: desktop/src-tauri/src/lib.rs
-````rust
-pub mod db;
-pub mod models;
-pub mod commands;
-pub mod sync_commands;
-
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![
-            commands::register,
-            commands::login,
-            commands::ensure_oauth_user,
-            commands::ensure_supabase_user,
-            commands::get_tasks,
-            commands::create_task,
-            commands::update_task,
-            commands::delete_task,
-            commands::set_diary_pin,
-            commands::reset_diary_pin,
-            commands::remove_diary_pin,
-            commands::check_diary_pin,
-            commands::verify_diary_pin,
-            commands::get_diary_entries,
-            commands::save_diary_entry,
-            commands::get_calendar_day,
-            commands::get_calendar_range,
-            commands::get_year_heatmap,
-            commands::create_calendar_event,
-            commands::delete_calendar_event,
-            commands::update_calendar_event,
-            commands::get_expenses,
-            commands::create_expense,
-            commands::delete_expense,
-            commands::get_projects,
-            commands::create_project,
-            commands::delete_project,
-            commands::get_project_tasks,
-            commands::create_project_task,
-            commands::update_project_task_status,
-            commands::delete_project_task,
-            // Sync commands
-            sync_commands::get_pending_tasks,
-            sync_commands::get_pending_diary_entries,
-            sync_commands::get_pending_calendar_events,
-            sync_commands::get_pending_expenses,
-            sync_commands::get_pending_projects,
-            sync_commands::get_pending_project_tasks,
-            sync_commands::mark_synced,
-            sync_commands::set_server_id,
-            sync_commands::upsert_from_server,
-            sync_commands::delete_from_server,
-            sync_commands::get_last_sync_time,
-            sync_commands::set_last_sync_time,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error running Clarity");
-}
-````
-
-## File: desktop/src-tauri/src/commands.rs
-````rust
-use rusqlite::params;
-use crate::db::get_db;
-use crate::models::*;
-
-// ─── Auth ────────────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn register(username: String, email: String, password: String) -> Result<AuthResponse, String> {
-    let clean_user = username.trim().to_string();
-    let clean_email = email.trim().to_lowercase();
-    let clean_pass = password.trim();
-
-    if clean_user.is_empty() {
-        return Err("Username cannot be empty".to_string());
-    }
-    if clean_email.is_empty() || !clean_email.contains('@') {
-        return Err("Please enter a valid email address".to_string());
-    }
-    if clean_pass.len() < 4 {
-        return Err("Password must be at least 4 characters".to_string());
-    }
-
-    let hashed = bcrypt::hash(clean_pass, 10).map_err(|e| e.to_string())?;
-    let db = get_db();
-    db.execute(
-        "INSERT INTO users (username, email, password) VALUES (?1, ?2, ?3)",
-        params![clean_user, clean_email, hashed],
-    ).map_err(|e| {
-        let err_str = e.to_string();
-        if err_str.contains("users.username") {
-            "Username is already taken".to_string()
-        } else if err_str.contains("users.email") {
-            "Email is already registered".to_string()
-        } else {
-            format!("Registration failed: {}", err_str)
-        }
-    })?;
-    let id = db.last_insert_rowid();
-    Ok(AuthResponse { user_id: id, username: clean_user })
-}
-
-#[tauri::command]
-pub fn login(username: String, password: String) -> Result<AuthResponse, String> {
-    let clean_user = username.trim();
-    let clean_pass = password.trim();
-
-    if clean_user.is_empty() || clean_pass.is_empty() {
-        return Err("Username and password are required".to_string());
-    }
-
-    let db = get_db();
-    let mut stmt = db.prepare(
-        "SELECT id, username, password FROM users WHERE username = ?1 COLLATE NOCASE OR email = ?1 COLLATE NOCASE"
-    ).map_err(|e| e.to_string())?;
-
-    let (id, actual_username, hash): (i64, String, String) = stmt.query_row(params![clean_user], |row| {
-        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-    }).map_err(|_| "Invalid username/email or password".to_string())?;
-
-    if !bcrypt::verify(clean_pass, &hash).unwrap_or(false) {
-        return Err("Invalid username/email or password".to_string());
-    }
-    Ok(AuthResponse { user_id: id, username: actual_username })
-}
-
-#[tauri::command]
-pub fn ensure_oauth_user(username: String, email: String) -> Result<AuthResponse, String> {
-    let clean_user = username.trim().to_string();
-    let clean_email = email.trim().to_lowercase();
-    let db = get_db();
-
-    let mut stmt = db.prepare(
-        "SELECT id, username FROM users WHERE email = ?1 COLLATE NOCASE OR username = ?2 COLLATE NOCASE"
-    ).map_err(|e| e.to_string())?;
-
-    let existing: Result<(i64, String), rusqlite::Error> = stmt.query_row(params![clean_email, clean_user], |row| {
-        Ok((row.get(0)?, row.get(1)?))
-    });
-
-    if let Ok((id, uname)) = existing {
-        return Ok(AuthResponse { user_id: id, username: uname });
-    }
-
-    let dummy_hash = bcrypt::hash(uuid::Uuid::new_v4().to_string(), 4).unwrap_or_default();
-    db.execute(
-        "INSERT INTO users (username, email, password) VALUES (?1, ?2, ?3)",
-        params![clean_user, clean_email, dummy_hash],
-    ).map_err(|e| format!("Failed to create local user for OAuth: {}", e))?;
-
-    let id = db.last_insert_rowid();
-    Ok(AuthResponse { user_id: id, username: clean_user })
-}
-
-#[tauri::command]
-pub fn ensure_supabase_user(supabase_id: String, email: String, username: String) -> Result<AuthResponse, String> {
-    let clean_user = username.trim().to_string();
-    let clean_email = email.trim().to_lowercase();
-    let db = get_db();
-
-    // Check if user already exists by email
-    let mut stmt = db.prepare(
-        "SELECT id, username FROM users WHERE email = ?1 COLLATE NOCASE"
-    ).map_err(|e| e.to_string())?;
-
-    let existing: Result<(i64, String), rusqlite::Error> = stmt.query_row(params![clean_email], |row| {
-        Ok((row.get(0)?, row.get(1)?))
-    });
-
-    if let Ok((id, uname)) = existing {
-        return Ok(AuthResponse { user_id: id, username: uname });
-    }
-
-    // Create new user (no password needed for Supabase users)
-    let dummy_hash = bcrypt::hash(&supabase_id, 4).unwrap_or_default();
-    db.execute(
-        "INSERT INTO users (username, email, password) VALUES (?1, ?2, ?3)",
-        params![clean_user, clean_email, dummy_hash],
-    ).map_err(|e| format!("Failed to create local user for Supabase: {}", e))?;
-
-    let id = db.last_insert_rowid();
-    Ok(AuthResponse { user_id: id, username: clean_user })
-}
-
-// ─── Tasks ───────────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn get_tasks(user_id: i64, pending_only: bool) -> Result<Vec<Task>, String> {
-    let db = get_db();
-    let sql = if pending_only {
-        "SELECT id, title, description, completed, due_at, created_at, updated_at FROM tasks WHERE user_id = ?1 AND completed = 0 AND deleted_at IS NULL ORDER BY created_at DESC"
-    } else {
-        "SELECT id, title, description, completed, due_at, created_at, updated_at FROM tasks WHERE user_id = ?1 AND deleted_at IS NULL ORDER BY created_at DESC"
-    };
-    let mut stmt = db.prepare(sql).map_err(|e| e.to_string())?;
-    let tasks = stmt.query_map(params![user_id], |row| {
-        Ok(Task {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            description: row.get(2)?,
-            completed: row.get::<_, i32>(3)? != 0,
-            due_at: row.get(4)?,
-            created_at: row.get(5)?,
-            updated_at: row.get(6)?,
-        })
-    }).map_err(|e| e.to_string())?
-    .filter_map(|r| r.ok())
-    .collect();
-    Ok(tasks)
-}
-
-#[tauri::command]
-pub fn create_task(user_id: i64, title: String, description: Option<String>, due_at: Option<String>) -> Result<Task, String> {
-    let db = get_db();
-    let client_id = uuid::Uuid::new_v4().to_string();
-    db.execute(
-        "INSERT INTO tasks (user_id, title, description, due_at, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
-        params![user_id, title, description, due_at, client_id],
-    ).map_err(|e| e.to_string())?;
-    let id = db.last_insert_rowid();
-    let mut stmt = db.prepare("SELECT id, title, description, completed, due_at, created_at, updated_at FROM tasks WHERE id = ?1")
-        .map_err(|e| e.to_string())?;
-    stmt.query_row(params![id], |row| {
-        Ok(Task {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            description: row.get(2)?,
-            completed: row.get::<_, i32>(3)? != 0,
-            due_at: row.get(4)?,
-            created_at: row.get(5)?,
-            updated_at: row.get(6)?,
-        })
-    }).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn update_task(id: i64, title: Option<String>, description: Option<String>, completed: Option<bool>, due_at: Option<String>) -> Result<Task, String> {
-    let db = get_db();
-    // Build dynamic update
-    if let Some(t) = &title {
-        db.execute("UPDATE tasks SET title = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![t, id])
-            .map_err(|e| e.to_string())?;
-    }
-    if let Some(d) = &description {
-        db.execute("UPDATE tasks SET description = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![d, id])
-            .map_err(|e| e.to_string())?;
-    }
-    if let Some(c) = completed {
-        let val: i32 = if c { 1 } else { 0 };
-        db.execute("UPDATE tasks SET completed = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
-            .map_err(|e| e.to_string())?;
-    }
-    if let Some(d) = &due_at {
-        db.execute("UPDATE tasks SET due_at = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![d, id])
-            .map_err(|e| e.to_string())?;
-    }
-
-    let mut stmt = db.prepare("SELECT id, title, description, completed, due_at, created_at, updated_at FROM tasks WHERE id = ?1")
-        .map_err(|e| e.to_string())?;
-    stmt.query_row(params![id], |row| {
-        Ok(Task {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            description: row.get(2)?,
-            completed: row.get::<_, i32>(3)? != 0,
-            due_at: row.get(4)?,
-            created_at: row.get(5)?,
-            updated_at: row.get(6)?,
-        })
-    }).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn delete_task(id: i64) -> Result<(), String> {
-    let db = get_db();
-    // Proactively clean up any calendar_events associated with this task
-    if let Ok(mut stmt) = db.prepare("SELECT user_id, title FROM tasks WHERE id = ?1") {
-        if let Ok(row) = stmt.query_row(params![id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))) {
-            let (user_id, title) = row;
-            let _ = db.execute(
-                "UPDATE calendar_events SET deleted_at = datetime('now'), sync_status = 'pending' WHERE user_id = ?1 AND event_type = 'TASK' AND title = ?2 AND deleted_at IS NULL",
-                params![user_id, title],
-            );
-        }
-    }
-    // Soft delete: set deleted_at and mark pending sync
-    db.execute(
-        "UPDATE tasks SET deleted_at = datetime('now'), sync_status = 'pending' WHERE id = ?1",
-        params![id],
-    ).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-// ─── Diary ───────────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn set_diary_pin(user_id: i64, pin: String) -> Result<(), String> {
-    let clean = pin.trim();
-    if clean.is_empty() {
-        return Err("PIN cannot be empty".to_string());
-    }
-    let hashed = bcrypt::hash(clean, 10).map_err(|e| e.to_string())?;
-    let db = get_db();
-    db.execute("UPDATE users SET diary_pin = ?1 WHERE id = ?2", params![hashed, user_id])
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-pub fn reset_diary_pin(user_id: i64, new_pin: String) -> Result<(), String> {
-    set_diary_pin(user_id, new_pin)
-}
-
-#[tauri::command]
-pub fn remove_diary_pin(user_id: i64) -> Result<(), String> {
-    let db = get_db();
-    db.execute("UPDATE users SET diary_pin = NULL WHERE id = ?1", params![user_id])
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-pub fn check_diary_pin(user_id: i64) -> Result<bool, String> {
-    let db = get_db();
-    let mut stmt = db.prepare("SELECT diary_pin FROM users WHERE id = ?1")
-        .map_err(|e| e.to_string())?;
-    let pin: Option<String> = stmt.query_row(params![user_id], |row| row.get(0))
-        .map_err(|e| e.to_string())?;
-    Ok(pin.is_some())
-}
-
-#[tauri::command]
-pub fn verify_diary_pin(user_id: i64, pin: String) -> Result<bool, String> {
-    let db = get_db();
-    let mut stmt = db.prepare("SELECT diary_pin FROM users WHERE id = ?1")
-        .map_err(|e| e.to_string())?;
-    let stored: Option<String> = stmt.query_row(params![user_id], |row| row.get(0))
-        .map_err(|e| e.to_string())?;
-    match stored {
-        None => Err("Diary PIN not set".to_string()),
-        Some(hash) => {
-            let clean = pin.trim();
-            Ok(bcrypt::verify(clean, &hash).unwrap_or(false))
-        }
-    }
-}
-
-#[tauri::command]
-pub fn get_diary_entries(user_id: i64) -> Result<Vec<DiaryEntry>, String> {
-    let db = get_db();
-    let mut stmt = db.prepare(
-        "SELECT id, date, body, mood, created_at, updated_at FROM diary_entries WHERE user_id = ?1 AND deleted_at IS NULL ORDER BY date DESC"
-    ).map_err(|e| e.to_string())?;
-    let entries = stmt.query_map(params![user_id], |row| {
-        Ok(DiaryEntry {
-            id: row.get(0)?,
-            date: row.get(1)?,
-            body: row.get(2)?,
-            mood: row.get(3)?,
-            created_at: row.get(4)?,
-            updated_at: row.get(5)?,
-        })
-    }).map_err(|e| e.to_string())?
-    .filter_map(|r| r.ok())
-    .collect();
-    Ok(entries)
-}
-
-#[tauri::command]
-pub fn save_diary_entry(user_id: i64, date: String, body: String, mood: Option<String>) -> Result<DiaryEntry, String> {
-    let db = get_db();
-    let client_id = uuid::Uuid::new_v4().to_string();
-    db.execute(
-        "INSERT INTO diary_entries (user_id, date, body, mood, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')
-         ON CONFLICT(user_id, date) DO UPDATE SET body = ?3, mood = ?4, updated_at = datetime('now'), sync_status = 'pending'",
-        params![user_id, date, body, mood, client_id],
-    ).map_err(|e| e.to_string())?;
-
-    let mut stmt = db.prepare(
-        "SELECT id, date, body, mood, created_at, updated_at FROM diary_entries WHERE user_id = ?1 AND date = ?2"
-    ).map_err(|e| e.to_string())?;
-    stmt.query_row(params![user_id, date], |row| {
-        Ok(DiaryEntry {
-            id: row.get(0)?,
-            date: row.get(1)?,
-            body: row.get(2)?,
-            mood: row.get(3)?,
-            created_at: row.get(4)?,
-            updated_at: row.get(5)?,
-        })
-    }).map_err(|e| e.to_string())
-}
-
-// ─── Calendar ────────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn get_calendar_day(user_id: i64, date: String) -> Result<Vec<CalendarEvent>, String> {
-    let db = get_db();
-    let mut stmt = db.prepare(
-        "SELECT id, title, description, event_date, start_at, end_at, event_type, created_at FROM calendar_events WHERE user_id = ?1 AND event_date = ?2 AND deleted_at IS NULL ORDER BY start_at"
-    ).map_err(|e| e.to_string())?;
-    let events = stmt.query_map(params![user_id, date], |row| {
-        Ok(CalendarEvent {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            description: row.get(2)?,
-            event_date: row.get(3)?,
-            start_at: row.get(4)?,
-            end_at: row.get(5)?,
-            event_type: row.get(6)?,
-            created_at: row.get(7)?,
-        })
-    }).map_err(|e| e.to_string())?
-    .filter_map(|r| r.ok())
-    .collect();
-    Ok(events)
-}
-
-#[tauri::command]
-pub fn get_calendar_range(user_id: i64, from: String, to: String) -> Result<Vec<CalendarEvent>, String> {
-    let db = get_db();
-    let mut stmt = db.prepare(
-        "SELECT id, title, description, event_date, start_at, end_at, event_type, created_at FROM calendar_events WHERE user_id = ?1 AND event_date >= ?2 AND event_date <= ?3 AND deleted_at IS NULL ORDER BY event_date, start_at"
-    ).map_err(|e| e.to_string())?;
-    let events = stmt.query_map(params![user_id, from, to], |row| {
-        Ok(CalendarEvent {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            description: row.get(2)?,
-            event_date: row.get(3)?,
-            start_at: row.get(4)?,
-            end_at: row.get(5)?,
-            event_type: row.get(6)?,
-            created_at: row.get(7)?,
-        })
-    }).map_err(|e| e.to_string())?
-    .filter_map(|r| r.ok())
-    .collect();
-    Ok(events)
-}
-
-#[tauri::command]
-pub fn get_year_heatmap(user_id: i64, year: i32) -> Result<std::collections::HashMap<u32, u32>, String> {
-    let db = get_db();
-    let year_str = format!("{}", year);
-    let mut stmt = db.prepare(
-        "SELECT CAST(strftime('%m', event_date) AS INTEGER) as month, COUNT(*) as cnt FROM calendar_events WHERE user_id = ?1 AND strftime('%Y', event_date) = ?2 AND deleted_at IS NULL GROUP BY month"
-    ).map_err(|e| e.to_string())?;
-    let mut map = std::collections::HashMap::new();
-    let rows = stmt.query_map(params![user_id, year_str], |row| {
-        Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?))
-    }).map_err(|e| e.to_string())?;
-    for r in rows {
-        if let Ok((month, count)) = r {
-            map.insert(month, count);
-        }
-    }
-    Ok(map)
-}
-
-#[tauri::command]
-pub fn create_calendar_event(
-    user_id: i64,
-    title: String,
-    description: Option<String>,
-    event_date: String,
-    start_at: Option<String>,
-    end_at: Option<String>,
-    event_type: String,
-) -> Result<CalendarEvent, String> {
-    let db = get_db();
-    let client_id = uuid::Uuid::new_v4().to_string();
-    db.execute(
-        "INSERT INTO calendar_events (user_id, title, description, event_date, start_at, end_at, event_type, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending')",
-        params![user_id, title, description, event_date, start_at, end_at, event_type, client_id],
-    ).map_err(|e| e.to_string())?;
-    let id = db.last_insert_rowid();
-    let mut stmt = db.prepare(
-        "SELECT id, title, description, event_date, start_at, end_at, event_type, created_at FROM calendar_events WHERE id = ?1"
-    ).map_err(|e| e.to_string())?;
-    stmt.query_row(params![id], |row| {
-        Ok(CalendarEvent {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            description: row.get(2)?,
-            event_date: row.get(3)?,
-            start_at: row.get(4)?,
-            end_at: row.get(5)?,
-            event_type: row.get(6)?,
-            created_at: row.get(7)?,
-        })
-    }).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn delete_calendar_event(id: i64) -> Result<(), String> {
-    let db = get_db();
-    // If this was a task event, also soft-delete the corresponding task
-    if let Ok(mut stmt) = db.prepare("SELECT user_id, title, event_type FROM calendar_events WHERE id = ?1") {
-        if let Ok(row) = stmt.query_row(params![id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))) {
-            let (user_id, title, event_type) = row;
-            if event_type == "TASK" {
-                let _ = db.execute(
-                    "UPDATE tasks SET deleted_at = datetime('now'), sync_status = 'pending' WHERE user_id = ?1 AND title = ?2 AND deleted_at IS NULL",
-                    params![user_id, title],
-                );
-            }
-        }
-    }
-    // Soft delete calendar event
-    db.execute(
-        "UPDATE calendar_events SET deleted_at = datetime('now'), sync_status = 'pending' WHERE id = ?1",
-        params![id],
-    ).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-pub fn update_calendar_event(id: i64, title: String) -> Result<(), String> {
-    let db = get_db();
-    db.execute(
-        "UPDATE calendar_events SET title = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2",
-        params![title, id],
-    ).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-// ─── Expenses ────────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn get_expenses(user_id: i64) -> Result<Vec<Expense>, String> {
-    let db = get_db();
-    let mut stmt = db.prepare("SELECT id, amount, category, description, date, type, created_at FROM expenses WHERE user_id = ?1 AND deleted_at IS NULL ORDER BY date DESC, id DESC")
-        .map_err(|e| e.to_string())?;
-    
-    let expenses = stmt.query_map(params![user_id], |row| {
-        Ok(Expense {
-            id: row.get(0)?,
-            amount: row.get(1)?,
-            category: row.get(2)?,
-            description: row.get(3)?,
-            date: row.get(4)?,
-            expense_type: row.get(5)?,
-            created_at: row.get(6)?,
-        })
-    }).map_err(|e| e.to_string())?
-    .filter_map(Result::ok)
-    .collect();
-    
-    Ok(expenses)
-}
-
-#[tauri::command]
-pub fn create_expense(
-    user_id: i64, amount: f64, category: String, description: Option<String>, date: String, expense_type: String
-) -> Result<Expense, String> {
-    let db = get_db();
-    let client_id = uuid::Uuid::new_v4().to_string();
-    db.execute(
-        "INSERT INTO expenses (user_id, amount, category, description, date, type, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending')",
-        params![user_id, amount, category, description, date, expense_type, client_id],
-    ).map_err(|e| e.to_string())?;
-
-    let id = db.last_insert_rowid();
-    let mut stmt = db.prepare("SELECT id, amount, category, description, date, type, created_at FROM expenses WHERE id = ?1")
-        .map_err(|e| e.to_string())?;
-    stmt.query_row(params![id], |row| {
-        Ok(Expense {
-            id: row.get(0)?,
-            amount: row.get(1)?,
-            category: row.get(2)?,
-            description: row.get(3)?,
-            date: row.get(4)?,
-            expense_type: row.get(5)?,
-            created_at: row.get(6)?,
-        })
-    }).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn delete_expense(id: i64) -> Result<(), String> {
-    let db = get_db();
-    db.execute(
-        "UPDATE expenses SET deleted_at = datetime('now'), sync_status = 'pending' WHERE id = ?1",
-        params![id],
-    ).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-// ─── Projects ────────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn get_projects(user_id: i64) -> Result<Vec<Project>, String> {
-    let db = get_db();
-    let mut stmt = db.prepare("SELECT id, title, description, created_at FROM projects WHERE user_id = ?1 AND deleted_at IS NULL ORDER BY id DESC")
-        .map_err(|e| e.to_string())?;
-    let projects = stmt.query_map(params![user_id], |row| {
-        Ok(Project {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            description: row.get(2)?,
-            created_at: row.get(3)?,
-        })
-    }).map_err(|e| e.to_string())?
-    .filter_map(Result::ok)
-    .collect();
-    Ok(projects)
-}
-
-#[tauri::command]
-pub fn create_project(user_id: i64, title: String, description: Option<String>) -> Result<Project, String> {
-    let db = get_db();
-    let client_id = uuid::Uuid::new_v4().to_string();
-    db.execute(
-        "INSERT INTO projects (user_id, title, description, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, 'pending')",
-        params![user_id, title, description, client_id],
-    ).map_err(|e| e.to_string())?;
-    let id = db.last_insert_rowid();
-    let mut stmt = db.prepare("SELECT id, title, description, created_at FROM projects WHERE id = ?1")
-        .map_err(|e| e.to_string())?;
-    stmt.query_row(params![id], |row| {
-        Ok(Project {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            description: row.get(2)?,
-            created_at: row.get(3)?,
-        })
-    }).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn delete_project(id: i64) -> Result<(), String> {
-    let db = get_db();
-    // Soft delete the project (CASCADE will handle project_tasks via foreign key)
-    db.execute(
-        "UPDATE projects SET deleted_at = datetime('now'), sync_status = 'pending' WHERE id = ?1",
-        params![id],
-    ).map_err(|e| e.to_string())?;
-    // Also mark all project_tasks as deleted
-    db.execute(
-        "UPDATE project_tasks SET deleted_at = datetime('now'), sync_status = 'pending' WHERE project_id = ?1 AND deleted_at IS NULL",
-        params![id],
-    ).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-pub fn get_project_tasks(project_id: i64) -> Result<Vec<ProjectTask>, String> {
-    let db = get_db();
-    let mut stmt = db.prepare("SELECT id, project_id, title, description, status, created_at FROM project_tasks WHERE project_id = ?1 AND deleted_at IS NULL")
-        .map_err(|e| e.to_string())?;
-    let tasks = stmt.query_map(params![project_id], |row| {
-        Ok(ProjectTask {
-            id: row.get(0)?,
-            project_id: row.get(1)?,
-            title: row.get(2)?,
-            description: row.get(3)?,
-            status: row.get(4)?,
-            created_at: row.get(5)?,
-        })
-    }).map_err(|e| e.to_string())?
-    .filter_map(Result::ok)
-    .collect();
-    Ok(tasks)
-}
-
-#[tauri::command]
-pub fn create_project_task(project_id: i64, title: String, description: Option<String>, status: String) -> Result<ProjectTask, String> {
-    let db = get_db();
-    let client_id = uuid::Uuid::new_v4().to_string();
-    db.execute(
-        "INSERT INTO project_tasks (project_id, title, description, status, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
-        params![project_id, title, description, status, client_id],
-    ).map_err(|e| e.to_string())?;
-    let id = db.last_insert_rowid();
-    let mut stmt = db.prepare("SELECT id, project_id, title, description, status, created_at FROM project_tasks WHERE id = ?1")
-        .map_err(|e| e.to_string())?;
-    stmt.query_row(params![id], |row| {
-        Ok(ProjectTask {
-            id: row.get(0)?,
-            project_id: row.get(1)?,
-            title: row.get(2)?,
-            description: row.get(3)?,
-            status: row.get(4)?,
-            created_at: row.get(5)?,
-        })
-    }).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn update_project_task_status(id: i64, status: String) -> Result<(), String> {
-    let db = get_db();
-    db.execute(
-        "UPDATE project_tasks SET status = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2",
-        params![status, id],
-    ).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-pub fn delete_project_task(id: i64) -> Result<(), String> {
-    let db = get_db();
-    db.execute(
-        "UPDATE project_tasks SET deleted_at = datetime('now'), sync_status = 'pending' WHERE id = ?1",
-        params![id],
-    ).map_err(|e| e.to_string())?;
-    Ok(())
-}
-````
-
-## File: desktop/src/lib/store.ts
-````typescript
-import { create } from "zustand";
-import { persist } from "zustand/middleware";
-import { supabase, signOut, signInWithGoogle, signInWithEmail, signUpWithEmail } from "./supabase";
-import { api } from "./api";
-import type { User as SupabaseUser } from "@supabase/supabase-js";
-
-interface AuthState {
-  supabaseUser: SupabaseUser | null;
-  username: string | null;
-  email: string | null;
-  avatarUrl: string | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  loginWithEmail: (email: string, password: string) => Promise<void>;
-  registerWithEmail: (email: string, password: string, username: string) => Promise<void>;
-  loginWithGoogle: () => Promise<void>;
-  initAuth: () => Promise<void>;
-  logout: () => Promise<void>;
-}
-
-export const useAuth = create<AuthState>()(
-  persist(
-    (set) => ({
-      supabaseUser: null,
-      username: null,
-      email: null,
-      avatarUrl: null,
-      isAuthenticated: false,
-      isLoading: true,
-
-      loginWithEmail: async (email, password) => {
-        const { user } = await signInWithEmail(email, password);
-        if (!user) throw new Error("Login failed");
-
-        // Ensure profile exists or fallback to metadata
-        let profile = await api.getProfile().catch(() => null);
-        if (!profile) {
-          profile = await api.upsertProfile({
-            username: user.user_metadata?.username || email.split("@")[0],
-            email,
-          }).catch(() => null);
-        }
-
-        set({
-          supabaseUser: user,
-          username: profile?.username || user.user_metadata?.username || email.split("@")[0],
-          email: user.email || null,
-          avatarUrl: profile?.avatar_url || user.user_metadata?.avatar_url || null,
-          isAuthenticated: true,
-        });
-      },
-
-      registerWithEmail: async (email, password, username) => {
-        const res = await signUpWithEmail(email, password, username);
-        // If auto-confirm is enabled and session returned, log in immediately
-        if (res.session?.user) {
-          set({
-            supabaseUser: res.session.user,
-            username,
-            email,
-            avatarUrl: null,
-            isAuthenticated: true,
-          });
-        }
-      },
-
-      loginWithGoogle: async () => {
-        await signInWithGoogle();
-        // OAuth redirects - the session will be picked up by initAuth on return
-      },
-
-      initAuth: async () => {
-        try {
-          // 1. Check local session from Supabase storage first (instant, 0ms, works offline)
-          const { data: { session } } = await supabase.auth.getSession();
-
-          if (session?.user) {
-            // Instantly unlock UI with cached session so user NEVER stares at a frozen loading screen
-            set({
-              supabaseUser: session.user,
-              username: session.user.user_metadata?.username || session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "user",
-              email: session.user.email || null,
-              avatarUrl: session.user.user_metadata?.avatar_url || null,
-              isAuthenticated: true,
-              isLoading: false,
-            });
-
-            // 2. Perform live server verification asynchronously with a 4s timeout in background
-            const verifyPromise = Promise.race([
-              supabase.auth.getUser(),
-              new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error("Auth verification timeout")), 4000)
-              ),
-            ]);
-
-            verifyPromise
-              .then(async ({ data: { user }, error: userError }) => {
-                if (user) {
-                  api.getProfile().then((profile) => {
-                    if (profile) {
-                      set({
-                        username: profile.username || user.user_metadata?.username || user.email?.split("@")[0] || "user",
-                        avatarUrl: profile.avatar_url || user.user_metadata?.avatar_url || null,
-                      });
-                    }
-                  }).catch(() => {});
-                } else if (userError) {
-                  console.warn("[Auth] Session explicitly revoked by server:", userError.message);
-                  set({
-                    supabaseUser: null,
-                    username: null,
-                    email: null,
-                    avatarUrl: null,
-                    isAuthenticated: false,
-                  });
-                }
-              })
-              .catch((err) => {
-                console.info("[Auth] Network verification slow/offline, continuing with cached session:", err.message);
-              });
-
-            return;
-          } else {
-            // No session exists
-            set({
-              supabaseUser: null,
-              username: null,
-              email: null,
-              avatarUrl: null,
-              isAuthenticated: false,
-              isLoading: false,
-            });
-          }
-        } catch (err) {
-          console.warn("[Auth] Error during initAuth:", err);
-          set({
-            supabaseUser: null,
-            isAuthenticated: false,
-            isLoading: false,
-          });
-        } finally {
-          set({ isLoading: false });
-        }
-      },
-
-      logout: async () => {
-        await signOut();
-        set({
-          supabaseUser: null,
-          username: null,
-          email: null,
-          avatarUrl: null,
-          isAuthenticated: false,
-        });
-      },
-    }),
-    {
-      name: "clarity-auth",
-      version: 2,
-      migrate: (persistedState: any) => {
-        // Strip legacy isAuthenticated from previous store versions
-        if (persistedState) {
-          delete persistedState.isAuthenticated;
-        }
-        return persistedState;
-      },
-      partialize: (state) => ({
-        // Only persist profile metadata - session authentication is verified live via Supabase
-        username: state.username,
-        email: state.email,
-        avatarUrl: state.avatarUrl,
-      }),
-    }
-  )
-);
 ````
 
 ## File: desktop/src/styles.css
@@ -12964,6 +11610,976 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
 }
 ````
 
+## File: desktop/src/lib/store.ts
+````typescript
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import { supabase, signOut, signInWithGoogle, signInWithEmail, signUpWithEmail } from "./supabase";
+import { api } from "./api";
+import type { User as SupabaseUser } from "@supabase/supabase-js";
+
+interface AuthState {
+  supabaseUser: SupabaseUser | null;
+  username: string | null;
+  email: string | null;
+  avatarUrl: string | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  loginWithEmail: (email: string, password: string) => Promise<void>;
+  registerWithEmail: (email: string, password: string, username: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
+  initAuth: () => Promise<void>;
+  logout: () => Promise<void>;
+}
+
+export const useAuth = create<AuthState>()(
+  persist(
+    (set) => ({
+      supabaseUser: null,
+      username: null,
+      email: null,
+      avatarUrl: null,
+      isAuthenticated: false,
+      isLoading: true,
+
+      loginWithEmail: async (email, password) => {
+        try {
+          const { user } = await signInWithEmail(email, password);
+          if (user) {
+            set({
+              supabaseUser: user,
+              username: user.user_metadata?.username || email.split("@")[0] || "Sahil",
+              email: user.email || email,
+              isAuthenticated: true,
+            });
+            return;
+          }
+        } catch (e) {
+          console.warn("[Auth] Cloud login failed, entering local sanctuary:", e);
+        }
+
+        // Local fallback unlock
+        set({
+          supabaseUser: null,
+          username: email.split("@")[0] || "Sahil",
+          email: email || "sahil@clarity.local",
+          avatarUrl: null,
+          isAuthenticated: true,
+        });
+      },
+
+      registerWithEmail: async (email, password, username) => {
+        const res = await signUpWithEmail(email, password, username);
+        // If auto-confirm is enabled and session returned, log in immediately
+        if (res.session?.user) {
+          set({
+            supabaseUser: res.session.user,
+            username,
+            email,
+            avatarUrl: null,
+            isAuthenticated: true,
+          });
+        }
+      },
+
+      loginWithGoogle: async () => {
+        await signInWithGoogle();
+        // OAuth redirects - the session will be picked up by initAuth on return
+      },
+
+      initAuth: async () => {
+        try {
+          // 1. Check local session from Supabase storage first (instant, 0ms, works offline)
+          const { data: { session } } = await supabase.auth.getSession();
+
+          if (session?.user) {
+            // Instantly unlock UI with cached session so user NEVER stares at a frozen loading screen
+            set({
+              supabaseUser: session.user,
+              username: session.user.user_metadata?.username || session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "user",
+              email: session.user.email || null,
+              avatarUrl: session.user.user_metadata?.avatar_url || null,
+              isAuthenticated: true,
+              isLoading: false,
+            });
+
+            // 2. Perform live server verification asynchronously with a 4s timeout in background
+            const verifyPromise = Promise.race([
+              supabase.auth.getUser(),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error("Auth verification timeout")), 4000)
+              ),
+            ]);
+
+            verifyPromise
+              .then(async ({ data: { user }, error: userError }) => {
+                if (user) {
+                  api.getProfile().then((profile) => {
+                    if (profile) {
+                      set({
+                        username: profile.username || user.user_metadata?.username || user.email?.split("@")[0] || "user",
+                        avatarUrl: profile.avatar_url || user.user_metadata?.avatar_url || null,
+                      });
+                    }
+                  }).catch(() => {});
+                } else if (userError) {
+                  console.warn("[Auth] Session explicitly revoked by server:", userError.message);
+                  set({
+                    supabaseUser: null,
+                    username: null,
+                    email: null,
+                    avatarUrl: null,
+                    isAuthenticated: false,
+                  });
+                }
+              })
+              .catch((err) => {
+                console.info("[Auth] Network verification slow/offline, continuing with cached session:", err.message);
+              });
+
+            return;
+          } else {
+            // No cloud session - auto-unlock into local sanctuary
+            set({
+              supabaseUser: null,
+              username: "Sahil",
+              email: "sahil@clarity.local",
+              avatarUrl: null,
+              isAuthenticated: true,
+              isLoading: false,
+            });
+          }
+        } catch (err) {
+          console.warn("[Auth] Cloud check failed, opening local sanctuary:", err);
+          set({
+            supabaseUser: null,
+            username: "Sahil",
+            email: "sahil@clarity.local",
+            avatarUrl: null,
+            isAuthenticated: true,
+            isLoading: false,
+          });
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      logout: async () => {
+        await signOut();
+        set({
+          supabaseUser: null,
+          username: null,
+          email: null,
+          avatarUrl: null,
+          isAuthenticated: false,
+        });
+      },
+    }),
+    {
+      name: "clarity-auth",
+      version: 2,
+      migrate: (persistedState: any) => {
+        // Strip legacy isAuthenticated from previous store versions
+        if (persistedState) {
+          delete persistedState.isAuthenticated;
+        }
+        return persistedState;
+      },
+      partialize: (state) => ({
+        // Only persist profile metadata - session authentication is verified live via Supabase
+        username: state.username,
+        email: state.email,
+        avatarUrl: state.avatarUrl,
+      }),
+    }
+  )
+);
+````
+
+## File: desktop/src-tauri/src/commands.rs
+````rust
+use rusqlite::params;
+use crate::db::get_db;
+use crate::models::*;
+
+// â”€â”€â”€ Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+#[tauri::command]
+pub fn register(username: String, email: String, password: String) -> Result<AuthResponse, String> {
+    let clean_user = username.trim().to_string();
+    let clean_email = email.trim().to_lowercase();
+    let clean_pass = password.trim();
+
+    if clean_user.is_empty() {
+        return Err("Username cannot be empty".to_string());
+    }
+    if clean_email.is_empty() || !clean_email.contains('@') {
+        return Err("Please enter a valid email address".to_string());
+    }
+    if clean_pass.len() < 4 {
+        return Err("Password must be at least 4 characters".to_string());
+    }
+
+    let hashed = bcrypt::hash(clean_pass, 10).map_err(|e| e.to_string())?;
+    let db = get_db();
+    db.execute(
+        "INSERT INTO users (username, email, password) VALUES (?1, ?2, ?3)",
+        params![clean_user, clean_email, hashed],
+    ).map_err(|e| {
+        let err_str = e.to_string();
+        if err_str.contains("users.username") {
+            "Username is already taken".to_string()
+        } else if err_str.contains("users.email") {
+            "Email is already registered".to_string()
+        } else {
+            format!("Registration failed: {}", err_str)
+        }
+    })?;
+    let id = db.last_insert_rowid();
+    Ok(AuthResponse { user_id: id, username: clean_user })
+}
+
+#[tauri::command]
+pub fn login(username: String, password: String) -> Result<AuthResponse, String> {
+    let clean_user = username.trim();
+    let clean_pass = password.trim();
+
+    if clean_user.is_empty() || clean_pass.is_empty() {
+        return Err("Username and password are required".to_string());
+    }
+
+    let db = get_db();
+    let mut stmt = db.prepare(
+        "SELECT id, username, password FROM users WHERE username = ?1 COLLATE NOCASE OR email = ?1 COLLATE NOCASE"
+    ).map_err(|e| e.to_string())?;
+
+    let (id, actual_username, hash): (i64, String, String) = stmt.query_row(params![clean_user], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+    }).map_err(|_| "Invalid username/email or password".to_string())?;
+
+    if !bcrypt::verify(clean_pass, &hash).unwrap_or(false) {
+        return Err("Invalid username/email or password".to_string());
+    }
+    Ok(AuthResponse { user_id: id, username: actual_username })
+}
+
+#[tauri::command]
+pub fn ensure_oauth_user(username: String, email: String) -> Result<AuthResponse, String> {
+    let clean_user = username.trim().to_string();
+    let clean_email = email.trim().to_lowercase();
+    let db = get_db();
+
+    let mut stmt = db.prepare(
+        "SELECT id, username FROM users WHERE email = ?1 COLLATE NOCASE OR username = ?2 COLLATE NOCASE"
+    ).map_err(|e| e.to_string())?;
+
+    let existing: Result<(i64, String), rusqlite::Error> = stmt.query_row(params![clean_email, clean_user], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    });
+
+    if let Ok((id, uname)) = existing {
+        return Ok(AuthResponse { user_id: id, username: uname });
+    }
+
+    let dummy_hash = bcrypt::hash(uuid::Uuid::new_v4().to_string(), 4).unwrap_or_default();
+    db.execute(
+        "INSERT INTO users (username, email, password) VALUES (?1, ?2, ?3)",
+        params![clean_user, clean_email, dummy_hash],
+    ).map_err(|e| format!("Failed to create local user for OAuth: {}", e))?;
+
+    let id = db.last_insert_rowid();
+    Ok(AuthResponse { user_id: id, username: clean_user })
+}
+
+#[tauri::command]
+pub fn ensure_supabase_user(supabase_id: String, email: String, username: String) -> Result<AuthResponse, String> {
+    let clean_user = username.trim().to_string();
+    let clean_email = email.trim().to_lowercase();
+    let db = get_db();
+
+    // Check if user already exists by email
+    let mut stmt = db.prepare(
+        "SELECT id, username FROM users WHERE email = ?1 COLLATE NOCASE"
+    ).map_err(|e| e.to_string())?;
+
+    let existing: Result<(i64, String), rusqlite::Error> = stmt.query_row(params![clean_email], |row| {
+        Ok((row.get(0)?, row.get(1)?))
+    });
+
+    if let Ok((id, uname)) = existing {
+        return Ok(AuthResponse { user_id: id, username: uname });
+    }
+
+    // Create new user (no password needed for Supabase users)
+    let dummy_hash = bcrypt::hash(&supabase_id, 4).unwrap_or_default();
+    db.execute(
+        "INSERT INTO users (username, email, password) VALUES (?1, ?2, ?3)",
+        params![clean_user, clean_email, dummy_hash],
+    ).map_err(|e| format!("Failed to create local user for Supabase: {}", e))?;
+
+    let id = db.last_insert_rowid();
+    Ok(AuthResponse { user_id: id, username: clean_user })
+}
+
+// â”€â”€â”€ Tasks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+#[tauri::command]
+pub fn get_tasks(user_id: i64, pending_only: bool) -> Result<Vec<Task>, String> {
+    let db = get_db();
+    let sql = if pending_only {
+        "SELECT id, title, description, completed, due_at, status, project_id, remind_at, reminder_sent, created_at, updated_at FROM tasks WHERE user_id = ?1 AND completed = 0 AND deleted_at IS NULL ORDER BY created_at DESC"
+    } else {
+        "SELECT id, title, description, completed, due_at, status, project_id, remind_at, reminder_sent, created_at, updated_at FROM tasks WHERE user_id = ?1 AND deleted_at IS NULL ORDER BY created_at DESC"
+    };
+    let mut stmt = db.prepare(sql).map_err(|e| e.to_string())?;
+    let tasks = stmt.query_map(params![user_id], |row| {
+        let reminder_sent_int: Option<i32> = row.get(8)?;
+        Ok(Task {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            description: row.get(2)?,
+            completed: row.get::<_, i32>(3)? != 0,
+            due_at: row.get(4)?,
+            status: row.get(5)?,
+            project_id: row.get(6)?,
+            remind_at: row.get(7)?,
+            reminder_sent: reminder_sent_int.map(|v| v != 0),
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
+        })
+    }).map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+    Ok(tasks)
+}
+
+#[tauri::command]
+pub fn create_task(
+    user_id: i64,
+    title: String,
+    description: Option<String>,
+    due_at: Option<String>,
+    status: Option<String>,
+    project_id: Option<String>,
+    remind_at: Option<String>,
+    reminder_sent: Option<bool>,
+) -> Result<Task, String> {
+    let db = get_db();
+    let client_id = uuid::Uuid::new_v4().to_string();
+    let desc_val = description.and_then(|d| if d.trim().is_empty() { None } else { Some(d) });
+    let due_val = due_at.and_then(|d| if d.trim().is_empty() { None } else { Some(d) });
+    let proj_val = project_id.and_then(|p| if p.trim().is_empty() { None } else { Some(p) });
+    let remind_val = remind_at.and_then(|r| if r.trim().is_empty() { None } else { Some(r) });
+    let status_val = status.unwrap_or_else(|| "TODO".to_string());
+    let completed_val: i32 = if status_val == "DONE" { 1 } else { 0 };
+    let reminder_sent_int: i32 = if reminder_sent.unwrap_or(false) { 1 } else { 0 };
+
+    db.execute(
+        "INSERT INTO tasks (user_id, title, description, completed, due_at, status, project_id, remind_at, reminder_sent, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'pending')",
+        params![user_id, title, desc_val, completed_val, due_val, status_val, proj_val, remind_val, reminder_sent_int, client_id],
+    ).map_err(|e| e.to_string())?;
+    let id = db.last_insert_rowid();
+    let mut stmt = db.prepare("SELECT id, title, description, completed, due_at, status, project_id, remind_at, reminder_sent, created_at, updated_at FROM tasks WHERE id = ?1")
+        .map_err(|e| e.to_string())?;
+    stmt.query_row(params![id], |row| {
+        let r_sent: Option<i32> = row.get(8)?;
+        Ok(Task {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            description: row.get(2)?,
+            completed: row.get::<_, i32>(3)? != 0,
+            due_at: row.get(4)?,
+            status: row.get(5)?,
+            project_id: row.get(6)?,
+            remind_at: row.get(7)?,
+            reminder_sent: r_sent.map(|v| v != 0),
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
+        })
+    }).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_task(
+    id: i64,
+    title: Option<String>,
+    description: Option<String>,
+    completed: Option<bool>,
+    due_at: Option<String>,
+    status: Option<String>,
+    project_id: Option<String>,
+    remind_at: Option<String>,
+    reminder_sent: Option<bool>,
+) -> Result<Task, String> {
+    let db = get_db();
+    if let Some(t) = &title {
+        db.execute("UPDATE tasks SET title = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![t, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(d) = &description {
+        let val = if d.trim().is_empty() { None } else { Some(d.as_str()) };
+        db.execute("UPDATE tasks SET description = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(c) = completed {
+        let val: i32 = if c { 1 } else { 0 };
+        let auto_status = if c { "DONE" } else { "TODO" };
+        if status.is_none() {
+            db.execute("UPDATE tasks SET completed = ?1, status = ?2, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?3", params![val, auto_status, id])
+                .map_err(|e| e.to_string())?;
+        } else {
+            db.execute("UPDATE tasks SET completed = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    if let Some(s) = &status {
+        let is_done = s == "DONE";
+        let comp_val: i32 = if is_done { 1 } else { 0 };
+        if completed.is_none() {
+            db.execute("UPDATE tasks SET status = ?1, completed = ?2, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?3", params![s, comp_val, id])
+                .map_err(|e| e.to_string())?;
+        } else {
+            db.execute("UPDATE tasks SET status = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![s, id])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    if let Some(d) = &due_at {
+        let val = if d.trim().is_empty() { None } else { Some(d.as_str()) };
+        db.execute("UPDATE tasks SET due_at = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(p) = &project_id {
+        let val = if p.trim().is_empty() { None } else { Some(p.as_str()) };
+        db.execute("UPDATE tasks SET project_id = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(r) = &remind_at {
+        let val = if r.trim().is_empty() { None } else { Some(r.as_str()) };
+        db.execute("UPDATE tasks SET remind_at = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(rs) = reminder_sent {
+        let val: i32 = if rs { 1 } else { 0 };
+        db.execute("UPDATE tasks SET reminder_sent = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
+            .map_err(|e| e.to_string())?;
+    }
+
+    let mut stmt = db.prepare("SELECT id, title, description, completed, due_at, status, project_id, remind_at, reminder_sent, created_at, updated_at FROM tasks WHERE id = ?1")
+        .map_err(|e| e.to_string())?;
+    stmt.query_row(params![id], |row| {
+        let r_sent: Option<i32> = row.get(8)?;
+        Ok(Task {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            description: row.get(2)?,
+            completed: row.get::<_, i32>(3)? != 0,
+            due_at: row.get(4)?,
+            status: row.get(5)?,
+            project_id: row.get(6)?,
+            remind_at: row.get(7)?,
+            reminder_sent: r_sent.map(|v| v != 0),
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
+        })
+    }).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_task(id: i64) -> Result<(), String> {
+    let db = get_db();
+    // Proactively clean up any calendar_events associated with this task
+    if let Ok(mut stmt) = db.prepare("SELECT user_id, title FROM tasks WHERE id = ?1") {
+        if let Ok(row) = stmt.query_row(params![id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))) {
+            let (user_id, title) = row;
+            let _ = db.execute(
+                "UPDATE calendar_events SET deleted_at = datetime('now'), sync_status = 'pending' WHERE user_id = ?1 AND event_type = 'TASK' AND title = ?2 AND deleted_at IS NULL",
+                params![user_id, title],
+            );
+        }
+    }
+    // Soft delete: set deleted_at and mark pending sync
+    db.execute(
+        "UPDATE tasks SET deleted_at = datetime('now'), sync_status = 'pending' WHERE id = ?1",
+        params![id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// â”€â”€â”€ Diary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+#[tauri::command]
+pub fn set_diary_pin(user_id: i64, pin: String) -> Result<(), String> {
+    let clean = pin.trim();
+    if clean.is_empty() {
+        return Err("PIN cannot be empty".to_string());
+    }
+    let hashed = bcrypt::hash(clean, 10).map_err(|e| e.to_string())?;
+    let db = get_db();
+    db.execute("UPDATE users SET diary_pin = ?1 WHERE id = ?2", params![hashed, user_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn reset_diary_pin(user_id: i64, new_pin: String) -> Result<(), String> {
+    set_diary_pin(user_id, new_pin)
+}
+
+#[tauri::command]
+pub fn remove_diary_pin(user_id: i64) -> Result<(), String> {
+    let db = get_db();
+    db.execute("UPDATE users SET diary_pin = NULL WHERE id = ?1", params![user_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn check_diary_pin(user_id: i64) -> Result<bool, String> {
+    let db = get_db();
+    let mut stmt = db.prepare("SELECT diary_pin FROM users WHERE id = ?1")
+        .map_err(|e| e.to_string())?;
+    let pin: Option<String> = stmt.query_row(params![user_id], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+    Ok(pin.is_some())
+}
+
+#[tauri::command]
+pub fn verify_diary_pin(user_id: i64, pin: String) -> Result<bool, String> {
+    let db = get_db();
+    let mut stmt = db.prepare("SELECT diary_pin FROM users WHERE id = ?1")
+        .map_err(|e| e.to_string())?;
+    let stored: Option<String> = stmt.query_row(params![user_id], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+    match stored {
+        None => Err("Diary PIN not set".to_string()),
+        Some(hash) => {
+            let clean = pin.trim();
+            Ok(bcrypt::verify(clean, &hash).unwrap_or(false))
+        }
+    }
+}
+
+#[tauri::command]
+pub fn get_diary_entries(user_id: i64) -> Result<Vec<DiaryEntry>, String> {
+    let db = get_db();
+    let mut stmt = db.prepare(
+        "SELECT id, date, body, mood, created_at, updated_at FROM diary_entries WHERE user_id = ?1 AND deleted_at IS NULL ORDER BY date DESC"
+    ).map_err(|e| e.to_string())?;
+    let entries = stmt.query_map(params![user_id], |row| {
+        Ok(DiaryEntry {
+            id: row.get(0)?,
+            date: row.get(1)?,
+            body: row.get(2)?,
+            mood: row.get(3)?,
+            created_at: row.get(4)?,
+            updated_at: row.get(5)?,
+        })
+    }).map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+    Ok(entries)
+}
+
+#[tauri::command]
+pub fn save_diary_entry(user_id: i64, date: String, body: String, mood: Option<String>) -> Result<DiaryEntry, String> {
+    let db = get_db();
+    let client_id = uuid::Uuid::new_v4().to_string();
+    db.execute(
+        "INSERT INTO diary_entries (user_id, date, body, mood, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')
+         ON CONFLICT(user_id, date) DO UPDATE SET body = ?3, mood = ?4, updated_at = datetime('now'), sync_status = 'pending'",
+        params![user_id, date, body, mood, client_id],
+    ).map_err(|e| e.to_string())?;
+
+    let mut stmt = db.prepare(
+        "SELECT id, date, body, mood, created_at, updated_at FROM diary_entries WHERE user_id = ?1 AND date = ?2"
+    ).map_err(|e| e.to_string())?;
+    stmt.query_row(params![user_id, date], |row| {
+        Ok(DiaryEntry {
+            id: row.get(0)?,
+            date: row.get(1)?,
+            body: row.get(2)?,
+            mood: row.get(3)?,
+            created_at: row.get(4)?,
+            updated_at: row.get(5)?,
+        })
+    }).map_err(|e| e.to_string())
+}
+
+// â”€â”€â”€ Calendar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+#[tauri::command]
+pub fn get_calendar_day(user_id: i64, date: String) -> Result<Vec<CalendarEvent>, String> {
+    let db = get_db();
+    let mut stmt = db.prepare(
+        "SELECT id, title, description, event_date, start_at, end_at, event_type, remind_at, reminder_sent, created_at FROM calendar_events WHERE user_id = ?1 AND event_date = ?2 AND deleted_at IS NULL ORDER BY start_at"
+    ).map_err(|e| e.to_string())?;
+    let events = stmt.query_map(params![user_id, date], |row| {
+        let r_sent: Option<i32> = row.get(8)?;
+        Ok(CalendarEvent {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            description: row.get(2)?,
+            event_date: row.get(3)?,
+            start_at: row.get(4)?,
+            end_at: row.get(5)?,
+            event_type: row.get(6)?,
+            remind_at: row.get(7)?,
+            reminder_sent: r_sent.map(|v| v != 0),
+            created_at: row.get(9)?,
+        })
+    }).map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+    Ok(events)
+}
+
+#[tauri::command]
+pub fn get_calendar_range(user_id: i64, from: String, to: String) -> Result<Vec<CalendarEvent>, String> {
+    let db = get_db();
+    let mut stmt = db.prepare(
+        "SELECT id, title, description, event_date, start_at, end_at, event_type, remind_at, reminder_sent, created_at FROM calendar_events WHERE user_id = ?1 AND event_date >= ?2 AND event_date <= ?3 AND deleted_at IS NULL ORDER BY event_date, start_at"
+    ).map_err(|e| e.to_string())?;
+    let events = stmt.query_map(params![user_id, from, to], |row| {
+        let r_sent: Option<i32> = row.get(8)?;
+        Ok(CalendarEvent {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            description: row.get(2)?,
+            event_date: row.get(3)?,
+            start_at: row.get(4)?,
+            end_at: row.get(5)?,
+            event_type: row.get(6)?,
+            remind_at: row.get(7)?,
+            reminder_sent: r_sent.map(|v| v != 0),
+            created_at: row.get(9)?,
+        })
+    }).map_err(|e| e.to_string())?
+    .filter_map(|r| r.ok())
+    .collect();
+    Ok(events)
+}
+
+#[tauri::command]
+pub fn get_year_heatmap(user_id: i64, year: i32) -> Result<std::collections::HashMap<u32, u32>, String> {
+    let db = get_db();
+    let year_str = format!("{}", year);
+    let mut stmt = db.prepare(
+        "SELECT CAST(strftime('%m', event_date) AS INTEGER) as month, COUNT(*) as cnt FROM calendar_events WHERE user_id = ?1 AND strftime('%Y', event_date) = ?2 AND deleted_at IS NULL GROUP BY month"
+    ).map_err(|e| e.to_string())?;
+    let mut map = std::collections::HashMap::new();
+    let rows = stmt.query_map(params![user_id, year_str], |row| {
+        Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?))
+    }).map_err(|e| e.to_string())?;
+    for r in rows {
+        if let Ok((month, count)) = r {
+            map.insert(month, count);
+        }
+    }
+    Ok(map)
+}
+
+#[tauri::command]
+pub fn create_calendar_event(
+    user_id: i64,
+    title: String,
+    description: Option<String>,
+    event_date: String,
+    start_at: Option<String>,
+    end_at: Option<String>,
+    event_type: String,
+    remind_at: Option<String>,
+    reminder_sent: Option<bool>,
+) -> Result<CalendarEvent, String> {
+    let db = get_db();
+    let client_id = uuid::Uuid::new_v4().to_string();
+    let desc_val = description.and_then(|d| if d.trim().is_empty() { None } else { Some(d) });
+    let start_val = start_at.and_then(|s| if s.trim().is_empty() { None } else { Some(s) });
+    let end_val = end_at.and_then(|e| if e.trim().is_empty() { None } else { Some(e) });
+    let remind_val = remind_at.and_then(|r| if r.trim().is_empty() { None } else { Some(r) });
+    let reminder_sent_int: i32 = if reminder_sent.unwrap_or(false) { 1 } else { 0 };
+
+    db.execute(
+        "INSERT INTO calendar_events (user_id, title, description, event_date, start_at, end_at, event_type, remind_at, reminder_sent, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'pending')",
+        params![user_id, title, desc_val, event_date, start_val, end_val, event_type, remind_val, reminder_sent_int, client_id],
+    ).map_err(|e| e.to_string())?;
+    let id = db.last_insert_rowid();
+    let mut stmt = db.prepare(
+        "SELECT id, title, description, event_date, start_at, end_at, event_type, remind_at, reminder_sent, created_at FROM calendar_events WHERE id = ?1"
+    ).map_err(|e| e.to_string())?;
+    stmt.query_row(params![id], |row| {
+        let r_sent: Option<i32> = row.get(8)?;
+        Ok(CalendarEvent {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            description: row.get(2)?,
+            event_date: row.get(3)?,
+            start_at: row.get(4)?,
+            end_at: row.get(5)?,
+            event_type: row.get(6)?,
+            remind_at: row.get(7)?,
+            reminder_sent: r_sent.map(|v| v != 0),
+            created_at: row.get(9)?,
+        })
+    }).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_calendar_event(id: i64) -> Result<(), String> {
+    let db = get_db();
+    if let Ok(mut stmt) = db.prepare("SELECT user_id, title, event_type FROM calendar_events WHERE id = ?1") {
+        if let Ok(row) = stmt.query_row(params![id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))) {
+            let (user_id, title, event_type) = row;
+            if event_type == "TASK" {
+                let _ = db.execute(
+                    "UPDATE tasks SET deleted_at = datetime('now'), sync_status = 'pending' WHERE user_id = ?1 AND title = ?2 AND deleted_at IS NULL",
+                    params![user_id, title],
+                );
+            }
+        }
+    }
+    db.execute(
+        "UPDATE calendar_events SET deleted_at = datetime('now'), sync_status = 'pending' WHERE id = ?1",
+        params![id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_calendar_event(
+    id: i64,
+    title: Option<String>,
+    description: Option<String>,
+    remind_at: Option<String>,
+    reminder_sent: Option<bool>,
+) -> Result<(), String> {
+    let db = get_db();
+    if let Some(t) = &title {
+        db.execute("UPDATE calendar_events SET title = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![t, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(d) = &description {
+        let val = if d.trim().is_empty() { None } else { Some(d.as_str()) };
+        db.execute("UPDATE calendar_events SET description = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(r) = &remind_at {
+        let val = if r.trim().is_empty() { None } else { Some(r.as_str()) };
+        db.execute("UPDATE calendar_events SET remind_at = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(rs) = reminder_sent {
+        let val: i32 = if rs { 1 } else { 0 };
+        db.execute("UPDATE calendar_events SET reminder_sent = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2", params![val, id])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+
+// â”€â”€â”€ Expenses â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+#[tauri::command]
+pub fn get_expenses(user_id: i64) -> Result<Vec<Expense>, String> {
+    let db = get_db();
+    let mut stmt = db.prepare("SELECT id, amount, category, description, date, type, created_at FROM expenses WHERE user_id = ?1 AND deleted_at IS NULL ORDER BY date DESC, id DESC")
+        .map_err(|e| e.to_string())?;
+    
+    let expenses = stmt.query_map(params![user_id], |row| {
+        Ok(Expense {
+            id: row.get(0)?,
+            amount: row.get(1)?,
+            category: row.get(2)?,
+            description: row.get(3)?,
+            date: row.get(4)?,
+            expense_type: row.get(5)?,
+            created_at: row.get(6)?,
+        })
+    }).map_err(|e| e.to_string())?
+    .filter_map(Result::ok)
+    .collect();
+    
+    Ok(expenses)
+}
+
+#[tauri::command]
+pub fn create_expense(
+    user_id: i64, amount: f64, category: String, description: Option<String>, date: String, expense_type: String
+) -> Result<Expense, String> {
+    let db = get_db();
+    let client_id = uuid::Uuid::new_v4().to_string();
+    db.execute(
+        "INSERT INTO expenses (user_id, amount, category, description, date, type, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending')",
+        params![user_id, amount, category, description, date, expense_type, client_id],
+    ).map_err(|e| e.to_string())?;
+
+    let id = db.last_insert_rowid();
+    let mut stmt = db.prepare("SELECT id, amount, category, description, date, type, created_at FROM expenses WHERE id = ?1")
+        .map_err(|e| e.to_string())?;
+    stmt.query_row(params![id], |row| {
+        Ok(Expense {
+            id: row.get(0)?,
+            amount: row.get(1)?,
+            category: row.get(2)?,
+            description: row.get(3)?,
+            date: row.get(4)?,
+            expense_type: row.get(5)?,
+            created_at: row.get(6)?,
+        })
+    }).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_expense(id: i64) -> Result<(), String> {
+    let db = get_db();
+    db.execute(
+        "UPDATE expenses SET deleted_at = datetime('now'), sync_status = 'pending' WHERE id = ?1",
+        params![id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// â”€â”€â”€ Projects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+#[tauri::command]
+pub fn get_projects(user_id: i64) -> Result<Vec<Project>, String> {
+    let db = get_db();
+    let mut stmt = db.prepare("SELECT id, title, description, created_at FROM projects WHERE user_id = ?1 AND deleted_at IS NULL ORDER BY id DESC")
+        .map_err(|e| e.to_string())?;
+    let projects = stmt.query_map(params![user_id], |row| {
+        Ok(Project {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            description: row.get(2)?,
+            created_at: row.get(3)?,
+        })
+    }).map_err(|e| e.to_string())?
+    .filter_map(Result::ok)
+    .collect();
+    Ok(projects)
+}
+
+#[tauri::command]
+pub fn create_project(user_id: i64, title: String, description: Option<String>) -> Result<Project, String> {
+    let db = get_db();
+    let client_id = uuid::Uuid::new_v4().to_string();
+    db.execute(
+        "INSERT INTO projects (user_id, title, description, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, 'pending')",
+        params![user_id, title, description, client_id],
+    ).map_err(|e| e.to_string())?;
+    let id = db.last_insert_rowid();
+    let mut stmt = db.prepare("SELECT id, title, description, created_at FROM projects WHERE id = ?1")
+        .map_err(|e| e.to_string())?;
+    stmt.query_row(params![id], |row| {
+        Ok(Project {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            description: row.get(2)?,
+            created_at: row.get(3)?,
+        })
+    }).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_project(id: i64) -> Result<(), String> {
+    let db = get_db();
+    // Soft delete the project (CASCADE will handle project_tasks via foreign key)
+    db.execute(
+        "UPDATE projects SET deleted_at = datetime('now'), sync_status = 'pending' WHERE id = ?1",
+        params![id],
+    ).map_err(|e| e.to_string())?;
+    // Also mark all project_tasks as deleted
+    db.execute(
+        "UPDATE project_tasks SET deleted_at = datetime('now'), sync_status = 'pending' WHERE project_id = ?1 AND deleted_at IS NULL",
+        params![id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_project_tasks(project_id: i64) -> Result<Vec<ProjectTask>, String> {
+    let db = get_db();
+    let mut stmt = db.prepare("SELECT id, project_id, title, description, status, created_at FROM project_tasks WHERE project_id = ?1 AND deleted_at IS NULL")
+        .map_err(|e| e.to_string())?;
+    let tasks = stmt.query_map(params![project_id], |row| {
+        Ok(ProjectTask {
+            id: row.get(0)?,
+            project_id: row.get(1)?,
+            title: row.get(2)?,
+            description: row.get(3)?,
+            status: row.get(4)?,
+            created_at: row.get(5)?,
+        })
+    }).map_err(|e| e.to_string())?
+    .filter_map(Result::ok)
+    .collect();
+    Ok(tasks)
+}
+
+#[tauri::command]
+pub fn create_project_task(project_id: i64, title: String, description: Option<String>, status: String) -> Result<ProjectTask, String> {
+    let db = get_db();
+    let client_id = uuid::Uuid::new_v4().to_string();
+    db.execute(
+        "INSERT INTO project_tasks (project_id, title, description, status, client_id, sync_status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+        params![project_id, title, description, status, client_id],
+    ).map_err(|e| e.to_string())?;
+    let id = db.last_insert_rowid();
+    let mut stmt = db.prepare("SELECT id, project_id, title, description, status, created_at FROM project_tasks WHERE id = ?1")
+        .map_err(|e| e.to_string())?;
+    stmt.query_row(params![id], |row| {
+        Ok(ProjectTask {
+            id: row.get(0)?,
+            project_id: row.get(1)?,
+            title: row.get(2)?,
+            description: row.get(3)?,
+            status: row.get(4)?,
+            created_at: row.get(5)?,
+        })
+    }).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_project_task_status(id: i64, status: String) -> Result<(), String> {
+    let db = get_db();
+    db.execute(
+        "UPDATE project_tasks SET status = ?1, updated_at = datetime('now'), sync_status = 'pending' WHERE id = ?2",
+        params![status, id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_project_task(id: i64) -> Result<(), String> {
+    let db = get_db();
+    db.execute(
+        "UPDATE project_tasks SET deleted_at = datetime('now'), sync_status = 'pending' WHERE id = ?1",
+        params![id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ── Window Controls ──────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn window_minimize(window: tauri::Window) -> Result<(), String> {
+    window.minimize().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn window_toggle_maximize(window: tauri::Window) -> Result<(), String> {
+    if window.is_maximized().map_err(|e| e.to_string())? {
+        window.unmaximize().map_err(|e| e.to_string())
+    } else {
+        window.maximize().map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+pub fn window_close(window: tauri::Window) -> Result<(), String> {
+    window.close().map_err(|e| e.to_string())
+}
+````
+
 ## File: desktop/src/pages/AuthPage.tsx
 ````typescript
 import { useState, useRef } from "react";
@@ -12987,6 +12603,8 @@ export default function AuthPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
 
   const { loginWithEmail, registerWithEmail, loginWithGoogle } = useAuth();
+
+
 
   // 3D Tilt Parallax
   const cardRef = useRef<HTMLDivElement>(null);
@@ -13334,18 +12952,22 @@ import { useState, useEffect } from "react";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import {
   Calendar, BookOpen, CheckSquare, DollarSign, FolderKanban,
-  LogOut, Volume2, VolumeX, Sun, Moon
+  LogOut, Volume2, VolumeX, Sun, Moon, Minus, Square, X, Sparkles
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/lib/store";
 import { sound } from "@/lib/sound";
+import { startReminderService, stopReminderService } from "@/lib/reminderService";
+import { OmniInscribeModal } from "./OmniInscribeModal";
 import { clsx } from "clsx";
 import { ClarityLogo } from "./ClarityLogo";
+import { windowControls } from "@/lib/windowControls";
 
 export default function Layout() {
   const { username, avatarUrl, logout } = useAuth();
   const location = useLocation();
   const [muted, setMuted] = useState(sound.isMuted());
+  const [isOmniOpen, setIsOmniOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     return (document.documentElement.getAttribute("data-theme") as "light" | "dark") || "light";
   });
@@ -13354,6 +12976,35 @@ export default function Layout() {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("clarity_theme", theme);
   }, [theme]);
+
+  // Start background reminder service
+  useEffect(() => {
+    startReminderService();
+    return () => stopReminderService();
+  }, []);
+
+  // Listen for custom omni event
+  useEffect(() => {
+    const handleOpenOmni = () => setIsOmniOpen(true);
+    window.addEventListener("clarity:open-omni", handleOpenOmni);
+    return () => window.removeEventListener("clarity:open-omni", handleOpenOmni);
+  }, []);
+
+  // Robust window titlebar handlers
+  const handleMinimize = () => {
+    sound.click();
+    windowControls.minimize();
+  };
+
+  const handleToggleMaximize = () => {
+    sound.click();
+    windowControls.toggleMaximize();
+  };
+
+  const handleClose = () => {
+    sound.click();
+    windowControls.close();
+  };
 
   const handleToggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
@@ -13387,146 +13038,204 @@ export default function Layout() {
   const userInitial = (username || "U").charAt(0).toUpperCase();
 
   return (
-    <div className="flex h-screen overflow-hidden bg-ground text-ink select-none">
-      {/* ── Minimalist Stationery Sidebar ───────────────────────────── */}
-      <aside className="w-[280px] flex-shrink-0 bg-surface/90 backdrop-blur-xl border-r border-rule flex flex-col justify-between z-20 relative transition-colors duration-200">
-        <div>
-          {/* Brand Monogram Header */}
-          <div className="px-5 pt-7 pb-4">
-            <div className="flex items-center justify-between mb-4">
-              <div
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent('clarity:replay-intro'));
-                }}
-                className="cursor-pointer transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
-                title="Replay opening animation (Ctrl+Shift+O)"
-              >
-                <ClarityLogo size="md" theme={theme === "dark" ? "dark" : "outline"} shape="squircle" />
-              </div>
-              <div className="flex items-center gap-0.5 flex-shrink-0">
-                <button
-                  onClick={handleToggleTheme}
-                  title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
-                  className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-raised transition-colors cursor-pointer"
-                >
-                  {theme === "dark" ? (
-                    <Sun className="w-4 h-4 text-warn" />
-                  ) : (
-                    <Moon className="w-4 h-4 text-ink" />
-                  )}
-                </button>
-                <button
-                  onClick={handleToggleMute}
-                  title={muted ? "Unmute tactile audio" : "Mute tactile audio"}
-                  className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-raised transition-colors cursor-pointer"
-                >
-                  {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-ink-soft" />}
-                </button>
-              </div>
-            </div>
-
-            {/* User Profile Stationery Chip */}
-            <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-raised border border-rule transition-colors">
-              {avatarUrl ? (
-                <img
-                  src={avatarUrl}
-                  alt={username || 'User'}
-                  className="w-7 h-7 rounded-lg object-cover flex-shrink-0"
-                  referrerPolicy="no-referrer"
-                />
-              ) : (
-                <div className="w-7 h-7 rounded-lg bg-ink text-ground flex items-center justify-center text-xs font-bold flex-shrink-0">
-                  {userInitial}
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="text-[10.5px] font-medium text-ink-faint leading-tight">
-                  {greeting()}
-                </p>
-                <p className="text-[13px] font-bold text-ink truncate font-sans">
-                  {username || "Guest"}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Navigation Links with Magnetic Glider */}
-          <nav className="px-3 py-2 space-y-1 overflow-y-auto relative">
-            {links.map((link) => (
-              <NavLink
-                key={link.to}
-                to={link.to}
-                onClick={() => sound.pageTurn()}
-                className={({ isActive }) =>
-                  clsx(
-                    "relative flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-colors duration-150 group text-[13.5px] font-semibold cursor-pointer z-10",
-                    isActive
-                      ? "text-ink"
-                      : "text-ink-soft hover:text-ink"
-                  )
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    {/* Magnetic Gliding Active Pill */}
-                    {isActive && (
-                      <motion.div
-                        layoutId="activeNavPill"
-                        transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                        className="absolute inset-0 bg-raised rounded-xl border border-rule -z-10 shadow-xs"
-                      />
-                    )}
-
-                    <link.icon
-                      className={clsx(
-                        "w-4.5 h-4.5 flex-shrink-0 transition-colors duration-200",
-                        isActive
-                          ? "text-accent stroke-[2.2]"
-                          : "text-ink-faint group-hover:text-ink stroke-[1.8]"
-                      )}
-                    />
-                    <span className="relative z-10">{link.label}</span>
-                    {isActive && (
-                      <motion.span
-                        layoutId="activeNavDot"
-                        transition={{ type: "spring", stiffness: 420, damping: 32 }}
-                        className="ml-auto w-1.5 h-1.5 rounded-full bg-accent z-10"
-                      />
-                    )}
-                  </>
-                )}
-              </NavLink>
-            ))}
-          </nav>
+    <div className="flex flex-col h-screen overflow-hidden bg-ground text-ink select-none font-sans">
+      {/* ── Custom Frameless Window Title Bar (32px, Warm Paper) ────────────────── */}
+      <header className="h-8 flex-shrink-0 bg-surface/95 border-b border-rule flex items-center justify-between px-3 z-40 select-none cursor-default">
+        {/* Left: Monospace Status & Logo */}
+        <div data-tauri-drag-region className="flex items-center gap-2">
+          <span className="font-mono text-[10.5px] text-ink-faint tracking-wider uppercase font-semibold flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent inline-block animate-pulse" />
+            Clarity <span className="text-ink-soft/40">//</span> Personal Ledger
+          </span>
         </div>
 
-        {/* Sidebar Footer: Clean Sign Out */}
-        <div className="p-3 border-t border-rule">
+        {/* Center: Draggable Spacer */}
+        <div data-tauri-drag-region className="flex-1 h-full cursor-default" />
+
+        {/* Right: Omni-Inscribe Trigger & Window Controls */}
+        <div className="flex items-center gap-1">
           <button
-            onClick={logout}
-            className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl w-full text-[13px] font-semibold text-ink-soft hover:bg-danger/10 hover:text-danger transition-colors group cursor-pointer"
+            type="button"
+            onClick={() => setIsOmniOpen(true)}
+            title="Open Omni-Inscribe (Ctrl+K)"
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono text-ink-faint hover:text-ink hover:bg-raised transition-colors mr-2 cursor-pointer"
           >
-            <LogOut className="w-4 h-4 transition-transform group-hover:-translate-x-0.5 stroke-[1.8]" />
-            <span>Sign Out</span>
+            <Sparkles className="w-3 h-3 text-accent" />
+            <kbd className="text-[10px] bg-ground border border-rule px-1 rounded shadow-2xs">Ctrl+K</kbd>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleMinimize}
+            aria-label="Minimize"
+            className="w-7 h-6 rounded flex items-center justify-center text-ink-faint hover:text-ink hover:bg-raised transition-colors cursor-pointer"
+          >
+            <Minus className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleToggleMaximize}
+            aria-label="Maximize"
+            className="w-7 h-6 rounded flex items-center justify-center text-ink-faint hover:text-ink hover:bg-raised transition-colors cursor-pointer"
+          >
+            <Square className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onClick={handleClose}
+            aria-label="Close"
+            className="w-7 h-6 rounded flex items-center justify-center text-ink-faint hover:bg-accent hover:text-white transition-colors cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
-      </aside>
+      </header>
 
-      {/* ── Main Workspace with Smooth Page Deck Transitions ────────── */}
-      <main className="flex-1 relative overflow-auto bg-ground">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={location.pathname}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-            className="h-full"
-          >
-            <Outlet />
-          </motion.div>
-        </AnimatePresence>
-      </main>
+      {/* ── Main Application Body ──────────────────────────────────────────────── */}
+      <div className="flex-1 min-h-0 flex overflow-hidden">
+        {/* Minimalist Stationery Sidebar */}
+        <aside className="w-[280px] flex-shrink-0 bg-surface/90 backdrop-blur-xl border-r border-rule flex flex-col justify-between z-20 relative transition-colors duration-200">
+          <div>
+            {/* Brand Monogram Header */}
+            <div className="px-5 pt-6 pb-4">
+              <div className="flex items-center justify-between mb-4">
+                <div
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent('clarity:replay-intro'));
+                  }}
+                  className="cursor-pointer transition-transform duration-200 hover:scale-[1.02] active:scale-[0.98]"
+                  title="Replay opening animation (Ctrl+Shift+O)"
+                >
+                  <ClarityLogo size="md" theme={theme === "dark" ? "dark" : "outline"} shape="squircle" />
+                </div>
+                <div className="flex items-center gap-0.5 flex-shrink-0">
+                  <button
+                    onClick={handleToggleTheme}
+                    title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                    className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-raised transition-colors cursor-pointer"
+                  >
+                    {theme === "dark" ? (
+                      <Sun className="w-4 h-4 text-warn" />
+                    ) : (
+                      <Moon className="w-4 h-4 text-ink" />
+                    )}
+                  </button>
+                  <button
+                    onClick={handleToggleMute}
+                    title={muted ? "Unmute tactile audio" : "Mute tactile audio"}
+                    className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-raised transition-colors cursor-pointer"
+                  >
+                    {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 text-ink-soft" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* User Profile Stationery Chip */}
+              <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-raised border border-rule transition-colors">
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt={username || 'User'}
+                    className="w-7 h-7 rounded-lg object-cover flex-shrink-0"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-7 h-7 rounded-lg bg-ink text-ground flex items-center justify-center text-xs font-bold flex-shrink-0">
+                    {userInitial}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10.5px] font-medium text-ink-faint leading-tight">
+                    {greeting()}
+                  </p>
+                  <p className="text-[13px] font-bold text-ink truncate font-sans">
+                    {username || "Guest"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Navigation Links with Magnetic Glider */}
+            <nav className="px-3 py-2 space-y-1 overflow-y-auto relative">
+              {links.map((link) => (
+                <NavLink
+                  key={link.to}
+                  to={link.to}
+                  onClick={() => sound.pageTurn()}
+                  className={({ isActive }) =>
+                    clsx(
+                      "relative flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-colors duration-150 group text-[13.5px] font-semibold cursor-pointer z-10",
+                      isActive
+                        ? "text-ink"
+                        : "text-ink-soft hover:text-ink"
+                    )
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      {/* Magnetic Gliding Active Pill */}
+                      {isActive && (
+                        <motion.div
+                          layoutId="activeNavPill"
+                          transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                          className="absolute inset-0 bg-raised rounded-xl border border-rule -z-10 shadow-xs"
+                        />
+                      )}
+
+                      <link.icon
+                        className={clsx(
+                          "w-4.5 h-4.5 flex-shrink-0 transition-colors duration-200",
+                          isActive
+                            ? "text-accent stroke-[2.2]"
+                            : "text-ink-faint group-hover:text-ink stroke-[1.8]"
+                        )}
+                      />
+                      <span className="relative z-10">{link.label}</span>
+                      {isActive && (
+                        <motion.span
+                          layoutId="activeNavDot"
+                          transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                          className="ml-auto w-1.5 h-1.5 rounded-full bg-accent z-10"
+                        />
+                      )}
+                    </>
+                  )}
+                </NavLink>
+              ))}
+            </nav>
+          </div>
+
+          {/* Sidebar Footer: Clean Sign Out */}
+          <div className="p-3 border-t border-rule">
+            <button
+              onClick={logout}
+              className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl w-full text-[13px] font-semibold text-ink-soft hover:bg-danger/10 hover:text-danger transition-colors group cursor-pointer"
+            >
+              <LogOut className="w-4 h-4 transition-transform group-hover:-translate-x-0.5 stroke-[1.8]" />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        </aside>
+
+        {/* Main Workspace with Smooth Page Deck Transitions */}
+        <main className="flex-1 relative overflow-auto bg-ground">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+              className="h-full"
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
+        </main>
+      </div>
+
+      {/* Global Omni-Inscribe Modal */}
+      <OmniInscribeModal isOpen={isOmniOpen} onClose={() => setIsOmniOpen(false)} />
     </div>
   );
 }
@@ -13543,6 +13252,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import { sound } from "@/lib/sound";
+import { dataCache } from "@/lib/dataCache";
 import { clsx } from "clsx";
 import dayjs from "dayjs";
 
@@ -13800,20 +13510,19 @@ function InlineAddTask({
 
 // ─── Main Projects Page (Ruled Kanban Board) ─────────────────────────────────
 export default function ProjectsPage() {
-  const [projects, setProjects] = useState<any[]>([]);
+  const cachedProjects = dataCache.get<any[]>("projects") || [];
+  const [projects, setProjects] = useState<any[]>(cachedProjects);
   const [tasks, setTasks] = useState<Record<string, any[]>>({});
-  const [loading, setLoading] = useState(true);
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(() => cachedProjects.length === 0);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(
+    () => (cachedProjects.length > 0 ? cachedProjects[0].id : null)
+  );
   const [showNewProject, setShowNewProject] = useState(false);
   const [newlyAddedTaskId, setNewlyAddedTaskId] = useState<string | null>(null);
   const [pageError, setPageError] = useState("");
 
-  useEffect(() => {
-    loadProjects();
-  }, []);
-
-  const loadProjects = async () => {
-    setLoading(true);
+  const loadProjects = async (silent = false) => {
+    if (!silent) setLoading(true);
     setPageError("");
     try {
       const data = await api.getProjects();
@@ -13822,18 +13531,70 @@ export default function ProjectsPage() {
         colorIdx: i % PROJECT_PALETTES.length,
       }));
       setProjects(withColors);
-      if (withColors.length > 0) setActiveProjectId(withColors[0].id);
+      dataCache.set("projects", withColors);
+      if (withColors.length > 0) {
+        setActiveProjectId((curr) => curr || withColors[0].id);
+      }
     } catch (err: any) {
-      setPageError(err?.message || "Failed to load project dockets.");
+      if (!silent) setPageError(err?.message || "Failed to load project dockets.");
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    const cached = dataCache.get<any[]>("projects");
+    if (cached && cached.length > 0) {
+      setProjects(cached);
+      setActiveProjectId((curr) => curr || cached[0].id);
+      loadProjects(true); // Silent revalidation
+    } else {
+      loadProjects(false);
+    }
+
+    const handleDataUpdated = () => {
+      loadProjects(true);
+      setActiveProjectId((curr) => {
+        if (curr) loadTasksForProject(curr);
+        return curr;
+      });
+    };
+    window.addEventListener("clarity:data-updated", handleDataUpdated);
+    return () => window.removeEventListener("clarity:data-updated", handleDataUpdated);
+  }, []);
+
   const loadTasksForProject = async (projectId: string) => {
     try {
-      const data = await api.getProjectTasks(projectId);
-      setTasks((p) => ({ ...p, [projectId]: data }));
+      const [pTasks, allTasks] = await Promise.all([
+        api.getProjectTasks(projectId).catch(() => []),
+        api.getTasks(false).catch(() => []),
+      ]);
+
+      const docketTasks = allTasks
+        .filter((t) => String(t.project_id) === String(projectId))
+        .map((t) => ({
+          id: String(t.id),
+          project_id: projectId,
+          title: t.title,
+          description: t.description,
+          status: (t.status as TaskStatus) || (t.completed ? "DONE" : "TODO"),
+          created_at: t.created_at,
+          _source: "task" as const,
+        }));
+
+      const nativePTasks = (pTasks || []).map((pt: any) => ({
+        ...pt,
+        id: String(pt.id),
+        _source: "project_task" as const,
+      }));
+
+      const existingIds = new Set(nativePTasks.map((t: any) => String(t.id)));
+      const merged = [
+        ...nativePTasks,
+        ...docketTasks.filter((t: any) => !existingIds.has(String(t.id))),
+      ];
+
+      setTasks((p) => ({ ...p, [projectId]: merged }));
     } catch (err: any) {
       setPageError(err?.message || "Failed to load project tasks.");
     }
@@ -13850,14 +13611,23 @@ export default function ProjectsPage() {
     if (targetProjectId == null) return;
     sound.pop();
     const prevTasks = tasks[targetProjectId] || [];
+    const targetTask = prevTasks.find((t) => String(t.id) === String(taskId));
+
     setTasks((prev) => ({
       ...prev,
       [targetProjectId]: (prev[targetProjectId] || []).map((t) =>
-        t.id === taskId ? { ...t, status: newStatus } : t
+        String(t.id) === String(taskId) ? { ...t, status: newStatus } : t
       ),
     }));
     try {
-      await api.updateProjectTaskStatus(taskId, newStatus);
+      if (targetTask?._source === "task") {
+        await api.updateTask(taskId, {
+          status: newStatus,
+          completed: newStatus === "DONE",
+        });
+      } else {
+        await api.updateProjectTaskStatus(taskId, newStatus);
+      }
     } catch (err: any) {
       setTasks((prev) => ({ ...prev, [targetProjectId]: prevTasks }));
       setPageError(err?.message || "Failed to update project task status.");
@@ -13869,12 +13639,18 @@ export default function ProjectsPage() {
     if (targetProjectId == null) return;
     sound.pop();
     const prevTasks = tasks[targetProjectId] || [];
+    const targetTask = prevTasks.find((t) => String(t.id) === String(taskId));
+
     setTasks((prev) => ({
       ...prev,
-      [targetProjectId]: (prev[targetProjectId] || []).filter((t) => t.id !== taskId),
+      [targetProjectId]: (prev[targetProjectId] || []).filter((t) => String(t.id) !== String(taskId)),
     }));
     try {
-      await api.deleteProjectTask(taskId);
+      if (targetTask?._source === "task") {
+        await api.deleteTask(taskId);
+      } else {
+        await api.deleteProjectTask(taskId);
+      }
     } catch (err: any) {
       setTasks((prev) => ({ ...prev, [targetProjectId]: prevTasks }));
       setPageError(err?.message || "Failed to delete project task.");
@@ -13912,8 +13688,8 @@ export default function ProjectsPage() {
     return "DONE";
   };
 
-  const activeProject = projects.find((p) => p.id === activeProjectId);
-  const color = activeProject ? PROJECT_PALETTES[activeProject.colorIdx] : PROJECT_PALETTES[0];
+  const activeProject = projects.find((p) => String(p.id) === String(activeProjectId));
+  const color = (activeProject && activeProject.colorIdx != null && PROJECT_PALETTES[activeProject.colorIdx]) || PROJECT_PALETTES[0];
 
   const handleTaskCreated = (t: any) => {
     if (activeProjectId == null) return;
@@ -14025,7 +13801,7 @@ export default function ProjectsPage() {
                 const total = projectTasks.length;
                 const pct = total > 0 ? Math.round((done / total) * 100) : 0;
                 const isActive = project.id === activeProjectId;
-                const pColor = PROJECT_PALETTES[project.colorIdx];
+                const pColor = (project.colorIdx != null && PROJECT_PALETTES[project.colorIdx]) || PROJECT_PALETTES[0];
 
                 return (
                   <button
@@ -14255,571 +14031,6 @@ export default function ProjectsPage() {
 }
 ````
 
-## File: desktop/src/lib/api.ts
-````typescript
-import { supabase } from "./supabase";
-import type {
-  Task,
-  DiaryEntry,
-  CalendarEvent,
-  Expense,
-  Project,
-  ProjectTask,
-  ProjectTaskStatus,
-  Profile,
-} from "./types";
-
-/**
- * Get the current authenticated user's ID, or throw.
- */
-async function requireUserId(): Promise<string> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (user) return user.id;
-
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session?.user) return session.user.id;
-
-  throw new Error("Not authenticated");
-}
-
-// ─── Profile ────────────────────────────────────────────────────────────────
-
-async function getProfile(): Promise<Profile | null> {
-  const userId = await requireUserId();
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", userId)
-    .single();
-  if (error && error.code !== "PGRST116") throw error; // PGRST116 = no rows
-  return data;
-}
-
-async function upsertProfile(profile: Partial<Profile>): Promise<Profile> {
-  const userId = await requireUserId();
-  const { data, error } = await supabase
-    .from("profiles")
-    .upsert({ id: userId, ...profile }, { onConflict: "id" })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
-}
-
-
-function withTimeout<T>(
-  promise: PromiseLike<T>,
-  ms = 10000,
-  errorMsg = "Network request timed out. Please check your connection."
-): Promise<T> {
-  return Promise.race([
-    Promise.resolve(promise),
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(errorMsg)), ms)
-    ),
-  ]);
-}
-
-// ─── Tasks ──────────────────────────────────────────────────────────────────
-
-async function getTasks(pendingOnly = false): Promise<Task[]> {
-  const userId = await requireUserId();
-  let query = supabase
-    .from("tasks")
-    .select("*")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false });
-
-  if (pendingOnly) {
-    query = query.eq("completed", false);
-  }
-
-  const { data, error } = await withTimeout(query);
-  if (error) throw error;
-  return data ?? [];
-}
-
-async function createTask(task: Partial<Task>): Promise<Task> {
-  const userId = await requireUserId();
-  const { data, error } = await supabase
-    .from("tasks")
-    .insert({
-      user_id: userId,
-      title: task.title,
-      description: task.description || null,
-      due_at: task.due_at || null,
-      completed: false,
-    })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
-}
-
-async function updateTask(id: string, patch: Partial<Task>): Promise<Task> {
-  const updates: Record<string, unknown> = {};
-  if (patch.title !== undefined) updates.title = patch.title;
-  if (patch.description !== undefined) updates.description = patch.description;
-  if (patch.completed !== undefined) updates.completed = patch.completed;
-  if (patch.due_at !== undefined) updates.due_at = patch.due_at;
-
-  const { data, error } = await supabase
-    .from("tasks")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
-}
-
-async function deleteTask(id: string): Promise<void> {
-  // Soft delete
-  const { error } = await supabase
-    .from("tasks")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) throw error;
-}
-
-// ─── Diary ────────────────────────────────────────────────────────────────
-
-const UI_TO_DB_MOOD: Record<string, string> = {
-  Energized: "EXCITED",
-  Peaceful: "HAPPY",
-  Productive: "HAPPY",
-  Chilled: "NEUTRAL",
-  Thoughtful: "NEUTRAL",
-  Tired: "SAD",
-  HAPPY: "HAPPY",
-  NEUTRAL: "NEUTRAL",
-  SAD: "SAD",
-  ANXIOUS: "ANXIOUS",
-  EXCITED: "EXCITED",
-};
-
-const DB_TO_UI_MOOD: Record<string, string> = {
-  EXCITED: "Energized",
-  HAPPY: "Peaceful",
-  NEUTRAL: "Chilled",
-  SAD: "Tired",
-  ANXIOUS: "Thoughtful",
-};
-
-/**
- * Hash PIN using salted SHA-256 with Web Crypto API so plaintext PIN is never stored
- */
-async function hashPin(pin: string, salt: string = ""): Promise<string> {
-  const encoder = new TextEncoder();
-  const prefix = salt ? `clarity_vault_${salt}_` : "clarity_vault_";
-  const data = encoder.encode(`${prefix}${pin.trim()}`);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function checkDiaryPin(): Promise<boolean> {
-  const profile = await getProfile();
-  return !!profile?.diary_pin_hash;
-}
-
-async function verifyDiaryPin(pin: string): Promise<boolean> {
-  const profile = await getProfile();
-  if (!profile?.diary_pin_hash) return true; // No pin set
-  const userId = profile.id || (await requireUserId());
-  const saltedHash = await hashPin(pin, userId);
-  const legacyHash = await hashPin(pin, "");
-  if (profile.diary_pin_hash === saltedHash) return true;
-  if (profile.diary_pin_hash === legacyHash || profile.diary_pin_hash === pin.trim()) {
-    // Attempt non-blocking upgrade to user-salted hash
-    setDiaryPin(pin).catch((err) => console.warn("Could not upgrade PIN hash:", err));
-    return true;
-  }
-  return false;
-}
-
-async function setDiaryPin(pin: string): Promise<void> {
-  const userId = await requireUserId();
-  const hashed = await hashPin(pin, userId);
-  const { data: updated, error } = await supabase
-    .from("profiles")
-    .update({ diary_pin_hash: hashed })
-    .eq("id", userId)
-    .select();
-  if (error || !updated || updated.length === 0) {
-    const { data: { user } } = await supabase.auth.getUser();
-    await supabase.from("profiles").upsert(
-      {
-        id: userId,
-        diary_pin_hash: hashed,
-        email: user?.email || "",
-        username: user?.user_metadata?.username || user?.email?.split("@")[0] || "user",
-      },
-      { onConflict: "id" }
-    );
-  }
-}
-
-async function resetDiaryPin(newPin: string): Promise<void> {
-  await setDiaryPin(newPin);
-}
-
-async function removeDiaryPin(): Promise<void> {
-  const userId = await requireUserId();
-  await supabase
-    .from("profiles")
-    .update({ diary_pin_hash: null })
-    .eq("id", userId);
-}
-
-async function getDiaryEntries(pin: string): Promise<DiaryEntry[]> {
-  const hasPin = await checkDiaryPin();
-  if (hasPin) {
-    const ok = await verifyDiaryPin(pin);
-    if (!ok) throw new Error("Invalid PIN");
-  } else if (!pin) {
-    throw new Error("Diary PIN not set");
-  }
-
-  const userId = await requireUserId();
-  const { data, error } = await supabase
-    .from("diary_entries")
-    .select("*")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .order("date", { ascending: false });
-  if (error) throw error;
-
-  return (data ?? []).map((entry) => ({
-    ...entry,
-    mood: (entry.mood && DB_TO_UI_MOOD[entry.mood]) ? (DB_TO_UI_MOOD[entry.mood] as any) : entry.mood,
-  }));
-}
-
-async function saveDiaryEntry(
-  date: string,
-  pin: string,
-  body: Partial<DiaryEntry>
-): Promise<DiaryEntry> {
-  if (!pin) throw new Error("Diary is locked. Unlock to save.");
-
-  const userId = await requireUserId();
-
-  // Map mood so it never violates the database check constraint
-  const rawMood = body.mood;
-  const dbMood = rawMood ? (UI_TO_DB_MOOD[rawMood] || null) : null;
-
-  // Upsert by user_id + date (unique constraint)
-  const { data, error } = await supabase
-    .from("diary_entries")
-    .upsert(
-      {
-        user_id: userId,
-        date,
-        body: body.body || "",
-        mood: dbMood as any,
-      },
-      { onConflict: "user_id,date" }
-    )
-    .select()
-    .single();
-
-  if (error) throw error;
-
-  return {
-    ...data,
-    mood: (data.mood && DB_TO_UI_MOOD[data.mood]) ? (DB_TO_UI_MOOD[data.mood] as any) : data.mood,
-  };
-}
-
-// ─── Calendar ───────────────────────────────────────────────────────────────
-
-async function getYearHeatmap(year: number): Promise<Record<number, number>> {
-  const userId = await requireUserId();
-  const from = `${year}-01-01`;
-  const to = `${year}-12-31`;
-
-  const [eventsRes, tasksRes] = await Promise.all([
-    supabase
-      .from("calendar_events")
-      .select("event_date")
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .gte("event_date", from)
-      .lte("event_date", to),
-    supabase
-      .from("tasks")
-      .select("due_at")
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .gte("due_at", `${year}-01-01T00:00:00`)
-      .lte("due_at", `${year}-12-31T23:59:59`),
-  ]);
-
-  if (eventsRes.error) throw eventsRes.error;
-  if (tasksRes.error) throw tasksRes.error;
-
-  const heatmap: Record<number, number> = {};
-  (eventsRes.data ?? []).forEach((row) => {
-    const month = parseInt(row.event_date.split("-")[1], 10);
-    heatmap[month] = (heatmap[month] || 0) + 1;
-  });
-  (tasksRes.data ?? []).forEach((row) => {
-    if (row.due_at) {
-      const month = new Date(row.due_at).getMonth() + 1;
-      heatmap[month] = (heatmap[month] || 0) + 1;
-    }
-  });
-  return heatmap;
-}
-
-async function getCalendarDay(date: string): Promise<CalendarEvent[]> {
-  const userId = await requireUserId();
-  const { data, error } = await supabase
-    .from("calendar_events")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("event_date", date)
-    .is("deleted_at", null)
-    .order("start_at", { ascending: true });
-  if (error) throw error;
-  return data ?? [];
-}
-
-async function getCalendarRange(
-  from: string,
-  to: string
-): Promise<CalendarEvent[]> {
-  const userId = await requireUserId();
-  const query = supabase
-    .from("calendar_events")
-    .select("*")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .gte("event_date", from)
-    .lte("event_date", to)
-    .order("event_date", { ascending: true });
-  const { data, error } = await withTimeout(query);
-  if (error) throw error;
-  return data ?? [];
-}
-
-async function createCalendarEvent(
-  event: Partial<CalendarEvent>
-): Promise<CalendarEvent> {
-  const userId = await requireUserId();
-  const { data, error } = await supabase
-    .from("calendar_events")
-    .insert({
-      user_id: userId,
-      title: event.title,
-      description: event.description || null,
-      event_date: event.event_date,
-      start_at: event.start_at || null,
-      end_at: event.end_at || null,
-      event_type: event.event_type || "NOTE",
-    })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
-}
-
-async function updateCalendarEvent(
-  id: string,
-  title: string
-): Promise<void> {
-  const { error } = await supabase
-    .from("calendar_events")
-    .update({ title })
-    .eq("id", id);
-  if (error) throw error;
-}
-
-async function deleteCalendarEvent(id: string): Promise<void> {
-  const { error } = await supabase
-    .from("calendar_events")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) throw error;
-}
-
-// ─── Expenses ───────────────────────────────────────────────────────────────
-
-async function getExpenses(): Promise<Expense[]> {
-  const userId = await requireUserId();
-  const query = supabase
-    .from("expenses")
-    .select("*")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .order("date", { ascending: false });
-  const { data, error } = await withTimeout(query);
-  if (error) throw error;
-  return data ?? [];
-}
-
-async function createExpense(
-  expense: Omit<Expense, "id" | "created_at" | "updated_at" | "deleted_at" | "user_id">
-): Promise<Expense> {
-  const userId = await requireUserId();
-  const { data, error } = await supabase
-    .from("expenses")
-    .insert({
-      user_id: userId,
-      amount: expense.amount,
-      category: expense.category,
-      description: expense.description || null,
-      date: expense.date,
-      expense_type: expense.expense_type,
-    })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
-}
-
-async function deleteExpense(id: string): Promise<void> {
-  const { error } = await supabase
-    .from("expenses")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) throw error;
-}
-
-// ─── Projects ───────────────────────────────────────────────────────────────
-
-async function getProjects(): Promise<Project[]> {
-  const userId = await requireUserId();
-  const query = supabase
-    .from("projects")
-    .select("*")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false });
-  const { data, error } = await withTimeout(query);
-  if (error) throw error;
-  return data ?? [];
-}
-
-async function createProject(
-  project: Pick<Project, "title"> & { description?: string | null }
-): Promise<Project> {
-  const userId = await requireUserId();
-  const { data, error } = await supabase
-    .from("projects")
-    .insert({
-      user_id: userId,
-      title: project.title,
-      description: project.description || null,
-    })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
-}
-
-async function deleteProject(id: string): Promise<void> {
-  const { error } = await supabase
-    .from("projects")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) throw error;
-}
-
-async function getProjectTasks(projectId: string): Promise<ProjectTask[]> {
-  const query = supabase
-    .from("project_tasks")
-    .select("*")
-    .eq("project_id", projectId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: true });
-  const { data, error } = await withTimeout(query);
-  if (error) throw error;
-  return data ?? [];
-}
-
-async function createProjectTask(
-  task: Pick<ProjectTask, "title" | "project_id"> & {
-    description?: string | null;
-    status?: ProjectTaskStatus;
-  }
-): Promise<ProjectTask> {
-  const { data, error } = await supabase
-    .from("project_tasks")
-    .insert({
-      project_id: task.project_id,
-      title: task.title,
-      description: task.description || null,
-      status: task.status ?? "TODO",
-    })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
-}
-
-async function updateProjectTaskStatus(
-  id: string,
-  status: ProjectTaskStatus
-): Promise<void> {
-  const { error } = await supabase
-    .from("project_tasks")
-    .update({ status })
-    .eq("id", id);
-  if (error) throw error;
-}
-
-async function deleteProjectTask(id: string): Promise<void> {
-  const { error } = await supabase
-    .from("project_tasks")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) throw error;
-}
-
-// ─── Export as api object ───────────────────────────────────────────────────
-
-export const api = {
-  // Profile
-  getProfile,
-  upsertProfile,
-  // Tasks
-  getTasks,
-  createTask,
-  updateTask,
-  deleteTask,
-  // Diary
-  checkDiaryPin,
-  verifyDiaryPin,
-  setDiaryPin,
-  resetDiaryPin,
-  removeDiaryPin,
-  getDiaryEntries,
-  saveDiaryEntry,
-  // Calendar
-  getYearHeatmap,
-  getCalendarDay,
-  getCalendarRange,
-  createCalendarEvent,
-  updateCalendarEvent,
-  deleteCalendarEvent,
-  // Expenses
-  getExpenses,
-  createExpense,
-  deleteExpense,
-  // Projects
-  getProjects,
-  createProject,
-  deleteProject,
-  getProjectTasks,
-  createProjectTask,
-  updateProjectTaskStatus,
-  deleteProjectTask,
-};
-````
-
 ## File: desktop/src/pages/ExpensesPage.tsx
 ````typescript
 import { useState, useEffect, useMemo } from "react";
@@ -14833,11 +14044,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { sound } from "@/lib/sound";
+import { dataCache } from "@/lib/dataCache";
 import { clsx } from "clsx";
 import dayjs from "dayjs";
 
 // ─── Category Configuration ──────────────────────────────────────────────────
-export const CATEGORIES = [
+const CATEGORIES = [
   { label: "Snacks", icon: Popcorn },
   { label: "Rent", icon: Key },
   { label: "Buying / Shopping", icon: ShoppingBag },
@@ -15077,8 +14289,8 @@ function AddExpenseModal({
 
 // ─── Main Page (Ruled Ledger Pilot) ─────────────────────────────────────────
 export default function ExpensesPage() {
-  const [expenses, setExpenses] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [expenses, setExpenses] = useState<any[]>(() => dataCache.get<any[]>("expenses") || []);
+  const [loading, setLoading] = useState(() => !dataCache.get<any[]>("expenses"));
   const [showModal, setShowModal] = useState(false);
   const [modalInitial, setModalInitial] = useState<{ amount?: string; category?: string; description?: string } | undefined>(undefined);
   const [filterMonth, setFilterMonth] = useState(dayjs().format("YYYY-MM"));
@@ -15086,7 +14298,7 @@ export default function ExpensesPage() {
   const [pageError, setPageError] = useState("");
 
   useEffect(() => {
-    loadExpenses();
+    loadExpenses(expenses.length > 0);
     supabase.auth.getUser().then(({ data }) => {
       const cloudBudget = data?.user?.user_metadata?.monthly_budget;
       if (typeof cloudBudget === "number" && cloudBudget > 0) {
@@ -15096,10 +14308,16 @@ export default function ExpensesPage() {
         } catch {}
       }
     }).catch(() => {});
+
+    const handleDataUpdated = () => {
+      loadExpenses(true);
+    };
+    window.addEventListener("clarity:data-updated", handleDataUpdated);
+    return () => window.removeEventListener("clarity:data-updated", handleDataUpdated);
   }, []);
 
-  const loadExpenses = async () => {
-    setLoading(true);
+  const loadExpenses = async (silent = false) => {
+    if (!silent) setLoading(true);
     setPageError("");
     try {
       const data = await api.getExpenses();
@@ -15208,6 +14426,8 @@ export default function ExpensesPage() {
   const safeBudget = monthlyBudget > 0 ? monthlyBudget : 1;
   const safeDays = daysInMonth > 0 ? daysInMonth : 30;
   const dailyAverage = currentDay > 0 ? totalSpentThisMonth / currentDay : 0;
+  const remainingDays = Math.max(1, daysInMonth - currentDay + 1);
+  const safeDailyAllowance = Math.max(0, (monthlyBudget - totalSpentThisMonth) / remainingDays);
   const expectedPaceSpend = (safeBudget / safeDays) * currentDay;
   const paceDiff = totalSpentThisMonth - expectedPaceSpend; // negative = under pace (good), positive = over pace
   const isUnderPace = paceDiff <= 0;
@@ -15242,7 +14462,12 @@ export default function ExpensesPage() {
       text: "text-danger",
       label: "over pace",
     },
-  }[paceState];
+  }[paceState] || {
+    bar: "bg-done",
+    tick: "bg-done",
+    text: "text-done",
+    label: "under pace",
+  };
 
   // Group filtered expenses day-by-day (newest date first for display)
   const groupedByDate = useMemo(() => {
@@ -15414,7 +14639,10 @@ export default function ExpensesPage() {
                 <div className="text-sm font-mono font-bold text-ink tabular-nums">
                   ₹{dailyAverage.toFixed(0)}/day
                 </div>
-                <div className="text-xs font-mono text-ink-faint">
+                <div className="mt-0.5 inline-block px-1.5 py-0.5 rounded-none bg-ground border border-rule text-[11px] font-mono text-accent font-semibold tracking-tight">
+                  ₹{safeDailyAllowance.toFixed(0)}/day safe allowance
+                </div>
+                <div className="text-xs font-mono text-ink-faint mt-0.5">
                   day {currentDay} of {daysInMonth}
                 </div>
               </div>
@@ -15585,7 +14813,7 @@ export default function ExpensesPage() {
                         <div className="divide-y divide-rule/40">
                           {dayItems.map((expense) => {
                             const meta = categoryMeta(expense.category);
-                            const Icon = meta.icon;
+                            const Icon = meta?.icon || Tag;
                             const balanceInfo = expenseBalanceMap.get(expense.id);
                             const isNew = newlyAddedId === expense.id;
 
@@ -15618,7 +14846,7 @@ export default function ExpensesPage() {
                                     <Icon className="w-3 h-3 stroke-[2]" />
                                   </div>
                                   <span className="font-mono text-ink-faint text-[11px] truncate">
-                                    #{expense.id.toString().slice(-4)} · {dayjs(expense.date).format("D MMM")}
+                                    #{String(expense.id || "").slice(-4)} · {dayjs(expense.date).format("D MMM")}
                                   </span>
                                 </div>
 
@@ -15679,520 +14907,6 @@ export default function ExpensesPage() {
 }
 ````
 
-## File: desktop/src/pages/TasksPage.tsx
-````typescript
-import { useState, useEffect, useRef } from "react";
-import {
-  Plus, Trash2, X, CalendarDays,
-  Loader2, Sparkles, Check, AlertCircle
-} from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import { api } from "@/lib/api";
-import { sound } from "@/lib/sound";
-import type { Task } from "@/lib/types";
-import { clsx } from "clsx";
-import dayjs from "dayjs";
-
-// ─── New Task Modal (Disciplined Ledger Voucher) ──────────────────────────────
-function NewTaskModal({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void;
-  onCreated: (t: Task) => void;
-}) {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [dueAt, setDueAt] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const ref = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    ref.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) { setError("Task title is required."); return; }
-    setSaving(true);
-    setError("");
-    try {
-      const formattedDueAt = dueAt ? (dueAt.includes("T") ? dayjs(dueAt).toISOString() : dayjs(dueAt).startOf("day").toISOString()) : undefined;
-
-      const task = await api.createTask({
-        title: title.trim(),
-        description: description.trim() || undefined,
-        due_at: formattedDueAt,
-      });
-
-      sound.pop();
-      onCreated(task);
-      onClose();
-    } catch (err: any) {
-      setError(err.message || "Failed to create task.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div role="dialog" aria-modal="true" aria-label="New Action Item" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <motion.div
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 6 }}
-        transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-md bg-surface rounded-none border border-rule shadow-none overflow-hidden"
-      >
-        {/* Top Vermilion Margin Rule */}
-        <div className="h-0.5 bg-accent w-full" />
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 bg-surface border-b border-rule">
-          <div>
-            <h2 className="text-base font-bold text-ink tracking-tight font-serif">
-              New Action Item
-            </h2>
-            <p className="text-[11px] text-ink-faint font-mono uppercase tracking-wider mt-0.5">
-              Task docket · ledger record
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-none text-ink-faint hover:text-ink hover:bg-raised transition cursor-pointer border border-rule hover:border-ink-soft"
-            aria-label="Close"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div>
-            <label className="block text-[11px] font-mono font-medium text-ink-soft uppercase tracking-wider mb-1">
-              Task Title *
-            </label>
-            <input
-              ref={ref}
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Audit quarterly invoices, run 5km, draft memo"
-              className="w-full px-3 py-2 rounded-none border border-rule bg-ground text-ink placeholder:text-ink-faint text-xs outline-none focus:border-accent transition font-sans shadow-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-mono font-medium text-ink-soft uppercase tracking-wider mb-1">
-              Particulars / Notes (Optional)
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Context or instructions..."
-              rows={2}
-              className="w-full px-3 py-2 rounded-none border border-rule bg-ground text-ink placeholder:text-ink-faint text-xs outline-none focus:border-accent transition font-sans resize-none shadow-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-mono font-medium text-ink-soft uppercase tracking-wider mb-1">
-              Due Date &amp; Time (Optional)
-            </label>
-            <input
-              type="datetime-local"
-              value={dueAt}
-              onChange={(e) => setDueAt(e.target.value)}
-              className="w-full px-3 py-1.5 rounded-none border border-rule bg-ground text-ink text-xs font-mono outline-none focus:border-accent transition shadow-none"
-            />
-          </div>
-
-          {error && (
-            <p className="text-xs text-danger font-medium bg-danger/10 p-2 rounded-none border border-danger/20 font-mono">
-              {error}
-            </p>
-          )}
-
-          <div className="flex gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2 rounded-none border border-rule text-xs font-mono font-medium text-ink-soft hover:bg-raised hover:text-ink transition active:scale-[0.98] cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 py-2 rounded-none bg-accent text-white text-xs font-mono font-semibold hover:opacity-90 transition flex items-center justify-center gap-1.5 active:scale-[0.98] cursor-pointer disabled:opacity-50 shadow-none"
-            >
-              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5 stroke-[2.2]" />}
-              Record Item
-            </button>
-          </div>
-        </form>
-      </motion.div>
-    </div>
-  );
-}
-
-// ─── Main Tasks Page (Tight Ruled List) ──────────────────────────────────────
-export default function TasksPage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [pendingOnly, setPendingOnly] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [quickTitle, setQuickTitle] = useState("");
-  const [quickSaving, setQuickSaving] = useState(false);
-  const [pageError, setPageError] = useState("");
-  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
-
-  useEffect(() => { loadTasks(); }, [pendingOnly]);
-
-  const loadTasks = async () => {
-    setLoading(true);
-    try {
-      const data = await api.getTasks(pendingOnly);
-      setTasks(data);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const toggleComplete = async (task: Task) => {
-    sound.pop();
-    const willBeCompleted = !task.completed;
-
-    // Optimistic update
-    setTasks((prev) =>
-      prev.map((t) => (t.id === task.id ? { ...t, completed: willBeCompleted } : t))
-    );
-
-    try {
-      await api.updateTask(task.id, { completed: willBeCompleted });
-
-      const updatedTotal = tasks.length;
-      const updatedDone = tasks.filter((t) => (t.id === task.id ? willBeCompleted : t.completed)).length;
-      if (willBeCompleted && updatedDone === updatedTotal && updatedTotal > 0) {
-        sound.chime();
-      }
-
-      if (pendingOnly && willBeCompleted) {
-        setTimeout(() => {
-          setTasks((prev) => prev.filter((t) => t.id !== task.id));
-        }, 300);
-      }
-    } catch (err: any) {
-      // Revert on failure
-      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, completed: task.completed } : t)));
-      setPageError(err?.message || "Failed to update task status. Change reverted.");
-    }
-  };
-
-  const deleteTask = async (id: string) => {
-    sound.pop();
-    const taskToDelete = tasks.find((t) => t.id === id);
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-    try {
-      await api.deleteTask(id);
-    } catch (err: any) {
-      console.error("Failed to delete task:", err);
-      if (taskToDelete) setTasks((prev) => [taskToDelete, ...prev]);
-      setPageError(err?.message || "Failed to delete task.");
-    }
-  };
-
-  const handleTaskCreated = (t: Task) => {
-    setTasks((prev) => [t, ...prev]);
-    setNewlyAddedId(t.id);
-    setTimeout(() => setNewlyAddedId(null), 1600);
-  };
-
-  const handleQuickAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!quickTitle.trim() || quickSaving) return;
-    setQuickSaving(true);
-    try {
-      const created = await api.createTask({
-        title: quickTitle.trim(),
-      });
-      sound.pop();
-      setTasks((prev) => [created, ...prev]);
-      setNewlyAddedId(created.id);
-      setQuickTitle("");
-      setTimeout(() => setNewlyAddedId(null), 1600);
-    } catch (err: any) {
-      console.error("Failed to quick add task:", err);
-      setPageError(err?.message || "Failed to quick add task.");
-    } finally {
-      setQuickSaving(false);
-    }
-  };
-
-  const totalCount = tasks.length;
-  const completedCount = tasks.filter((t) => t.completed).length;
-  const pendingCount = totalCount - completedCount;
-  const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-
-  return (
-    <div className="h-full flex flex-col bg-ground">
-      <AnimatePresence>
-        {showModal && (
-          <NewTaskModal onClose={() => setShowModal(false)} onCreated={handleTaskCreated} />
-        )}
-      </AnimatePresence>
-
-      {/* Desk Top Bar (Ledger Navigation) */}
-      <div className="shrink-0 bg-surface border-b border-rule px-8 py-3.5 flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-xl font-bold text-ink tracking-tight font-serif">
-              Tasks
-            </h1>
-            <span className="font-mono text-[11px] font-medium px-2 py-0.5 rounded-none bg-ground border border-rule text-ink-soft">
-              {pendingCount} remaining
-            </span>
-          </div>
-          <p className="text-ink-faint text-xs mt-0.5 font-sans">
-            {dayjs().format("dddd, D MMMM YYYY")} · Action items &amp; disciplined execution
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={() => { sound.pop(); setShowModal(true); }}
-            className="px-3.5 py-1.5 rounded-none bg-accent text-white text-xs font-mono font-semibold hover:opacity-90 transition flex items-center gap-1.5 active:scale-[0.97] active:translate-y-[0.5px] cursor-pointer shadow-none"
-          >
-            <Plus className="w-3.5 h-3.5 stroke-[2.2]" /> New Task
-          </button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-auto p-6 sm:p-8">
-        <div className="max-w-3xl mx-auto space-y-5">
-
-          {/* Progress Completion Rule */}
-          {totalCount > 0 && (
-            <div className="bg-surface rounded-none border border-rule p-4 px-5 shadow-none flex items-center justify-between gap-4">
-              <div className="flex-1">
-                <div className="flex justify-between items-center text-xs mb-1.5 font-medium">
-                  <span className="text-ink-soft font-sans">
-                    {progressPercent === 100 ? (
-                      <span className="text-done font-medium flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5" /> All action items cleared for today.
-                      </span>
-                    ) : (
-                      <span>{completedCount} of {totalCount} completed</span>
-                    )}
-                  </span>
-                  <span className="font-mono tabular-nums font-bold text-ink">{progressPercent}%</span>
-                </div>
-                <div className="w-full h-1.5 rounded-none bg-ground border border-rule overflow-hidden">
-                  <motion.div
-                    className={clsx(
-                      "h-full rounded-none transition-all duration-500",
-                      progressPercent === 100 ? "bg-done" : "bg-done"
-                    )}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${progressPercent}%` }}
-                    transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {pageError && (
-            <div role="alert" aria-live="polite" className="mb-4 px-4 py-2.5 rounded-none bg-danger/10 border border-danger/20 text-xs font-medium text-danger flex items-center justify-between font-mono">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{pageError}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => loadTasks()}
-                  className="px-2 py-0.5 border border-rule text-ink hover:bg-raised transition cursor-pointer text-[11px]"
-                >
-                  Retry
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPageError("")}
-                  className="px-2 py-0.5 border border-rule text-ink hover:bg-raised transition cursor-pointer text-[11px]"
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Quick Task Inline Input (Sharp Ledger Row) */}
-          <form
-            onSubmit={handleQuickAdd}
-            className="bg-surface rounded-none border border-rule p-2 px-3.5 flex items-center gap-2.5 shadow-none"
-          >
-            <Plus className="w-3.5 h-3.5 text-ink-faint shrink-0" />
-            <input
-              type="text"
-              value={quickTitle}
-              onChange={(e) => setQuickTitle(e.target.value)}
-              placeholder="Inscribe a new task… (press Enter)"
-              className="flex-1 bg-transparent text-xs text-ink placeholder:text-ink-faint outline-none font-sans"
-            />
-            <button
-              type="submit"
-              disabled={quickSaving || !quickTitle.trim()}
-              className="px-2.5 py-1 rounded-none bg-ink text-ground hover:opacity-90 text-xs font-mono font-medium transition-all active:scale-[0.97] disabled:opacity-40 cursor-pointer"
-            >
-              Add
-            </button>
-          </form>
-
-          {/* Filter Bar */}
-          <div className="flex items-center justify-between pt-0.5">
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => { sound.pop(); setPendingOnly(false); }}
-                className={clsx(
-                  "px-2.5 py-1 rounded-none text-xs font-mono transition-all cursor-pointer border",
-                  !pendingOnly
-                    ? "bg-ink text-ground border-ink font-semibold"
-                    : "bg-surface text-ink-soft hover:text-ink border-rule"
-                )}
-              >
-                All Tasks ({totalCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => { sound.pop(); setPendingOnly(true); }}
-                className={clsx(
-                  "px-2.5 py-1 rounded-none text-xs font-mono transition-all cursor-pointer border",
-                  pendingOnly
-                    ? "bg-ink text-ground border-ink font-semibold"
-                    : "bg-surface text-ink-soft hover:text-ink border-rule"
-                )}
-              >
-                Pending ({pendingCount})
-              </button>
-            </div>
-          </div>
-
-          {/* The Tight Ruled Task Sheet */}
-          <div className="bg-surface rounded-none border border-rule overflow-hidden shadow-none">
-            {loading ? (
-              <div className="flex items-center justify-center py-12 text-ink-faint gap-2 font-mono text-xs">
-                <Loader2 className="w-4 h-4 animate-spin text-ink-soft" />
-                <span>Auditing tasks...</span>
-              </div>
-            ) : tasks.length === 0 ? (
-              <div className="text-center py-12 text-ink-faint p-6">
-                <p className="text-sm font-serif italic text-ink-soft">No tasks recorded in your ledger.</p>
-                <p className="text-xs mt-1 text-ink-faint font-sans">Inscribe an action item above to begin your day.</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-rule">
-                {tasks.map((task) => {
-                  const isNew = newlyAddedId === task.id;
-
-                  return (
-                    <motion.div
-                      key={task.id}
-                      initial={isNew ? { clipPath: "inset(0 100% 0 0)", backgroundColor: "var(--c-raised)" } : false}
-                      animate={isNew ? { clipPath: "inset(0 0% 0 0)", backgroundColor: "transparent" } : {}}
-                      transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
-                      className="group flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-raised transition-all duration-150 border-l-2 border-l-transparent hover:border-l-ink-soft cursor-default text-xs"
-                    >
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        {/* Square Checkbox */}
-                        <button
-                          type="button"
-                          onClick={() => toggleComplete(task)}
-                          className="cursor-pointer shrink-0"
-                          aria-label={task.completed ? "Mark incomplete" : "Mark complete"}
-                        >
-                          <div
-                            className={clsx(
-                              "w-4 h-4 rounded-none flex items-center justify-center transition-colors duration-150 border",
-                              task.completed
-                                ? "bg-done border-done text-white"
-                                : "border-rule bg-ground hover:border-ink-soft"
-                            )}
-                          >
-                            {task.completed && (
-                              <Check className="w-3 h-3 stroke-[3]" />
-                            )}
-                          </div>
-                        </button>
-
-                        {/* Title with Literal Pen Strike-Through */}
-                        <div className="min-w-0 flex-1 relative">
-                          <div className="relative inline-block max-w-full">
-                            <span
-                              className={clsx(
-                                "font-sans text-xs transition-colors duration-200 block truncate",
-                                task.completed ? "text-ink-faint" : "text-ink font-medium"
-                              )}
-                            >
-                              {task.title}
-                            </span>
-
-                            {/* Literal Pen Strike-Through Line */}
-                            {task.completed && (
-                              <motion.span
-                                initial={{ scaleX: 0 }}
-                                animate={{ scaleX: 1 }}
-                                transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-                                className="absolute left-0 top-1/2 -translate-y-1/2 h-[1.5px] bg-ink-soft/70 w-full origin-left pointer-events-none"
-                              />
-                            )}
-                          </div>
-
-                          {task.description && (
-                            <p className="text-[11px] text-ink-faint truncate mt-0.5 font-sans">
-                              {task.description}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Due Date & Actions */}
-                      <div className="flex items-center gap-2.5 shrink-0">
-                        {task.due_at && (
-                          <span className="text-[10px] font-mono text-ink-faint flex items-center gap-1 bg-ground px-1.5 py-0.5 rounded-none border border-rule">
-                            <CalendarDays className="w-3 h-3 text-ink-soft" />
-                            {dayjs(task.due_at).format("D MMM")}
-                          </span>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => deleteTask(task.id)}
-                          className="opacity-0 group-hover:opacity-100 p-1 rounded-none hover:text-danger text-ink-faint transition-all active:scale-90 border border-transparent hover:border-rule cursor-pointer"
-                          title="Delete task"
-                          aria-label="Delete task"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 stroke-[1.8]" />
-                        </button>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-        </div>
-      </div>
-    </div>
-  );
-}
-````
-
 ## File: desktop/src/pages/CalendarPage.tsx
 ````typescript
 import { useState, useEffect, useRef } from "react";
@@ -16204,6 +14918,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import { sound } from "@/lib/sound";
+import { dataCache } from "@/lib/dataCache";
 import type { CalendarEvent, Task } from "@/lib/types";
 import dayjs from "dayjs";
 import { clsx } from "clsx";
@@ -16414,7 +15129,7 @@ function AddNoteModal({
     try {
       const created = await api.createCalendarEvent({
         title: text.trim(),
-        description: undefined,
+        description: null,
         event_date: eventDate,
         event_type: "NOTE",
       });
@@ -16514,7 +15229,7 @@ export default function CalendarPage() {
   const [tab, setTab] = useState<TabMode>("tasks");
   const [currentDate, setCurrentDate] = useState(dayjs());
   const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<Task[]>(() => dataCache.get<Task[]>("tasks") || []);
   const [yearHeatmap, setYearHeatmap] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(false);
   const [pageError, setPageError] = useState("");
@@ -16522,11 +15237,21 @@ export default function CalendarPage() {
   const [showNoteModal, setShowNoteModal] = useState(false);
 
   useEffect(() => {
-    loadData();
+    loadData(allEvents.length > 0 || tasks.length > 0);
   }, [view, currentDate, tab]);
 
-  const loadData = async () => {
-    setLoading(true);
+  useEffect(() => {
+    const handleDataUpdated = () => {
+      loadData(true);
+    };
+    window.addEventListener("clarity:data-updated", handleDataUpdated);
+    return () => window.removeEventListener("clarity:data-updated", handleDataUpdated);
+  }, [view, currentDate, tab]);
+
+  const loadData = async (silent = false) => {
+    if (!silent && allEvents.length === 0 && tasks.length === 0) {
+      setLoading(true);
+    }
     setPageError("");
     try {
       const effectiveView = tab === "notes" ? "month" : view;
@@ -16751,7 +15476,7 @@ export default function CalendarPage() {
         </div>
       )}
       <div className="flex-1 overflow-auto relative">
-        {loading ? (
+        {loading && allEvents.length === 0 && tasks.length === 0 ? (
           <div className="flex items-center justify-center h-full text-ink-faint gap-2.5">
             <Loader2 className="w-5 h-5 animate-spin text-accent" />
             <span className="text-sm font-medium">Loading agenda…</span>
@@ -16919,7 +15644,7 @@ function DiaryDayCard({
 
   const handleSaveEdit = async () => {
     if (!editId) return;
-    await api.updateCalendarEvent(editId, editText.trim());
+    await api.updateCalendarEvent(editId, { title: editText.trim() });
     setEditId(null);
     onReload();
   };
@@ -16947,7 +15672,7 @@ function DiaryDayCard({
     try {
       const created = await api.createCalendarEvent({
         title: trimmed,
-        description: undefined,
+        description: null,
         event_date: date,
         event_type: "NOTE",
       });
@@ -17461,23 +16186,1486 @@ function DayView({ events }: { events: CalendarEvent[]; tab: TabMode }) {
 }
 ````
 
+## File: desktop/src/pages/TasksPage.tsx
+````typescript
+import { useState, useEffect, useRef } from "react";
+import {
+  Plus, Trash2, CalendarDays, Bell, FolderKanban,
+  Check, AlertCircle, X
+} from "lucide-react";
+import { motion } from "framer-motion";
+import { api } from "@/lib/api";
+import { sound } from "@/lib/sound";
+import { dataCache } from "@/lib/dataCache";
+import type { Task, Project, TaskStatus } from "@/lib/types";
+import { clsx } from "clsx";
+import dayjs from "dayjs";
+
+export default function TasksPage() {
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    return dataCache.get<Task[]>("tasks") || [];
+  });
+  const [loading, setLoading] = useState(() => !dataCache.get<Task[]>("tasks"));
+  const [error, setError] = useState("");
+  const [pendingOnly, setPendingOnly] = useState(false);
+  const [quickTitle, setQuickTitle] = useState("");
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
+  
+  // Master-Detail selection
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>(() => {
+    return dataCache.get<Project[]>("projects") || [];
+  });
+
+  // Inspector form state
+  const [inspectorTitle, setInspectorTitle] = useState("");
+  const [inspectorDesc, setInspectorDesc] = useState("");
+  const [inspectorDue, setInspectorDue] = useState("");
+  const [inspectorRemind, setInspectorRemind] = useState("");
+  const [inspectorProject, setInspectorProject] = useState<string>("");
+  const [inspectorStatus, setInspectorStatus] = useState<TaskStatus>("TODO");
+  const [inspectorSaving, setInspectorSaving] = useState(false);
+
+  const quickInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch with SWR
+  const fetchTasks = async (silent = false) => {
+    if (!silent && !dataCache.get<Task[]>("tasks")) {
+      setLoading(true);
+    }
+    try {
+      const [fetchedTasks, fetchedProjects] = await Promise.all([
+        api.getTasks(),
+        api.getProjects().catch(() => []),
+      ]);
+      setTasks(fetchedTasks);
+      setProjects(fetchedProjects);
+      dataCache.set("tasks", fetchedTasks);
+      dataCache.set("projects", fetchedProjects);
+      setError("");
+    } catch (err: any) {
+      if (!silent) setError(err.message || "Failed to load tasks.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTasks(tasks.length > 0);
+
+    const handleDataUpdated = () => {
+      fetchTasks(true);
+    };
+    window.addEventListener("clarity:data-updated", handleDataUpdated);
+    return () => window.removeEventListener("clarity:data-updated", handleDataUpdated);
+  }, []);
+
+  // Keyboard shortcut 'N' focuses inline input
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        sound.click();
+        quickInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Sync inspector when selected task changes
+  const selectedTask = tasks.find((t) => t.id === selectedTaskId) || null;
+  useEffect(() => {
+    if (selectedTask) {
+      setInspectorTitle(selectedTask.title);
+      setInspectorDesc(selectedTask.description || "");
+      setInspectorDue(selectedTask.due_at ? dayjs(selectedTask.due_at).format("YYYY-MM-DD") : "");
+      setInspectorRemind(selectedTask.remind_at ? dayjs(selectedTask.remind_at).format("YYYY-MM-DDTHH:mm") : "");
+      setInspectorProject(selectedTask.project_id || "");
+      setInspectorStatus((selectedTask.status as TaskStatus) || (selectedTask.completed ? "DONE" : "TODO"));
+    }
+  }, [selectedTaskId]);
+
+  const toggleComplete = async (task: Task) => {
+    const nextCompleted = !task.completed;
+    const nextStatus: TaskStatus = nextCompleted ? "DONE" : "TODO";
+
+    if (nextCompleted) {
+      sound.chime();
+    } else {
+      sound.pop();
+    }
+
+    // Optimistic local update
+    const updated = tasks.map((t) =>
+      t.id === task.id ? { ...t, completed: nextCompleted, status: nextStatus } : t
+    );
+    setTasks(updated);
+    dataCache.set("tasks", updated);
+
+    try {
+      await api.updateTask(task.id, { completed: nextCompleted, status: nextStatus });
+    } catch {
+      // Rollback on network failure
+      setTasks(tasks);
+      dataCache.set("tasks", tasks);
+      setError("Failed to update task state.");
+    }
+  };
+
+  const deleteTask = async (id: string) => {
+    sound.click();
+    const updated = tasks.filter((t) => t.id !== id);
+    setTasks(updated);
+    dataCache.set("tasks", updated);
+    if (selectedTaskId === id) setSelectedTaskId(null);
+
+    try {
+      await api.deleteTask(id);
+    } catch {
+      setTasks(tasks);
+      dataCache.set("tasks", tasks);
+      setError("Failed to delete task.");
+    }
+  };
+
+  const handleQuickAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickTitle.trim() || quickSaving) return;
+    setQuickSaving(true);
+    sound.click();
+
+    try {
+      const today = dayjs().format("YYYY-MM-DD");
+      const created = await api.createTask({
+        title: quickTitle.trim(),
+        completed: false,
+        status: "TODO",
+        due_at: today,
+      });
+      const next = [created, ...tasks];
+      setTasks(next);
+      dataCache.set("tasks", next);
+      setNewlyAddedId(created.id);
+      setSelectedTaskId(created.id);
+      setQuickTitle("");
+      sound.pop();
+      setTimeout(() => setNewlyAddedId(null), 1200);
+    } catch (err: any) {
+      setError(err?.message || "Failed to inscribe task.");
+    } finally {
+      setQuickSaving(false);
+    }
+  };
+
+  const handleSaveInspector = async () => {
+    if (!selectedTask || inspectorSaving) return;
+    setInspectorSaving(true);
+    sound.click();
+
+    const formattedDue = inspectorDue
+      ? dayjs(inspectorDue).startOf("day").toISOString()
+      : null;
+    const formattedRemind = inspectorRemind
+      ? dayjs(inspectorRemind).toISOString()
+      : null;
+    const isDone = inspectorStatus === "DONE";
+
+    try {
+      const updated = await api.updateTask(selectedTask.id, {
+        title: inspectorTitle.trim() || selectedTask.title,
+        description: inspectorDesc.trim() || null,
+        due_at: formattedDue,
+        remind_at: formattedRemind,
+        reminder_sent: false,
+        project_id: inspectorProject || null,
+        status: inspectorStatus,
+        completed: isDone,
+      });
+
+      const next = tasks.map((t) => (t.id === updated.id ? updated : t));
+      setTasks(next);
+      dataCache.set("tasks", next);
+      sound.chime();
+    } catch (err: any) {
+      setError(err?.message || "Failed to save task docket.");
+    } finally {
+      setInspectorSaving(false);
+    }
+  };
+
+  const filteredTasks = pendingOnly ? tasks.filter((t) => !t.completed) : tasks;
+  const overdueTasks = tasks.filter(
+    (t) => !t.completed && t.due_at && dayjs(t.due_at).isBefore(dayjs(), "day")
+  );
+
+  const handleRolloverOverdue = async () => {
+    sound.pop();
+    const todayStr = dayjs().format("YYYY-MM-DD");
+    setTasks((prev) =>
+      prev.map((t) =>
+        !t.completed && t.due_at && dayjs(t.due_at).isBefore(dayjs(), "day")
+          ? { ...t, due_at: todayStr }
+          : t
+      )
+    );
+    await Promise.all(
+      overdueTasks.map((t) => api.updateTask(t.id, { due_at: todayStr }).catch(() => {}))
+    );
+    dataCache.invalidate("tasks");
+  };
+  const totalCount = tasks.length;
+  const completedCount = tasks.filter((t) => t.completed).length;
+  const pendingCount = totalCount - completedCount;
+  const completionPercentage = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+  return (
+    <div className="h-full flex flex-col overflow-hidden bg-ground">
+      {/* ── Subheader / Editorial Folio Header ───────────────────────────────────── */}
+      <div className="px-6 py-4 border-b border-rule flex items-center justify-between shrink-0 bg-surface/50 backdrop-blur-xs">
+        <div>
+          <h1 className="text-xl font-bold text-ink tracking-tight font-serif flex items-center gap-2">
+            Tasks Ledger
+            <span className="font-mono text-xs font-normal text-ink-faint px-2 py-0.5 rounded border border-rule bg-surface">
+              {pendingCount} Pending
+            </span>
+          </h1>
+          <p className="text-xs text-ink-faint font-sans mt-0.5">
+            Personal action dockets & initiative ledger
+          </p>
+        </div>
+
+        {/* Status completion ratio */}
+        <div className="flex items-center gap-3 text-right">
+          <div className="hidden sm:block">
+            <span className="font-mono text-xs font-semibold text-ink">
+              {completedCount} of {totalCount} completed ({completionPercentage}%)
+            </span>
+            <div className="w-36 h-1 bg-surface border border-rule rounded-full overflow-hidden mt-1">
+              <div
+                className="h-full bg-accent transition-all duration-300"
+                style={{ width: `${completionPercentage}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 2-Column Responsive Master-Detail Layout ────────────────────────────── */}
+      <div className="flex-1 min-h-0 p-6 overflow-hidden grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* ── Left Column: Master Task List (7 cols) ────────────────────────────── */}
+        <div className="lg:col-span-7 flex flex-col min-h-0 space-y-3.5">
+          {error && (
+            <div className="p-2.5 rounded bg-danger/10 border border-danger/20 text-danger text-xs flex items-center justify-between">
+              <span className="flex items-center gap-1.5 font-medium">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {error}
+              </span>
+              <button
+                type="button"
+                onClick={() => setError("")}
+                className="text-xs underline hover:opacity-80"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {/* Quick Inscribe Input Bar */}
+          <form
+            onSubmit={handleQuickAdd}
+            className="bg-surface border border-rule rounded-xl p-2 px-3.5 flex items-center gap-2.5 shadow-2xs"
+          >
+            <Plus className="w-4 h-4 text-accent shrink-0 stroke-[2.5]" />
+            <input
+              ref={quickInputRef}
+              type="text"
+              value={quickTitle}
+              onChange={(e) => setQuickTitle(e.target.value)}
+              placeholder="Inscribe task... (Press 'N' to focus, Enter to save)"
+              className="flex-1 bg-transparent text-xs text-ink placeholder:text-ink-faint outline-none font-sans"
+            />
+            <button
+              type="submit"
+              disabled={quickSaving || !quickTitle.trim()}
+              className="px-2.5 py-1 rounded-lg bg-accent text-white hover:bg-accent/90 text-xs font-mono font-medium transition-all active:scale-[0.97] disabled:opacity-40 cursor-pointer"
+            >
+              Add
+            </button>
+          </form>
+
+          {/* Filter Pills */}
+          <div className="flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => { sound.pop(); setPendingOnly(false); }}
+                className={clsx(
+                  "px-2.5 py-1 rounded-lg text-xs font-mono transition-all cursor-pointer border",
+                  !pendingOnly
+                    ? "bg-ink text-ground border-ink font-semibold"
+                    : "bg-surface text-ink-soft hover:text-ink border-rule"
+                )}
+              >
+                All Tasks ({totalCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => { sound.pop(); setPendingOnly(true); }}
+                className={clsx(
+                  "px-2.5 py-1 rounded-lg text-xs font-mono transition-all cursor-pointer border",
+                  pendingOnly
+                    ? "bg-ink text-ground border-ink font-semibold"
+                    : "bg-surface text-ink-soft hover:text-ink border-rule"
+                )}
+              >
+                Pending ({pendingCount})
+              </button>
+            </div>
+          </div>
+
+          {/* Overdue Rollover Banner */}
+          {overdueTasks.length > 0 && (
+            <div className="shrink-0 flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-accent/10 border border-accent/25 text-xs animate-fadeIn">
+              <span className="font-mono text-ink">
+                <span className="font-bold text-accent">{overdueTasks.length}</span> overdue task{overdueTasks.length > 1 ? "s" : ""} from previous days
+              </span>
+              <button
+                type="button"
+                onClick={handleRolloverOverdue}
+                className="px-2.5 py-1 rounded-lg bg-accent text-white font-mono text-xs font-semibold hover:bg-accent/90 transition active:scale-[0.98] cursor-pointer"
+              >
+                Roll over to Today
+              </button>
+            </div>
+          )}
+
+          {/* Ruled Task List */}
+          <div className="flex-1 min-h-0 bg-surface border border-rule rounded-xl overflow-y-auto shadow-2xs divide-y divide-rule">
+            {loading && tasks.length === 0 ? (
+              <div className="flex items-center justify-center py-12 text-ink-faint gap-2 font-mono text-xs">
+                <span>Auditing tasks...</span>
+              </div>
+            ) : filteredTasks.length === 0 ? (
+              <div className="text-center py-12 text-ink-faint p-6">
+                <p className="text-sm font-serif italic text-ink-soft">No tasks recorded in your ledger.</p>
+                <p className="text-xs mt-1 text-ink-faint font-sans">Inscribe an action item above to begin your day.</p>
+              </div>
+            ) : (
+              filteredTasks.map((task) => {
+                const isSelected = selectedTaskId === task.id;
+                const isNew = newlyAddedId === task.id;
+
+                return (
+                  <motion.div
+                    key={task.id}
+                    onClick={() => {
+                      sound.pop();
+                      setSelectedTaskId(task.id);
+                    }}
+                    initial={isNew ? { clipPath: "inset(0 100% 0 0)", backgroundColor: "var(--c-raised)" } : false}
+                    animate={isNew ? { clipPath: "inset(0 0% 0 0)", backgroundColor: "transparent" } : {}}
+                    transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                    className={clsx(
+                      "group flex items-center justify-between gap-3 px-3.5 py-2.5 hover:bg-raised/70 transition-all cursor-pointer text-xs border-l-2",
+                      isSelected
+                        ? "bg-raised border-l-accent"
+                        : "border-l-transparent"
+                    )}
+                  >
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      {/* Checkbox */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleComplete(task);
+                        }}
+                        className="cursor-pointer shrink-0"
+                        aria-label={task.completed ? "Mark incomplete" : "Mark complete"}
+                      >
+                        <div
+                          className={clsx(
+                            "w-4 h-4 rounded flex items-center justify-center transition-colors duration-150 border",
+                            task.completed
+                              ? "bg-accent border-accent text-white"
+                              : "border-rule bg-ground hover:border-ink-soft"
+                          )}
+                        >
+                          {task.completed && <Check className="w-3 h-3 stroke-[3]" />}
+                        </div>
+                      </button>
+
+                      {/* Title & Notes */}
+                      <div className="min-w-0 flex-1 relative">
+                        <div className="relative inline-block max-w-full">
+                          <span
+                            className={clsx(
+                              "font-sans text-xs block truncate",
+                              task.completed ? "text-ink-faint" : "text-ink font-medium"
+                            )}
+                          >
+                            {task.title}
+                          </span>
+                          {task.completed && (
+                            <motion.span
+                              initial={{ scaleX: 0 }}
+                              animate={{ scaleX: 1 }}
+                              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                              className="absolute left-0 top-1/2 -translate-y-1/2 h-[1.5px] bg-ink-faint w-full origin-left pointer-events-none"
+                            />
+                          )}
+                        </div>
+                        {task.description && (
+                          <p className="text-[11px] text-ink-faint truncate font-sans">
+                            {task.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Metadata Badges & Delete */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {task.project_id && (
+                        <span className="text-[10px] font-mono text-accent bg-accent/10 px-1.5 py-0.5 rounded border border-accent/20 flex items-center gap-1">
+                          <FolderKanban className="w-3 h-3" />
+                          Docket
+                        </span>
+                      )}
+
+                      {task.due_at && (
+                        <span
+                          className={clsx(
+                            "text-[10px] font-mono flex items-center gap-1 px-1.5 py-0.5 rounded border",
+                            dayjs(task.due_at).isSame(dayjs(), "day")
+                              ? "bg-accent/10 border-accent/30 text-accent font-semibold"
+                              : dayjs(task.due_at).isBefore(dayjs(), "day") && !task.completed
+                              ? "bg-danger/10 border-danger/30 text-danger font-semibold"
+                              : "bg-ground border-rule text-ink-faint"
+                          )}
+                        >
+                          <CalendarDays className="w-3 h-3" />
+                          {dayjs(task.due_at).isSame(dayjs(), "day")
+                            ? "Today"
+                            : dayjs(task.due_at).format("D MMM")}
+                        </span>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteTask(task.id);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:text-danger text-ink-faint transition-all cursor-pointer"
+                        title="Delete task"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 stroke-[1.8]" />
+                      </button>
+                    </div>
+                  </motion.div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* ── Right Column: Task Docket Inspector (5 cols) ────────────────────── */}
+        <div className="lg:col-span-5 flex flex-col min-h-0 bg-surface border border-rule rounded-xl p-4 shadow-2xs">
+          {selectedTask ? (
+            <div className="flex flex-col h-full space-y-4 overflow-y-auto">
+              <div className="flex items-center justify-between pb-2 border-b border-rule shrink-0">
+                <span className="font-mono text-[10.5px] uppercase tracking-wider text-ink-faint font-semibold flex items-center gap-1.5">
+                  <FolderKanban className="w-3.5 h-3.5 text-accent" /> Task Docket Inspector
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTaskId(null)}
+                  className="p-1 rounded text-ink-faint hover:text-ink hover:bg-raised transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Title Input */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider">
+                  Docket Title
+                </label>
+                <input
+                  type="text"
+                  value={inspectorTitle}
+                  onChange={(e) => setInspectorTitle(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-ground border border-rule text-xs font-semibold text-ink focus:outline-none focus:border-accent font-sans"
+                />
+              </div>
+
+              {/* Description / Notes */}
+              <div className="space-y-1 flex-1 min-h-[120px] flex flex-col">
+                <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider">
+                  Notes & Details
+                </label>
+                <textarea
+                  value={inspectorDesc}
+                  onChange={(e) => setInspectorDesc(e.target.value)}
+                  placeholder="Record additional context, links, or notes..."
+                  className="w-full flex-1 p-3 rounded-lg bg-ground border border-rule text-xs text-ink placeholder:text-ink-faint focus:outline-none focus:border-accent resize-none font-sans"
+                />
+              </div>
+
+              {/* Project Docket Binding & Kanban Stage */}
+              <div className="grid grid-cols-2 gap-3 shrink-0">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider">
+                    Project Docket
+                  </label>
+                  <select
+                    value={inspectorProject}
+                    onChange={(e) => setInspectorProject(e.target.value)}
+                    className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink focus:outline-none focus:border-accent"
+                  >
+                    <option value="">No Project Docket</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>{p.title}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider">
+                    Kanban Stage
+                  </label>
+                  <select
+                    value={inspectorStatus}
+                    onChange={(e) => setInspectorStatus(e.target.value as TaskStatus)}
+                    className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink focus:outline-none focus:border-accent font-mono"
+                  >
+                    <option value="TODO">TODO</option>
+                    <option value="IN_PROGRESS">IN PROGRESS</option>
+                    <option value="DONE">DONE</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Due Date & Native Reminder */}
+              <div className="grid grid-cols-2 gap-3 shrink-0">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider flex items-center gap-1">
+                    <CalendarDays className="w-3 h-3 text-ink-soft" /> Deadline
+                  </label>
+                  <input
+                    type="date"
+                    value={inspectorDue}
+                    onChange={(e) => setInspectorDue(e.target.value)}
+                    className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink font-mono focus:outline-none focus:border-accent"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-mono text-ink-faint uppercase tracking-wider flex items-center gap-1">
+                    <Bell className="w-3 h-3 text-ink-soft" /> Native Reminder
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={inspectorRemind}
+                    onChange={(e) => setInspectorRemind(e.target.value)}
+                    className="w-full px-2.5 py-2 rounded-lg bg-ground border border-rule text-xs text-ink font-mono focus:outline-none focus:border-accent"
+                  />
+                </div>
+              </div>
+
+              {/* Actions Footer */}
+              <div className="pt-2 border-t border-rule flex items-center justify-between shrink-0">
+                <button
+                  type="button"
+                  onClick={() => deleteTask(selectedTask.id)}
+                  className="px-3 py-1.5 rounded-lg text-danger hover:bg-danger/10 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveInspector}
+                  disabled={inspectorSaving}
+                  className="px-4 py-1.5 rounded-lg bg-accent text-white hover:bg-accent/90 text-xs font-semibold shadow-2xs transition-all active:scale-[0.98] cursor-pointer"
+                >
+                  {inspectorSaving ? "Saving..." : "Save Docket"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-center p-6 text-ink-faint">
+              <FolderKanban className="w-8 h-8 text-ink-soft/40 mb-2 stroke-[1.5]" />
+              <p className="text-sm font-serif italic text-ink-soft">No Task Selected</p>
+              <p className="text-xs text-ink-faint font-sans mt-1 max-w-[220px]">
+                Click any task from your ruled ledger to inspect its docket, set reminders, or bind to a project.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+````
+
+## File: desktop/src/lib/api.ts
+````typescript
+import { invoke } from "@tauri-apps/api/core";
+import { dataCache } from "./dataCache";
+import { localDb } from "./localDb";
+import { encryptVaultText, decryptVaultText } from "./encryption";
+import type {
+  Task,
+  TaskStatus,
+  DiaryEntry,
+  DiaryMood,
+  CalendarEvent,
+  Expense,
+  ExpenseType,
+  Project,
+  ProjectTask,
+  ProjectTaskStatus,
+  Profile,
+} from "./types";
+
+/**
+ * Checks whether the application is currently running inside Tauri v2 desktop shell.
+ */
+export const isTauri = (): boolean =>
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+
+const LOCAL_USER_ID = "1";
+
+// ==============================================================================
+// Profiles
+// ==============================================================================
+
+async function getProfile(): Promise<Profile | null> {
+  return localDb.getProfile();
+}
+
+async function upsertProfile(profile: Partial<Profile>): Promise<Profile> {
+  return localDb.upsertProfile(profile);
+}
+
+// ==============================================================================
+// Tasks (Local-First via Tauri SQLite, with graceful offline localDb fallback)
+// ==============================================================================
+
+async function getTasks(pendingOnly = false): Promise<Task[]> {
+  if (isTauri()) {
+    try {
+      const list = await invoke<any[]>("get_tasks", {
+        userId: 1,
+        pendingOnly,
+      });
+      const mapped: Task[] = list.map((t) => ({
+        id: String(t.id),
+        user_id: LOCAL_USER_ID,
+        title: t.title,
+        description: t.description || null,
+        completed: Boolean(t.completed),
+        status: (t.status as TaskStatus) || (t.completed ? "DONE" : "TODO"),
+        project_id: t.projectId ? String(t.projectId) : null,
+        due_at: t.dueAt || null,
+        remind_at: t.remindAt || null,
+        reminder_sent: Boolean(t.reminderSent),
+        created_at: t.createdAt || new Date().toISOString(),
+        updated_at: t.updatedAt || new Date().toISOString(),
+        deleted_at: null,
+      }));
+      dataCache.set("tasks", mapped);
+      return mapped;
+    } catch (e) {
+      console.warn("[Tauri IPC] get_tasks error, falling back to localDb:", e);
+    }
+  }
+
+  // LocalDb (0ms response, persists in localStorage)
+  const tasks = localDb.getTasks(pendingOnly);
+  dataCache.set("tasks", tasks);
+  return tasks;
+}
+
+async function createTask(task: Partial<Task>): Promise<Task> {
+  const title = task.title?.trim() || "Untitled Task";
+  const desc = task.description?.trim() || null;
+  const status: TaskStatus = task.status || (task.completed ? "DONE" : "TODO");
+  const today = new Date().toISOString().split("T")[0];
+  const targetDue = task.due_at !== undefined ? task.due_at : today;
+
+  if (isTauri()) {
+    try {
+      const t = await invoke<any>("create_task", {
+        userId: 1,
+        title,
+        description: desc,
+        dueAt: targetDue || null,
+        status,
+        projectId: task.project_id || null,
+        remindAt: task.remind_at || null,
+        reminderSent: task.reminder_sent || false,
+      });
+
+      if (task.completed || status === "DONE") {
+        await invoke("update_task", { id: t.id, completed: true }).catch(() => {});
+      }
+
+      const created: Task = {
+        id: String(t.id),
+        user_id: LOCAL_USER_ID,
+        title: t.title,
+        description: t.description || null,
+        completed: Boolean(task.completed) || status === "DONE",
+        status,
+        project_id: task.project_id || null,
+        due_at: t.dueAt || null,
+        remind_at: task.remind_at || null,
+        reminder_sent: false,
+        created_at: t.createdAt || new Date().toISOString(),
+        updated_at: t.updatedAt || new Date().toISOString(),
+        deleted_at: null,
+      };
+
+      dataCache.invalidate("tasks");
+      return created;
+    } catch (e) {
+      console.warn("[Tauri IPC] create_task error, falling back to localDb:", e);
+    }
+  }
+
+  const created = localDb.createTask({
+    title,
+    description: desc,
+    completed: task.completed,
+    status,
+    project_id: task.project_id || null,
+    due_at: targetDue || null,
+    remind_at: task.remind_at || null,
+  });
+  dataCache.invalidate("tasks");
+  return created;
+}
+
+async function updateTask(id: string, patch: Partial<Task>): Promise<Task> {
+  const numericId = parseInt(id, 10);
+
+  if (isTauri() && !isNaN(numericId)) {
+    try {
+      const completedVal =
+        patch.completed !== undefined
+          ? patch.completed
+          : patch.status
+          ? patch.status === "DONE"
+          : null;
+
+      const t = await invoke<any>("update_task", {
+        id: numericId,
+        title: patch.title !== undefined ? patch.title : null,
+        description: patch.description !== undefined ? patch.description : null,
+        completed: completedVal,
+        dueAt: patch.due_at !== undefined ? patch.due_at : null,
+        status: patch.status !== undefined ? patch.status : null,
+        projectId: patch.project_id !== undefined ? patch.project_id : null,
+        remindAt: patch.remind_at !== undefined ? patch.remind_at : null,
+        reminderSent: patch.reminder_sent !== undefined ? patch.reminder_sent : null,
+      });
+
+      dataCache.invalidate("tasks");
+      return {
+        id: String(t.id),
+        user_id: LOCAL_USER_ID,
+        title: t.title,
+        description: t.description || null,
+        completed: Boolean(t.completed),
+        status: (t.status as TaskStatus) || (t.completed ? "DONE" : "TODO"),
+        project_id:
+          patch.project_id !== undefined
+            ? patch.project_id
+            : t.projectId
+            ? String(t.projectId)
+            : null,
+        due_at: t.dueAt || null,
+        remind_at: patch.remind_at !== undefined ? patch.remind_at : null,
+        reminder_sent: patch.reminder_sent !== undefined ? patch.reminder_sent : false,
+        created_at: t.createdAt || new Date().toISOString(),
+        updated_at: t.updatedAt || new Date().toISOString(),
+        deleted_at: null,
+      };
+    } catch (e) {
+      console.warn("[Tauri IPC] update_task error, falling back to localDb:", e);
+    }
+  }
+
+  const updated = localDb.updateTask(id, patch);
+  dataCache.invalidate("tasks");
+  return updated;
+}
+
+async function deleteTask(id: string): Promise<void> {
+  const numericId = parseInt(id, 10);
+  if (isTauri() && !isNaN(numericId)) {
+    try {
+      await invoke("delete_task", { id: numericId });
+      dataCache.invalidate("tasks");
+      return;
+    } catch (e) {
+      console.warn("[Tauri IPC] delete_task error, falling back to localDb:", e);
+    }
+  }
+
+  localDb.deleteTask(id);
+  dataCache.invalidate("tasks");
+}
+
+// ==============================================================================
+// Projects & Project Tasks
+// ==============================================================================
+
+async function getProjects(): Promise<Project[]> {
+  if (isTauri()) {
+    try {
+      const list = await invoke<any[]>("get_projects", { userId: 1 });
+      const mapped = list.map((p) => ({
+        id: String(p.id),
+        user_id: LOCAL_USER_ID,
+        title: p.title,
+        description: p.description || null,
+        created_at: p.createdAt || new Date().toISOString(),
+        updated_at: p.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      }));
+      dataCache.set("projects", mapped);
+      return mapped;
+    } catch (e) {
+      console.warn("[Tauri IPC] get_projects error, falling back to localDb:", e);
+    }
+  }
+
+  const projects = localDb.getProjects();
+  dataCache.set("projects", projects);
+  return projects;
+}
+
+async function createProject(
+  project: Pick<Project, "title"> & { description?: string | null }
+): Promise<Project> {
+  if (isTauri()) {
+    try {
+      const p = await invoke<any>("create_project", {
+        userId: 1,
+        title: project.title.trim(),
+        description: project.description?.trim() || null,
+      });
+      dataCache.invalidate("projects");
+      return {
+        id: String(p.id),
+        user_id: LOCAL_USER_ID,
+        title: p.title,
+        description: p.description || null,
+        created_at: p.createdAt || new Date().toISOString(),
+        updated_at: p.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      };
+    } catch (e) {
+      console.warn("[Tauri IPC] create_project error, falling back to localDb:", e);
+    }
+  }
+
+  const created = localDb.createProject(project);
+  dataCache.invalidate("projects");
+  return created;
+}
+
+async function deleteProject(id: string): Promise<void> {
+  const numericId = parseInt(id, 10);
+  if (isTauri() && !isNaN(numericId)) {
+    try {
+      await invoke("delete_project", { id: numericId });
+      dataCache.invalidate("projects");
+      return;
+    } catch (e) {
+      console.warn("[Tauri IPC] delete_project error, falling back to localDb:", e);
+    }
+  }
+
+  localDb.deleteProject(id);
+  dataCache.invalidate("projects");
+}
+
+async function getProjectTasks(projectId: string): Promise<ProjectTask[]> {
+  const numericProjId = parseInt(projectId, 10);
+  if (isTauri() && !isNaN(numericProjId)) {
+    try {
+      const list = await invoke<any[]>("get_project_tasks", { projectId: numericProjId });
+      return list.map((t) => ({
+        id: String(t.id),
+        project_id: projectId,
+        title: t.title,
+        description: t.description || null,
+        status: (t.status as ProjectTaskStatus) || "TODO",
+        created_at: t.createdAt || new Date().toISOString(),
+        updated_at: t.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      }));
+    } catch (e) {
+      console.warn("[Tauri IPC] get_project_tasks error, falling back to localDb:", e);
+    }
+  }
+
+  return localDb.getProjectTasks(projectId);
+}
+
+async function createProjectTask(
+  task: Pick<ProjectTask, "title" | "project_id"> & {
+    description?: string | null;
+    status?: ProjectTaskStatus;
+  }
+): Promise<ProjectTask> {
+  const numericProjId = parseInt(task.project_id, 10);
+  if (isTauri() && !isNaN(numericProjId)) {
+    try {
+      const t = await invoke<any>("create_project_task", {
+        projectId: numericProjId,
+        title: task.title,
+        description: task.description || null,
+        status: task.status || "TODO",
+      });
+      return {
+        id: String(t.id),
+        project_id: task.project_id,
+        title: t.title,
+        description: t.description || null,
+        status: (t.status as ProjectTaskStatus) || "TODO",
+        created_at: t.createdAt || new Date().toISOString(),
+        updated_at: t.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      };
+    } catch (e) {
+      console.warn("[Tauri IPC] create_project_task error, falling back to localDb:", e);
+    }
+  }
+
+  return localDb.createProjectTask({
+    projectId: task.project_id,
+    title: task.title,
+    description: task.description || null,
+    status: task.status || "TODO",
+  });
+}
+
+async function updateProjectTaskStatus(id: string, status: ProjectTaskStatus): Promise<void> {
+  const numericId = parseInt(id, 10);
+  if (isTauri() && !isNaN(numericId)) {
+    try {
+      await invoke("update_project_task_status", { id: numericId, status });
+      return;
+    } catch (e) {
+      console.warn("[Tauri IPC] update_project_task_status error, falling back to localDb:", e);
+    }
+  }
+
+  localDb.updateProjectTaskStatus(id, status);
+}
+
+async function deleteProjectTask(id: string): Promise<void> {
+  const numericId = parseInt(id, 10);
+  if (isTauri() && !isNaN(numericId)) {
+    try {
+      await invoke("delete_project_task", { id: numericId });
+      return;
+    } catch (e) {
+      console.warn("[Tauri IPC] delete_project_task error, falling back to localDb:", e);
+    }
+  }
+
+  localDb.deleteProjectTask(id);
+}
+
+// ==============================================================================
+// Expenses
+// ==============================================================================
+
+async function getExpenses(): Promise<Expense[]> {
+  if (isTauri()) {
+    try {
+      const list = await invoke<any[]>("get_expenses", { userId: 1 });
+      const mapped = list.map((e) => ({
+        id: String(e.id),
+        user_id: LOCAL_USER_ID,
+        amount: Number(e.amount),
+        category: e.category,
+        description: e.description || null,
+        date: e.date,
+        expense_type: (e.expenseType as ExpenseType) || "EXPENSE",
+        created_at: e.createdAt || new Date().toISOString(),
+        updated_at: e.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      }));
+      dataCache.set("expenses", mapped);
+      return mapped;
+    } catch (e) {
+      console.warn("[Tauri IPC] get_expenses error, falling back to localDb:", e);
+    }
+  }
+
+  const exp = localDb.getExpenses();
+  dataCache.set("expenses", exp);
+  return exp;
+}
+
+async function createExpense(
+  expense: Omit<Expense, "id" | "user_id" | "created_at" | "updated_at" | "deleted_at">
+): Promise<Expense> {
+  if (isTauri()) {
+    try {
+      const e = await invoke<any>("create_expense", {
+        userId: 1,
+        amount: Number(expense.amount),
+        category: expense.category,
+        description: expense.description || null,
+        date: expense.date,
+        expenseType: expense.expense_type,
+      });
+      dataCache.invalidate("expenses");
+      return {
+        id: String(e.id),
+        user_id: LOCAL_USER_ID,
+        amount: Number(e.amount),
+        category: e.category,
+        description: e.description || null,
+        date: e.date,
+        expense_type: (e.expenseType as ExpenseType) || "EXPENSE",
+        created_at: e.createdAt || new Date().toISOString(),
+        updated_at: e.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      };
+    } catch (err) {
+      console.warn("[Tauri IPC] create_expense error, falling back to localDb:", err);
+    }
+  }
+
+  const created = localDb.createExpense(expense);
+  dataCache.invalidate("expenses");
+  return created;
+}
+
+async function deleteExpense(id: string): Promise<void> {
+  const numericId = parseInt(id, 10);
+  if (isTauri() && !isNaN(numericId)) {
+    try {
+      await invoke("delete_expense", { id: numericId });
+      dataCache.invalidate("expenses");
+      return;
+    } catch (e) {
+      console.warn("[Tauri IPC] delete_expense error, falling back to localDb:", e);
+    }
+  }
+
+  localDb.deleteExpense(id);
+  dataCache.invalidate("expenses");
+}
+
+// ==============================================================================
+// Calendar
+// ==============================================================================
+
+async function getCalendarDay(date: string): Promise<CalendarEvent[]> {
+  if (isTauri()) {
+    try {
+      const list = await invoke<any[]>("get_calendar_day", { userId: 1, date });
+      return list.map((c) => ({
+        id: String(c.id),
+        user_id: LOCAL_USER_ID,
+        title: c.title,
+        description: c.description || null,
+        event_date: c.eventDate || date,
+        start_at: c.startAt || null,
+        end_at: c.endAt || null,
+        event_type: (c.type as "TASK" | "NOTE") || "NOTE",
+        remind_at: c.remindAt || null,
+        reminder_sent: Boolean(c.reminderSent),
+        created_at: c.createdAt || new Date().toISOString(),
+        updated_at: c.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      }));
+    } catch (e) {
+      console.warn("[Tauri IPC] get_calendar_day error, falling back to localDb:", e);
+    }
+  }
+
+  return localDb.getCalendarDay(date);
+}
+
+async function getCalendarRange(from: string, to: string): Promise<CalendarEvent[]> {
+  if (isTauri()) {
+    try {
+      const list = await invoke<any[]>("get_calendar_range", { userId: 1, from, to });
+      return list.map((c) => ({
+        id: String(c.id),
+        user_id: LOCAL_USER_ID,
+        title: c.title,
+        description: c.description || null,
+        event_date: c.eventDate,
+        start_at: c.startAt || null,
+        end_at: c.endAt || null,
+        event_type: (c.type as "TASK" | "NOTE") || "NOTE",
+        remind_at: c.remindAt || null,
+        reminder_sent: Boolean(c.reminderSent),
+        created_at: c.createdAt || new Date().toISOString(),
+        updated_at: c.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      }));
+    } catch (e) {
+      console.warn("[Tauri IPC] get_calendar_range error, falling back to localDb:", e);
+    }
+  }
+
+  return localDb.getCalendarRange(from, to);
+}
+
+async function getYearHeatmap(year: number): Promise<Record<number, number>> {
+  if (isTauri()) {
+    try {
+      const map = await invoke<Record<number, number>>("get_year_heatmap", { userId: 1, year });
+      return map || {};
+    } catch (e) {
+      console.warn("[Tauri IPC] get_year_heatmap error, falling back to localDb:", e);
+    }
+  }
+
+  return localDb.getYearHeatmap(year);
+}
+
+async function createCalendarEvent(
+  event: Partial<CalendarEvent> & Pick<CalendarEvent, "title" | "event_date">
+): Promise<CalendarEvent> {
+  if (isTauri()) {
+    try {
+      const c = await invoke<any>("create_calendar_event", {
+        userId: 1,
+        title: event.title,
+        description: event.description || null,
+        eventDate: event.event_date,
+        startAt: event.start_at || null,
+        endAt: event.end_at || null,
+        eventType: event.event_type || "NOTE",
+        remindAt: event.remind_at || null,
+        reminderSent: event.reminder_sent || false,
+      });
+      return {
+        id: String(c.id),
+        user_id: LOCAL_USER_ID,
+        title: c.title,
+        description: c.description || null,
+        event_date: c.eventDate,
+        start_at: c.startAt || null,
+        end_at: c.endAt || null,
+        event_type: (c.type as "TASK" | "NOTE") || "NOTE",
+        remind_at: c.remindAt || null,
+        reminder_sent: Boolean(c.reminderSent),
+        created_at: c.createdAt || new Date().toISOString(),
+        updated_at: c.createdAt || new Date().toISOString(),
+        deleted_at: null,
+      };
+    } catch (e) {
+      console.warn("[Tauri IPC] create_calendar_event error, falling back to localDb:", e);
+    }
+  }
+
+  return localDb.createCalendarEvent({
+    title: event.title,
+    description: event.description || null,
+    event_date: event.event_date,
+    start_at: event.start_at || null,
+    end_at: event.end_at || null,
+    event_type: event.event_type || "NOTE",
+  });
+}
+
+async function updateCalendarEvent(
+  id: string,
+  patch: Partial<
+    Omit<
+      CalendarEvent,
+      "id" | "user_id" | "created_at" | "updated_at" | "deleted_at" | "completed"
+    >
+  >
+): Promise<CalendarEvent> {
+  const numericId = parseInt(id, 10);
+  if (isTauri() && !isNaN(numericId)) {
+    try {
+      await invoke("update_calendar_event", {
+        id: numericId,
+        title: patch.title !== undefined ? patch.title : null,
+        description: patch.description !== undefined ? patch.description : null,
+        remindAt: patch.remind_at !== undefined ? patch.remind_at : null,
+        reminderSent: patch.reminder_sent !== undefined ? patch.reminder_sent : null,
+      });
+    } catch (e) {
+      console.warn("[Tauri IPC] update_calendar_event error:", e);
+    }
+  }
+
+  return localDb.updateCalendarEvent(id, patch);
+}
+
+async function deleteCalendarEvent(id: string): Promise<void> {
+  const numericId = parseInt(id, 10);
+  if (isTauri() && !isNaN(numericId)) {
+    try {
+      await invoke("delete_calendar_event", { id: numericId });
+      return;
+    } catch (e) {
+      console.warn("[Tauri IPC] delete_calendar_event error:", e);
+    }
+  }
+
+  localDb.deleteCalendarEvent(id);
+}
+
+// ==============================================================================
+// Diary & Vault (AES-256-GCM Encrypted)
+// ==============================================================================
+
+async function checkDiaryPin(): Promise<boolean> {
+  if (isTauri()) {
+    try {
+      return await invoke<boolean>("check_diary_pin", { userId: 1 });
+    } catch (e) {
+      console.warn("[Tauri IPC] check_diary_pin error:", e);
+    }
+  }
+
+  return localDb.checkDiaryPin();
+}
+
+async function verifyDiaryPin(pin: string): Promise<boolean> {
+  if (isTauri()) {
+    try {
+      return await invoke<boolean>("verify_diary_pin", { userId: 1, pin: pin.trim() });
+    } catch (e) {
+      console.warn("[Tauri IPC] verify_diary_pin error:", e);
+    }
+  }
+
+  return localDb.verifyDiaryPin(pin);
+}
+
+async function setDiaryPin(pin: string): Promise<void> {
+  if (isTauri()) {
+    try {
+      await invoke("set_diary_pin", { userId: 1, pin: pin.trim() });
+    } catch (e) {
+      console.warn("[Tauri IPC] set_diary_pin error:", e);
+    }
+  }
+  localDb.setDiaryPin(pin);
+}
+
+async function resetDiaryPin(newPin: string): Promise<void> {
+  return setDiaryPin(newPin);
+}
+
+async function removeDiaryPin(): Promise<void> {
+  if (isTauri()) {
+    try {
+      await invoke("remove_diary_pin", { userId: 1 });
+    } catch (e) {
+      console.warn("[Tauri IPC] remove_diary_pin error:", e);
+    }
+  }
+  localDb.removeDiaryPin();
+}
+
+async function getDiaryEntries(pin: string): Promise<DiaryEntry[]> {
+  if (isTauri()) {
+    try {
+      const list = await invoke<any[]>("get_diary_entries", { userId: 1 });
+      const entries: DiaryEntry[] = [];
+      for (const entry of list) {
+        let decryptedBody = entry.body || "";
+        let isReadOnly = false;
+        if (pin && typeof decryptedBody === "string" && decryptedBody.startsWith("clarity_enc:v1:")) {
+          try {
+            decryptedBody = await decryptVaultText(decryptedBody, pin, LOCAL_USER_ID);
+          } catch (e) {
+            console.warn("Vault decrypt warning (locked with previous PIN):", e);
+            decryptedBody = "[Locked with previous PIN]";
+            isReadOnly = true;
+          }
+        }
+        entries.push({
+          id: String(entry.id),
+          user_id: LOCAL_USER_ID,
+          date: entry.date,
+          body: decryptedBody,
+          mood: (entry.mood as DiaryMood) || null,
+          readOnly: isReadOnly,
+          created_at: entry.createdAt || new Date().toISOString(),
+          updated_at: entry.updatedAt || new Date().toISOString(),
+          deleted_at: null,
+        });
+      }
+      return entries;
+    } catch (e) {
+      console.warn("[Tauri IPC] get_diary_entries error:", e);
+    }
+  }
+
+  const entries = localDb.getDiaryEntries();
+  const decrypted: DiaryEntry[] = [];
+  for (const entry of entries) {
+    let body = entry.body || "";
+    let isReadOnly = false;
+    if (pin && typeof body === "string" && body.startsWith("clarity_enc:v1:")) {
+      try {
+        body = await decryptVaultText(body, pin, LOCAL_USER_ID);
+      } catch {
+        body = "[Locked with previous PIN]";
+        isReadOnly = true;
+      }
+    }
+    decrypted.push({ ...entry, body, readOnly: isReadOnly });
+  }
+  return decrypted;
+}
+
+async function saveDiaryEntry(
+  date: string,
+  pin: string,
+  body: Partial<DiaryEntry>
+): Promise<DiaryEntry> {
+  const rawBody = body.body || "";
+
+  // Guard: if entry is locked with previous PIN or flagged readOnly, do NOT overwrite ciphertext!
+  if (body.readOnly || rawBody === "[Locked with previous PIN]") {
+    return {
+      id: String(Date.now()),
+      user_id: LOCAL_USER_ID,
+      date,
+      body: "[Locked with previous PIN]",
+      mood: body.mood || null,
+      readOnly: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      deleted_at: null,
+    };
+  }
+
+  let encryptedBody = rawBody;
+
+  if (pin) {
+    try {
+      encryptedBody = await encryptVaultText(rawBody, pin, LOCAL_USER_ID);
+    } catch (e) {
+      console.warn("Vault encrypt error:", e);
+    }
+  }
+
+  if (isTauri()) {
+    try {
+      const entry = await invoke<any>("save_diary_entry", {
+        userId: 1,
+        date,
+        body: encryptedBody,
+        mood: body.mood || null,
+      });
+
+      return {
+        id: String(entry.id),
+        user_id: LOCAL_USER_ID,
+        date: entry.date,
+        body: rawBody,
+        mood: (entry.mood as DiaryMood) || null,
+        created_at: entry.createdAt || new Date().toISOString(),
+        updated_at: entry.updatedAt || new Date().toISOString(),
+        deleted_at: null,
+      };
+    } catch (e) {
+      console.warn("[Tauri IPC] save_diary_entry error:", e);
+    }
+  }
+
+  // Local storage save
+  localDb.saveDiaryEntry(date, { ...body, body: encryptedBody });
+  return {
+    id: String(Date.now()),
+    user_id: LOCAL_USER_ID,
+    date,
+    body: rawBody,
+    mood: body.mood || null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    deleted_at: null,
+  };
+}
+
+// ==============================================================================
+// Public API Export
+// ==============================================================================
+
+export const api = {
+  // Profiles
+  getProfile,
+  upsertProfile,
+  // Tasks
+  getTasks,
+  createTask,
+  updateTask,
+  deleteTask,
+  // Diary & Vault
+  checkDiaryPin,
+  verifyDiaryPin,
+  setDiaryPin,
+  resetDiaryPin,
+  removeDiaryPin,
+  getDiaryEntries,
+  saveDiaryEntry,
+  // Calendar
+  getYearHeatmap,
+  getCalendarDay,
+  getCalendarRange,
+  createCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent,
+  // Expenses
+  getExpenses,
+  createExpense,
+  deleteExpense,
+  // Projects
+  getProjects,
+  createProject,
+  deleteProject,
+  getProjectTasks,
+  createProjectTask,
+  updateProjectTaskStatus,
+  deleteProjectTask,
+};
+````
+
 ## File: desktop/src/pages/DiaryPage.tsx
 ````typescript
 import { useState, useRef, useEffect, useCallback } from "react";
 import dayjs from "dayjs";
 import {
-  Lock, Unlock, Key, BookOpen, AlertCircle, Loader2,
+  Lock, Unlock, Key, BookOpen, AlertCircle,
   Plus, ChevronRight, Pencil, CalendarDays, Check,
   Sparkles, Shuffle, Smile,
-  RotateCcw, Delete, Settings, X, Trash2,
-  Sparkle
+  Settings, X,
+  FileText, DollarSign, CheckSquare
 } from "lucide-react";
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { api } from "@/lib/api";
 import { sound } from "@/lib/sound";
-import type { DiaryEntry } from "@/lib/types";
+import { dataCache } from "@/lib/dataCache";
+import type { DiaryEntry, DiaryMood, Task, Expense } from "@/lib/types";
 import { clsx } from "clsx";
-import { ClarityLogo } from "@/components/ClarityLogo";
+
 
 // Curated daily reflection prompts for personal mindfulness
 const DAILY_PROMPTS = [
@@ -17500,7 +17688,16 @@ const MOOD_GLOWS: Record<string, string> = {
   Thoughtful: 'rgba(59, 130, 246, 0.08)',
 };
 
-const MOODS = [
+const MOOD_COLORS: Record<string, string> = {
+  Energized: '#F59E0B',
+  Peaceful: '#6B8065',
+  Productive: '#C87467',
+  Chilled: '#D98A7E',
+  Tired: '#8B5CF6',
+  Thoughtful: '#3B82F6',
+};
+
+const MOODS: { label: DiaryMood; emoji: string }[] = [
   { label: "Energized", emoji: "⚡" },
   { label: "Peaceful", emoji: "🌿" },
   { label: "Productive", emoji: "🎯" },
@@ -17509,7 +17706,7 @@ const MOODS = [
   { label: "Thoughtful", emoji: "💭" },
 ];
 
-// ─── 3D Vault Lock Screen (Physical Keyboard Only, Kinetic Rings) ─────────────
+// ── 3D Vault Lock Screen ─────────────────────────────────────────────────────
 function LockScreen({
   onUnlocked,
 }: {
@@ -17517,162 +17714,81 @@ function LockScreen({
 }) {
   const [pin, setPin] = useState("");
   const [mode, setMode] = useState<"unlock" | "reset" | "setup">("unlock");
-  const [resetStep, setResetStep] = useState<"enter" | "confirm">("enter");
-  const [tempNewPin, setTempNewPin] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [resetConfirmPin, setResetConfirmPin] = useState("");
+  const [resetStep, setResetStep] = useState<1 | 2>(1);
   const [error, setError] = useState("");
-  const [shake, setShake] = useState(false);
+  const [loading, setLoading] = useState(false);
+  // hasPin
   const [success, setSuccess] = useState(false);
+  
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [ripples, setRipples] = useState<{ id: number; index: number }[]>([]);
 
-  // 3D Tilt Parallax Motion Values
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
+  const rotateX = useSpring(useTransform(mouseY, [-300, 300], [12, -12]), { damping: 28, stiffness: 220 });
+  const rotateY = useSpring(useTransform(mouseX, [-300, 300], [-12, 12]), { damping: 28, stiffness: 220 });
+
   const cardRef = useRef<HTMLDivElement>(null);
-  const rawX = useMotionValue(0);
-  const rawY = useMotionValue(0);
-  const mouseX = useSpring(rawX, { stiffness: 280, damping: 26 });
-  const mouseY = useSpring(rawY, { stiffness: 280, damping: 26 });
+  const isVerifyingRef = useRef(false);
 
-  const rotateX = useTransform(mouseY, [-0.5, 0.5], ["12deg", "-12deg"]);
-  const rotateY = useTransform(mouseX, [-0.5, 0.5], ["-12deg", "12deg"]);
+  useEffect(() => {
+    let mounted = true;
+    api.checkDiaryPin()
+      .then((exists) => {
+        if (!mounted) return;
+        // exists
+        if (!exists) setMode("setup");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        // false
+        setMode("setup");
+      });
+    return () => { mounted = false; };
+  }, []);
 
-  // Mouse ambient lighting
-  const [coords, setCoords] = useState({ x: 0, y: 0 });
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleMouseMove = (e: React.MouseEvent) => {
     if (!cardRef.current) return;
     const rect = cardRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width - 0.5;
-    const y = (e.clientY - rect.top) / rect.height - 0.5;
-    rawX.set(x);
-    rawY.set(y);
-    setCoords({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    const x = e.clientX - rect.left - rect.width / 2;
+    const y = e.clientY - rect.top - rect.height / 2;
+    mouseX.set(x);
+    mouseY.set(y);
   };
 
   const handleMouseLeave = () => {
-    rawX.set(0);
-    rawY.set(0);
+    mouseX.set(0);
+    mouseY.set(0);
   };
 
-  const triggerShake = (msg: string) => {
-    sound.pop();
-    setError(msg);
-    setShake(true);
-    setPin("");
-    setTimeout(() => setShake(false), 500);
+  const spawnParticle = (_k: string) => {
+    // const id = Date.now();
+    
+    setTimeout(() => {
+      
+    }, 600);
   };
 
-  const handleUnlock = useCallback(async (pinToVerify: string) => {
+  const handleDigit = useCallback((d: string) => {
+    sound.click();
     setError("");
-    setLoading(true);
-    try {
-      const data = await api.getDiaryEntries(pinToVerify);
-      setSuccess(true);
-      sound.chime();
-      setTimeout(() => {
-        onUnlocked(pinToVerify, data);
-      }, 350);
-    } catch (err: any) {
-      const message = err?.message || String(err);
-      if (message.includes("Diary PIN not set")) {
-        setMode("setup");
-        setPin("");
-        setError("No passcode set yet. Type 4 digits to secure your journal.");
-      } else {
-        triggerShake("Incorrect passcode. Try again or reset below.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [onUnlocked]);
-
-  const handleResetSubmit = useCallback(async (confirmedPin: string) => {
-    setError("");
-    setLoading(true);
-    try {
-      await api.resetDiaryPin(confirmedPin);
-      setSuccess(true);
-      sound.chime();
-      const entries = await api.getDiaryEntries(confirmedPin);
-      setTimeout(() => {
-        onUnlocked(confirmedPin, entries);
-      }, 350);
-    } catch {
-      triggerShake("Failed to reset passcode. Try again.");
-    } finally {
-      setLoading(false);
-    }
-  }, [onUnlocked]);
-
-  // Handle digit input with ripple shockwaves
-  const handleDigit = useCallback((digit: string) => {
-    if (loading || success) return;
-    sound.pop();
-    setError("");
-    setActiveKey(digit);
-    setTimeout(() => setActiveKey(null), 140);
+    setActiveKey(d);
+    setTimeout(() => setActiveKey(null), 120);
+    spawnParticle(d);
 
     setPin((prev) => {
       if (prev.length >= 4) return prev;
-      const targetIndex = prev.length;
-      const next = prev + digit;
-
-      // Trigger ripple shockwave on target kinetic ring
-      const rippleId = Date.now() + Math.random();
-      setRipples((r) => [...r, { id: rippleId, index: targetIndex }]);
-      setTimeout(() => {
-        setRipples((r) => r.filter((item) => item.id !== rippleId));
-      }, 600);
-
-      if (next.length === 4) {
-        if (mode === "unlock") {
-          setTimeout(() => handleUnlock(next), 90);
-        } else if (mode === "setup") {
-          setTimeout(async () => {
-            setLoading(true);
-            try {
-              await api.setDiaryPin(next);
-              setSuccess(true);
-              sound.chime();
-              const entries = await api.getDiaryEntries(next);
-              setTimeout(() => onUnlocked(next, entries), 350);
-            } catch {
-              triggerShake("Failed to set passcode. Try again.");
-            } finally {
-              setLoading(false);
-            }
-          }, 90);
-        } else if (mode === "reset") {
-          if (resetStep === "enter") {
-            setTimeout(() => {
-              setTempNewPin(next);
-              setResetStep("confirm");
-              setPin("");
-            }, 90);
-          } else {
-            setTimeout(() => {
-              if (next === tempNewPin) {
-                handleResetSubmit(next);
-              } else {
-                triggerShake("Passcodes do not match. Start over.");
-                setResetStep("enter");
-                setTempNewPin("");
-              }
-            }, 90);
-          }
-        }
-      }
-      return next;
+      return prev + d;
     });
-  }, [loading, success, mode, resetStep, tempNewPin, handleUnlock, handleResetSubmit, onUnlocked]);
+  }, []);
 
   const handleBackspace = useCallback(() => {
-    if (loading || success) return;
     sound.pop();
+    setError("");
     setActiveKey("Backspace");
-    setTimeout(() => setActiveKey(null), 140);
+    setTimeout(() => setActiveKey(null), 120);
     setPin((prev) => prev.slice(0, -1));
-  }, [loading, success]);
+  }, []);
 
   const handleClear = useCallback(() => {
     sound.pop();
@@ -17680,10 +17796,110 @@ function LockScreen({
     setError("");
   }, []);
 
-  // Global physical keyboard capture
+  const verifyPin = useCallback(async (code: string) => {
+    if (isVerifyingRef.current) return;
+    isVerifyingRef.current = true;
+    setLoading(true);
+    setError("");
+
+    try {
+      const valid = await api.verifyDiaryPin(code);
+      if (valid) {
+        sound.chime();
+        setSuccess(true);
+        const entries = await api.getDiaryEntries(code);
+        setTimeout(() => {
+          onUnlocked(code, entries);
+        }, 500);
+      } else {
+        sound.pop();
+        setError("Incorrect passcode. Please try again.");
+        setPin("");
+      }
+    } catch (err: any) {
+      sound.pop();
+      setError(err?.message || "Authentication error.");
+      setPin("");
+    } finally {
+      setLoading(false);
+      isVerifyingRef.current = false;
+    }
+  }, [onUnlocked]);
+
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key >= "0" && e.key <= "9") {
+    if (mode === "unlock" && pin.length === 4 && !loading && !success) {
+      verifyPin(pin);
+    } else if (mode === "setup" && pin.length === 4) {
+      if (resetStep === 1) {
+        sound.pop();
+        setResetConfirmPin(pin);
+        setPin("");
+        setResetStep(2);
+      } else {
+        if (pin === resetConfirmPin) {
+          sound.chime();
+          setLoading(true);
+          api.setDiaryPin(pin)
+            .then(() => {
+              setSuccess(true);
+              return api.getDiaryEntries(pin);
+            })
+            .then((entries) => {
+              setTimeout(() => onUnlocked(pin, entries), 500);
+            })
+            .catch((err) => {
+              setError(err.message || "Failed to set PIN.");
+              setPin("");
+              setResetStep(1);
+            })
+            .finally(() => setLoading(false));
+        } else {
+          sound.pop();
+          setError("PINs do not match. Try again.");
+          setPin("");
+          setResetConfirmPin("");
+          setResetStep(1);
+        }
+      }
+    } else if (mode === "reset" && pin.length === 4) {
+      if (resetStep === 1) {
+        sound.pop();
+        setResetConfirmPin(pin);
+        setPin("");
+        setResetStep(2);
+      } else {
+        if (pin === resetConfirmPin) {
+          sound.chime();
+          setLoading(true);
+          api.resetDiaryPin(pin)
+            .then(() => {
+              setSuccess(true);
+              return api.getDiaryEntries(pin);
+            })
+            .then((entries) => {
+              setTimeout(() => onUnlocked(pin, entries), 500);
+            })
+            .catch((err) => {
+              setError(err.message || "Failed to reset PIN.");
+              setPin("");
+              setResetStep(1);
+            })
+            .finally(() => setLoading(false));
+        } else {
+          sound.pop();
+          setError("PINs do not match. Try again.");
+          setPin("");
+          setResetConfirmPin("");
+          setResetStep(1);
+        }
+      }
+    }
+  }, [pin, mode, resetStep, resetConfirmPin, loading, success, verifyPin, onUnlocked]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      if (/^[0-9]$/.test(e.key)) {
         e.preventDefault();
         handleDigit(e.key);
       } else if (e.key === "Backspace") {
@@ -17694,299 +17910,150 @@ function LockScreen({
         handleClear();
       }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleDigit, handleBackspace, handleClear]);
 
   const startResetMode = () => {
     sound.pop();
     setMode("reset");
-    setResetStep("enter");
-    setTempNewPin("");
+    setResetStep(1);
     setPin("");
+    setResetConfirmPin("");
     setError("");
   };
 
   const cancelResetMode = () => {
     sound.pop();
     setMode("unlock");
-    setResetStep("enter");
-    setTempNewPin("");
+    setResetStep(1);
     setPin("");
+    setResetConfirmPin("");
     setError("");
   };
 
   return (
     <div
-      onMouseMove={handleMouseMove}
-      className="h-full flex items-center justify-center p-6 bg-ground text-ink relative select-none overflow-hidden"
+      className="h-full flex items-center justify-center p-6 select-none bg-ground overflow-hidden"
       style={{ perspective: 1200 }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
     >
-      {/* Dynamic Cursor Light Refraction Sphere */}
-      <motion.div
-        className="pointer-events-none absolute w-[600px] h-[600px] rounded-full blur-3xl opacity-35"
-        style={{
-          background: "radial-gradient(circle, rgba(200, 116, 103, 0.28) 0%, rgba(217, 138, 126, 0.12) 40%, transparent 70%)",
-          left: coords.x ? coords.x - 300 : "50%",
-          top: coords.y ? coords.y - 300 : "40%",
-          transform: coords.x ? "none" : "translate(-50%, -50%)",
-          transition: "left 0.1s ease-out, top 0.1s ease-out",
-        }}
-      />
-
-      {/* Floating 3D Parallax Vault Card */}
       <motion.div
         ref={cardRef}
-        animate={shake ? { x: [-16, 16, -12, 12, -6, 6, 0] } : success ? { scale: [1, 1.05, 0.98], opacity: [1, 1, 0.9] } : {}}
-        transition={{ duration: 0.45, ease: "easeOut" }}
         style={{
           rotateX,
           rotateY,
           transformStyle: "preserve-3d",
         }}
-        onMouseLeave={handleMouseLeave}
-        className="w-full max-w-lg relative z-10"
+        initial={{ opacity: 0, scale: 0.95, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full max-w-md relative"
       >
-        <div className="relative overflow-hidden rounded-[32px] p-[1.5px] shadow-[0_24px_64px_rgba(60,50,40,0.12),0_8px_24px_rgba(0,0,0,0.06)] bg-gradient-to-b from-white/90 via-white/40 to-black/[0.08] transition-all">
-          {/* Edge Specular Light Follower */}
-          <div
-            className="pointer-events-none absolute inset-0 rounded-[32px] transition-opacity duration-300 opacity-80"
-            style={{
-              background: `radial-gradient(400px circle at ${coords.x}px ${coords.y}px, rgba(200, 116, 103, 0.35), transparent 60%)`,
-            }}
-          />
-
-          {/* Inner Card Body */}
-          <div className="relative rounded-[30px] bg-surface backdrop-blur-2xl px-10 py-10 flex flex-col items-center">
-            {/* 3D Floating Vault Emblem */}
+        <div className="relative rounded-3xl bg-surface/95 border border-rule shadow-2xl p-8 backdrop-blur-xl transition-all duration-300">
+          <div className="flex flex-col items-center text-center">
             <motion.div
-              style={{ transform: "translateZ(40px)" }}
-              className="relative flex items-center justify-center mb-6"
+              animate={success ? { scale: [1, 1.15, 1], rotate: [0, -6, 0] } : {}}
+              className="w-14 h-14 rounded-2xl bg-accent/15 border border-accent/25 flex items-center justify-center text-accent mb-4 shadow-sm"
             >
-              <div className="relative w-20 h-20 rounded-3xl bg-accent/15 border border-accent/30 shadow-sm flex items-center justify-center">
-                <motion.div
-                  animate={success ? { rotate: [0, 360], scale: [1, 1.25, 1] } : { rotate: [0, 3, -3, 0] }}
-                  transition={{ duration: 0.6 }}
-                >
-                  <ClarityLogo size="lg" showText={false} theme="terracotta" shape="squircle" />
-                </motion.div>
-
-                {/* Status indicator lock glyph */}
-                <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-accent text-white flex items-center justify-center shadow-md">
-                  {mode === "reset" ? (
-                    <RotateCcw className="w-3.5 h-3.5 stroke-[2.4]" />
-                  ) : success ? (
-                    <Unlock className="w-3.5 h-3.5 stroke-[2.4]" />
-                  ) : (
-                    <Lock className="w-3.5 h-3.5 stroke-[2.4]" />
-                  )}
-                </div>
-              </div>
+              {success ? (
+                <Unlock className="w-7 h-7 stroke-[2.2]" />
+              ) : mode === "setup" ? (
+                <Key className="w-7 h-7 stroke-[2.2]" />
+              ) : (
+                <Lock className="w-7 h-7 stroke-[2.2]" />
+              )}
             </motion.div>
 
-            {/* Typography */}
-            <div className="text-center space-y-1.5 mb-8" style={{ transform: "translateZ(30px)" }}>
-              <h2 className="text-3xl font-bold tracking-tight text-ink font-serif">
-                {mode === "reset"
-                  ? resetStep === "enter"
-                    ? "Reset Passcode"
-                    : "Confirm New Passcode"
-                  : mode === "setup"
-                  ? "Protect Your Sanctuary"
-                  : "Private Vault"}
-              </h2>
-              <p className="text-ink-faint text-xs font-medium tracking-wide">
-                {mode === "reset"
-                  ? resetStep === "enter"
-                    ? "Enter 4 digits for your new passcode"
-                    : "Repeat the 4 digits to confirm"
-                  : mode === "setup"
-                  ? "Choose a 4-digit PIN using your keyboard"
-                  : "Type your 4-digit passcode on your keyboard"}
-              </p>
-            </div>
+            <h1 className="text-2xl font-bold text-ink tracking-tight font-serif mb-1">
+              {mode === "setup"
+                ? (resetStep === 1 ? "Initialize Private Vault" : "Confirm Passcode")
+                : mode === "reset"
+                ? (resetStep === 1 ? "Enter New Passcode" : "Confirm New Passcode")
+                : "Private Vault"}
+            </h1>
+            <p className="text-xs text-ink-faint font-sans max-w-xs mb-6">
+              {mode === "setup"
+                ? (resetStep === 1 ? "Inscribe a 4-digit master PIN to seal your private entries." : "Re-enter your 4-digit PIN to confirm.")
+                : mode === "reset"
+                ? (resetStep === 1 ? "Choose a new 4-digit passcode for your journal." : "Confirm your new 4-digit passcode.")
+                : "Client-side AES-256-GCM encrypted personal reflections."}
+            </p>
 
-            {/* ─── 4 Kinetic Floating Vault Rings ───────────────────────────────── */}
-            <div
-              style={{ transform: "translateZ(50px)" }}
-              className="py-4 px-6 flex items-center justify-center gap-6 mb-4 relative"
-            >
+            {/* Digit Slots */}
+            <div className="flex items-center gap-3.5 mb-6">
               {[0, 1, 2, 3].map((idx) => {
                 const filled = pin.length > idx;
                 const active = pin.length === idx;
-                const ringRipples = ripples.filter((r) => r.index === idx);
-
                 return (
-                  <div key={idx} className="relative flex items-center justify-center">
-                    {/* Expanding Kinetic Ripple Shockwaves */}
-                    {ringRipples.map((r) => (
-                      <motion.div
-                        key={r.id}
-                        initial={{ scale: 0.8, opacity: 0.95 }}
-                        animate={{ scale: 2.3, opacity: 0 }}
-                        transition={{ duration: 0.55, ease: "easeOut" }}
-                        className="absolute w-14 h-14 rounded-full border-2 border-accent pointer-events-none"
-                      />
-                    ))}
-
-                    {/* Outer Ambient Kinetic Ring */}
-                    <motion.div
-                      animate={
-                        success
-                          ? { scale: [1, 1.2, 1], borderColor: "var(--c-done)" }
-                          : filled
-                          ? { scale: [1, 1.12, 1], borderColor: "var(--c-accent)" }
-                          : active
-                          ? { scale: [1, 1.05, 1], borderColor: "var(--c-accent-soft)" }
-                          : { scale: 1, borderColor: "var(--c-rule)" }
-                      }
-                      transition={{ duration: 0.35 }}
-                      className={clsx(
-                        "w-14 h-14 rounded-2xl border-2 flex items-center justify-center transition-all duration-200 relative overflow-hidden",
-                        filled
-                          ? "bg-raised shadow-xs border-accent"
-                          : active
-                          ? "bg-surface border-accent shadow-xs ring-2 ring-accent/20"
-                          : "bg-ground border-rule"
-                      )}
-                    >
-                      {/* Inner Core Gemstone / Glyph */}
-                      <AnimatePresence mode="wait">
-                        {filled ? (
-                          <motion.div
-                            key="filled"
-                            initial={{ scale: 0, rotate: -45 }}
-                            animate={{ scale: 1, rotate: 0 }}
-                            exit={{ scale: 0 }}
-                            transition={{ type: "spring", stiffness: 450, damping: 20 }}
-                            className={clsx(
-                              "w-5 h-5 rounded-full flex items-center justify-center text-white shadow-sm",
-                              success ? "bg-done" : "bg-accent"
-                            )}
-                          >
-                            <span className="w-2 h-2 rounded-full bg-white/90" />
-                          </motion.div>
-                        ) : active ? (
-                          <motion.div
-                            key="active"
-                            animate={{ opacity: [0.3, 0.9, 0.3], scale: [0.85, 1.15, 0.85] }}
-                            transition={{ repeat: Infinity, duration: 1.6, ease: "easeInOut" }}
-                            className="w-2.5 h-2.5 rounded-full bg-accent/50"
-                          />
-                        ) : (
-                          <div key="empty" className="w-2 h-2 rounded-full bg-rule" />
-                        )}
-                      </AnimatePresence>
-                    </motion.div>
+                  <div
+                    key={idx}
+                    className={clsx(
+                      "w-11 h-13 rounded-xl border flex items-center justify-center transition-all duration-200 font-mono text-xl font-bold",
+                      filled
+                        ? "border-accent bg-accent/10 text-accent shadow-xs"
+                        : active
+                        ? "border-accent/60 bg-ground ring-2 ring-accent/20"
+                        : "border-rule bg-ground text-ink-faint"
+                    )}
+                  >
+                    {filled ? "•" : ""}
                   </div>
                 );
               })}
             </div>
 
-            {/* Error & Status Toast */}
-            <div className="h-6 flex items-center justify-center mb-6" style={{ transform: "translateZ(30px)" }}>
-              <AnimatePresence mode="wait">
-                {error ? (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    className="flex items-center gap-1.5 text-xs text-accent font-semibold bg-accent/10 px-3 py-1 rounded-full border border-accent/20"
-                  >
-                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>{error}</span>
-                  </motion.div>
-                ) : loading ? (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="flex items-center gap-2 text-xs text-ink-faint font-medium"
-                  >
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
-                    <span>Verifying passcode…</span>
-                  </motion.div>
-                ) : success ? (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="flex items-center gap-1.5 text-xs text-done font-bold"
-                  >
-                    <Sparkle className="w-3.5 h-3.5" />
-                    <span>Journal Unlocked</span>
-                  </motion.div>
-                ) : (
-                  <p className="text-[11px] text-ink-faint font-mono tracking-tight flex items-center gap-1.5">
-                    <span>Press any 4 digits</span>
-                    <span>•</span>
-                    <kbd className="px-1.5 py-0.5 rounded bg-black/[0.04] text-ink-soft text-[10px] font-bold">Esc</kbd>
-                    <span>to clear</span>
-                  </p>
-                )}
-              </AnimatePresence>
-            </div>
+            {error && (
+              <p className="text-xs text-danger font-medium mb-4 flex items-center gap-1.5 animate-fadeIn">
+                <AlertCircle className="w-3.5 h-3.5" /> {error}
+              </p>
+            )}
 
-            <div className="h-px w-full bg-gradient-to-r from-transparent via-black/[0.06] to-transparent mb-6" />
+            {/* Physical Keyboard Visualizer */}
+            <div className="w-full flex flex-col items-center gap-2 pt-2">
+              <div className="grid grid-cols-5 gap-1.5 max-w-xs">
+                {["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => handleDigit(k)}
+                    className={clsx(
+                      "w-11 h-10 rounded-xl font-mono text-xs font-bold transition-all border flex items-center justify-center cursor-pointer shadow-xs",
+                      activeKey === k
+                        ? "bg-accent text-white border-accent scale-95"
+                        : "bg-surface text-ink hover:border-accent border-rule"
+                    )}
+                  >
+                    {k}
+                  </button>
+                ))}
+              </div>
 
-            {/* ─── Real-Time Physical Keyboard Visualizer Strip ──────────────────── */}
-            <div className="w-full flex flex-col items-center gap-3" style={{ transform: "translateZ(30px)" }}>
-              <div className="flex items-center gap-1.5 flex-wrap justify-center max-w-sm">
-                {["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map((k) => {
-                  const isPressed = activeKey === k;
-                  return (
-                    <motion.button
-                      key={k}
-                      type="button"
-                      onClick={() => handleDigit(k)}
-                      animate={isPressed ? { scale: 0.88, y: 2 } : { scale: 1, y: 0 }}
-                      className={clsx(
-                        "w-8 h-8 rounded-xl font-mono text-xs font-bold transition-colors flex items-center justify-center border cursor-pointer select-none shadow-xs",
-                        isPressed
-                          ? "bg-accent text-white border-accent shadow-sm"
-                          : "bg-white/80 hover:bg-white text-ink-soft hover:text-ink border-rule"
-                      )}
-                    >
-                      {k}
-                    </motion.button>
-                  );
-                })}
-
-                {/* Backspace Key */}
-                <motion.button
+              <div className="flex items-center gap-2 mt-2">
+                <button
                   type="button"
                   onClick={handleBackspace}
                   disabled={pin.length === 0}
-                  animate={activeKey === "Backspace" ? { scale: 0.88 } : { scale: 1 }}
-                  className={clsx(
-                    "px-2.5 h-8 rounded-xl font-mono text-[11px] font-bold transition-colors flex items-center gap-1 border cursor-pointer select-none shadow-xs",
-                    activeKey === "Backspace"
-                      ? "bg-accent text-white border-accent"
-                      : "bg-white/80 hover:bg-white text-ink-faint hover:text-ink border-rule disabled:opacity-30 disabled:pointer-events-none"
-                  )}
-                  title="Backspace"
+                  className="px-3 py-1.5 rounded-lg border border-rule bg-surface text-xs font-mono text-ink-soft hover:text-ink disabled:opacity-40 cursor-pointer"
                 >
-                  <Delete className="w-3.5 h-3.5" />
-                  <span>Del</span>
-                </motion.button>
-              </div>
-
-              {/* Recovery / Reset Link */}
-              <div className="pt-2 text-center">
+                  Backspace
+                </button>
                 {mode === "unlock" ? (
                   <button
                     type="button"
                     onClick={startResetMode}
-                    className="text-xs font-bold text-ink-faint hover:text-accent transition cursor-pointer flex items-center gap-1.5 mx-auto"
+                    className="text-xs text-ink-faint hover:text-accent font-mono transition-colors cursor-pointer ml-2"
                   >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Forgot Passcode? Reset PIN</span>
+                    Reset PIN?
                   </button>
                 ) : (
                   <button
                     type="button"
                     onClick={cancelResetMode}
-                    className="text-xs font-bold text-ink-faint hover:text-ink transition cursor-pointer"
+                    className="text-xs text-ink-faint hover:text-ink font-mono transition-colors cursor-pointer ml-2"
                   >
-                    ← Cancel &amp; Return to Unlock
+                    Cancel
                   </button>
                 )}
               </div>
@@ -17998,7 +18065,7 @@ function LockScreen({
   );
 }
 
-// ─── Passcode Settings Modal (Inside unlocked diary) ─────────────────────────
+// ── Passcode Settings Modal ──────────────────────────────────────────────────
 function PasscodeSettingsModal({
   currentPin: _currentPin,
   onClose,
@@ -18024,123 +18091,74 @@ function PasscodeSettingsModal({
       return;
     }
     setSaving(true);
-    setError("");
+    sound.click();
     try {
-      await api.resetDiaryPin(newPin.trim());
+      await api.setDiaryPin(newPin.trim());
       sound.chime();
       onPinChanged(newPin.trim());
       onClose();
-    } catch {
-      setError("Failed to update PIN. Try again.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleRemovePin = async () => {
-    if (!confirm("Are you sure you want to remove passcode protection from your diary? Anyone on this computer will be able to open it.")) {
-      return;
-    }
-    setSaving(true);
-    try {
-      await api.removeDiaryPin();
-      sound.chime();
-      onPinChanged(null);
-      onClose();
-    } catch {
-      setError("Failed to remove PIN.");
+    } catch (err: any) {
+      setError(err?.message || "Failed to update passcode.");
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Passcode Settings" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 select-none">
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 select-none">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 12 }}
-        className="w-full max-w-sm morning-card-elevated overflow-hidden bg-surface rounded-3xl border border-rule shadow-2xl"
+        className="w-full max-w-sm bg-surface rounded-2xl border border-rule shadow-2xl overflow-hidden"
       >
-        <div className="px-6 py-4.5 bg-raised border-b border-rule flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-accent/15 flex items-center justify-center text-accent">
-              <Key className="w-4 h-4 stroke-[2.2]" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-ink font-serif">Passcode Settings</h3>
-              <p className="text-[11px] text-ink-faint">Update or remove diary encryption</p>
-            </div>
+        <div className="px-5 py-3.5 bg-raised border-b border-rule flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Key className="w-4 h-4 text-accent" />
+            <h3 className="text-sm font-bold text-ink font-serif">Vault Passcode</h3>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-ink-faint hover:text-ink transition">
+          <button onClick={onClose} className="p-1 rounded text-ink-faint hover:text-ink cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
-
-        <form onSubmit={handleChangePin} className="p-6 space-y-4">
-          {error && (
-            <div className="flex items-center gap-2 p-2.5 text-xs font-semibold text-accent bg-accent/10 rounded-xl border border-accent/20">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
-              New 4-Digit Passcode
-            </label>
+        <form onSubmit={handleChangePin} className="p-5 space-y-3">
+          {error && <p className="text-xs text-danger font-medium">{error}</p>}
+          <div className="space-y-1">
+            <label className="text-[11px] font-mono text-ink-faint uppercase">New 4-Digit PIN</label>
             <input
               type="password"
               maxLength={4}
               value={newPin}
               onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ""))}
               placeholder="••••"
-              className="morning-input text-center font-mono text-lg tracking-widest"
-              autoFocus
+              className="w-full px-3 py-2 rounded-lg bg-ground border border-rule text-center font-mono text-lg text-ink focus:outline-none focus:border-accent"
             />
           </div>
-
-          <div>
-            <label className="block text-xs font-bold text-ink-soft uppercase tracking-wider mb-1.5">
-              Confirm New Passcode
-            </label>
+          <div className="space-y-1">
+            <label className="text-[11px] font-mono text-ink-faint uppercase">Confirm PIN</label>
             <input
               type="password"
               maxLength={4}
               value={confirmPin}
               onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ""))}
               placeholder="••••"
-              className="morning-input text-center font-mono text-lg tracking-widest"
+              className="w-full px-3 py-2 rounded-lg bg-ground border border-rule text-center font-mono text-lg text-ink focus:outline-none focus:border-accent"
             />
           </div>
-
-          <div className="pt-2 flex flex-col gap-2">
-            <button
-              type="submit"
-              disabled={saving || newPin.length !== 4 || confirmPin.length !== 4}
-              className="morning-btn-accent justify-center py-2.5 w-full cursor-pointer disabled:opacity-50"
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              Save New Passcode
-            </button>
-
-            <button
-              type="button"
-              onClick={handleRemovePin}
-              disabled={saving}
-              className="text-xs font-bold text-accent hover:text-accent-soft py-2 transition cursor-pointer flex items-center justify-center gap-1.5"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Remove Passcode Protection
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={saving || newPin.length !== 4}
+            className="w-full py-2 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-40 cursor-pointer mt-2"
+          >
+            {saving ? "Saving..." : "Update Vault PIN"}
+          </button>
         </form>
       </motion.div>
     </div>
   );
 }
 
-// ─── Main Diary Unlocked View ────────────────────────────────────────────────
+// ── Main Diary Unlocked View ─────────────────────────────────────────────────
 export default function DiaryPage() {
   const [pin, setPin] = useState("");
   const [isLocked, setIsLocked] = useState(true);
@@ -18156,6 +18174,15 @@ export default function DiaryPage() {
   const [newDate, setNewDate] = useState(dayjs().format("YYYY-MM-DD"));
   const [promptIdx, setPromptIdx] = useState(0);
   const [editorText, setEditorText] = useState("");
+  
+  // Phase 2.4: Segmented toggle 'all' | 'written'
+  const [filterMode, setFilterMode] = useState<"all" | "written">("all");
+
+  // Phase 3.1: Day's Footprint auto-margin data
+  const [dayTasks, setDayTasks] = useState<Task[]>([]);
+  const [dayExpenses, setDayExpenses] = useState<Expense[]>([]);
+  const [isFootprintCollapsed, setIsFootprintCollapsed] = useState(false);
+
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
   const editorTextRef = useRef(editorText);
@@ -18175,17 +18202,34 @@ export default function DiaryPage() {
   const buildDefaultDates = () =>
     Array.from({ length: 14 }, (_, i) => dayjs().subtract(i, "day").format("YYYY-MM-DD"));
 
+  // Fetch Footprint data for selectedDate (Phase 3.1)
+  useEffect(() => {
+    const allTasks = dataCache.get<Task[]>("tasks") || [];
+    const allExpenses = dataCache.get<Expense[]>("expenses") || [];
+
+    setDayTasks(allTasks.filter((t) => t.due_at && t.due_at.startsWith(selectedDate)));
+    setDayExpenses(allExpenses.filter((e) => e.date === selectedDate));
+
+    if (allTasks.length === 0) {
+      api.getTasks().then((ts) => {
+        dataCache.set("tasks", ts);
+        setDayTasks(ts.filter((t) => t.due_at && t.due_at.startsWith(selectedDate)));
+      }).catch(() => {});
+    }
+    if (allExpenses.length === 0) {
+      api.getExpenses().then((exs) => {
+        dataCache.set("expenses", exs);
+        setDayExpenses(exs.filter((e) => e.date === selectedDate));
+      }).catch(() => {});
+    }
+  }, [selectedDate]);
+
   const handleLockDiary = () => {
     sound.pageTurn();
     isLockedRef.current = true;
     if (typingTimerRef.current) {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
-    }
-    for (const key of Object.keys(saveQueueRef.current)) {
-      if (saveQueueRef.current[key]) {
-        saveQueueRef.current[key].pending = undefined;
-      }
     }
     saveQueueRef.current = {};
     setIsTyping(false);
@@ -18234,13 +18278,14 @@ export default function DiaryPage() {
 
   const handleSave = async (date: string, body: string, moodOverride?: DiaryEntry['mood'] | null) => {
     if (isLockedRef.current || !pin) return;
+    if (entriesRef.current[date]?.readOnly || body === "[Locked with previous PIN]") return;
+    if (entriesRef.current[date]?.readOnly || body === "[Locked with previous PIN]") return;
 
     if (!saveQueueRef.current[date]) {
       saveQueueRef.current[date] = { inFlight: false };
     }
     const q = saveQueueRef.current[date];
 
-    // If a request is already running for this date, merge and queue this latest payload
     if (q.inFlight) {
       q.pending = {
         body,
@@ -18296,15 +18341,15 @@ export default function DiaryPage() {
     sound.pop();
     const p = DAILY_PROMPTS[promptIdx];
     const current = editorText.trim();
-    const nextVal = current ? `${current}\n\n✨ *${p}*\n` : `✨ *${p}*\n`;
+    const nextVal = current ? `${current}\n\n• *${p}*\n` : `• *${p}*\n`;
     setEditorText(nextVal);
     handleSave(selectedDate, nextVal.trim());
   };
 
-  const selectMoodPill = (mood: string) => {
+  const selectMoodPill = (mood: DiaryMood) => {
     sound.pop();
     const currentMood = entriesRef.current[selectedDate]?.mood || null;
-    const next = mood === currentMood ? null : (mood as DiaryEntry['mood']);
+    const next = mood === currentMood ? null : mood;
     setEntries((prev) => {
       const updated = {
         ...prev,
@@ -18313,8 +18358,9 @@ export default function DiaryPage() {
             id: "",
             user_id: "",
             date: selectedDate,
-            created_at: "",
-            updated_at: "",
+            body: "",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
             deleted_at: null,
           }),
           mood: next,
@@ -18324,16 +18370,21 @@ export default function DiaryPage() {
       entriesRef.current = updated;
       return updated;
     });
+
     handleSave(selectedDate, editorTextRef.current.trim(), next);
   };
 
-  const handleTextChange = (val: string) => {
-    editorTextRef.current = val;
+  const handleTextChange = (text: string) => {
     setIsTyping(true);
+    editorTextRef.current = text;
     typingDateRef.current = selectedDate;
-    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+    }
+
     typingTimerRef.current = setTimeout(() => {
-      if (isLockedRef.current) return;
+      typingTimerRef.current = null;
       setIsTyping(false);
       const targetDate = typingDateRef.current;
       handleSave(targetDate, editorTextRef.current.trim(), entriesRef.current[targetDate]?.mood);
@@ -18342,7 +18393,6 @@ export default function DiaryPage() {
 
   const handleSelectDate = (date: string) => {
     if (date === selectedDate) return;
-    // Flush any pending auto-save immediately to the PREVIOUS date before switching
     if (typingTimerRef.current) {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
@@ -18355,16 +18405,52 @@ export default function DiaryPage() {
     setEditorText(entries[date]?.body || "");
   };
 
-  if (isLocked) return <LockScreen onUnlocked={handleUnlocked} />;
+  // Phase 3.1: Insert Footprint into Entry
+  const handleInsertFootprint = () => {
+    sound.chime();
+    const completedTasks = dayTasks.filter((t) => t.completed);
+    const daySpend = dayExpenses
+      .filter((e) => e.expense_type === "EXPENSE")
+      .reduce((sum, e) => sum + Number(e.amount), 0);
+    const dateFormatted = dayjs(selectedDate).format("MMMM D, YYYY");
+
+    const taskLines = completedTasks.length > 0
+      ? completedTasks.map((t) => `  • ✓ ${t.title}`).join("\n")
+      : "  • (No completed tasks recorded)";
+
+    const expenseLines = dayExpenses.length > 0
+      ? dayExpenses.map((e) => `  • $${Number(e.amount).toFixed(2)} — ${e.category}${e.description ? ` (${e.description})` : ""}`).join("\n")
+      : "  • $0.00 logged";
+
+    const stamp = `\n\n════════════════════════════════════════\n📜 Day's Footprint — ${dateFormatted}\n════════════════════════════════════════\nTasks Accomplished (${completedTasks.length}/${dayTasks.length}):\n${taskLines}\n\nLedger Spend ($${daySpend.toFixed(2)} total):\n${expenseLines}\n════════════════════════════════════════\n`;
+
+    const updatedText = editorText + stamp;
+    setEditorText(updatedText);
+    editorTextRef.current = updatedText;
+    handleSave(selectedDate, updatedText.trim(), entries[selectedDate]?.mood);
+  };
+
+  if (isLocked) {
+    return <LockScreen onUnlocked={handleUnlocked} />;
+  }
 
   const entry = entries[selectedDate];
   const currentMood = entry?.mood || null;
   const wordCount = editorText.trim() ? editorText.trim().split(/\s+/).length : 0;
   const readTime = Math.max(1, Math.ceil(wordCount / 200));
 
+  // Phase 2.4: Filtered dates based on 'all' | 'written'
+  const visibleDates = filterMode === "written"
+    ? dates.filter((d) => !!entries[d]?.body?.trim())
+    : dates;
+
+  const completedTasks = dayTasks.filter((t) => t.completed);
+  const totalSpend = dayExpenses
+    .filter((e) => e.expense_type === "EXPENSE")
+    .reduce((sum, e) => sum + Number(e.amount), 0);
+
   return (
-    <div className="h-full flex overflow-hidden bg-transparent">
-      {/* Passcode Settings Modal */}
+    <div className="h-full flex overflow-hidden bg-transparent font-sans">
       <AnimatePresence>
         {showSettings && (
           <PasscodeSettingsModal
@@ -18372,44 +18458,66 @@ export default function DiaryPage() {
             onClose={() => setShowSettings(false)}
             onPinChanged={(newP) => {
               if (newP) setPin(newP);
-              else {
-                setPin("");
-              }
+              else setPin("");
             }}
           />
         )}
       </AnimatePresence>
 
-      {/* ─── Left Sidebar: Date List ────────────────────────────────────────── */}
+      {/* ── Left Sidebar: Date List & Decluttering (Phase 2.4) ────────────────────── */}
       <aside className="w-72 flex-shrink-0 border-r border-rule flex flex-col bg-surface/90 select-none">
-        <div className="px-5 py-4 border-b border-rule flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center text-accent">
-              <BookOpen className="w-4 h-4 stroke-[2.2]" />
-            </div>
-            <h2 className="font-bold text-ink text-base font-serif">Diary Entries</h2>
+        <div className="px-4 py-3.5 border-b border-rule flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-accent stroke-[2.2]" />
+            <h2 className="font-bold text-ink text-sm font-serif">Diary Entries</h2>
           </div>
           <div className="flex items-center gap-1">
             <button
               title="Add date"
               onClick={() => { sound.pop(); setAddingDate((v) => !v); }}
-              className="p-1.5 rounded-lg hover:bg-raised text-ink-faint hover:text-ink transition-colors cursor-pointer"
+              className="p-1 rounded-lg hover:bg-raised text-ink-faint hover:text-ink transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4 stroke-[2.2]" />
             </button>
             <button
               title="Passcode Settings"
               onClick={() => setShowSettings(true)}
-              className="p-1.5 rounded-lg hover:bg-raised text-ink-faint hover:text-ink transition-colors cursor-pointer"
+              className="p-1 rounded-lg hover:bg-raised text-ink-faint hover:text-ink transition-colors cursor-pointer"
             >
               <Settings className="w-4 h-4 stroke-[1.8]" />
             </button>
             <button
               title="Lock diary"
               onClick={handleLockDiary}
-              className="p-1.5 rounded-lg hover:bg-accent/10 text-ink-faint hover:text-accent transition-colors cursor-pointer"
+              className="p-1 rounded-lg hover:bg-accent/10 text-ink-faint hover:text-accent transition-colors cursor-pointer"
             >
               <Lock className="w-4 h-4 stroke-[1.8]" />
+            </button>
+          </div>
+        </div>
+
+        {/* Phase 2.4: Segmented Pill Toggle (All Days | Written Only) */}
+        <div className="px-3 pt-2.5 pb-1">
+          <div className="grid grid-cols-2 p-0.5 rounded-lg bg-raised border border-rule text-xs font-mono font-medium">
+            <button
+              type="button"
+              onClick={() => { sound.click(); setFilterMode("all"); }}
+              className={clsx(
+                "py-1 rounded-md transition-all cursor-pointer text-center",
+                filterMode === "all" ? "bg-surface text-ink font-bold shadow-2xs" : "text-ink-faint hover:text-ink"
+              )}
+            >
+              All Days ({dates.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => { sound.click(); setFilterMode("written"); }}
+              className={clsx(
+                "py-1 rounded-md transition-all cursor-pointer text-center",
+                filterMode === "written" ? "bg-surface text-ink font-bold shadow-2xs" : "text-ink-faint hover:text-ink"
+              )}
+            >
+              Written ({dates.filter((d) => !!entries[d]?.body?.trim()).length})
             </button>
           </div>
         </div>
@@ -18430,11 +18538,11 @@ export default function DiaryPage() {
                   type="date"
                   value={newDate}
                   onChange={(e) => setNewDate(e.target.value)}
-                  className="morning-input py-1 text-xs"
+                  className="px-2 py-1 rounded bg-ground border border-rule text-xs font-mono text-ink outline-none"
                 />
                 <button
                   onClick={handleAddDate}
-                  className="p-1.5 rounded-lg bg-accent hover:bg-accent-soft text-white transition-colors cursor-pointer shadow-xs"
+                  className="p-1.5 rounded-lg bg-accent text-white transition-colors cursor-pointer shadow-xs"
                 >
                   <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                 </button>
@@ -18443,57 +18551,70 @@ export default function DiaryPage() {
           )}
         </AnimatePresence>
 
-        {/* Date List */}
+        {/* Date List with Mood Dots & 1-line preview snippets */}
         <nav className="flex-1 overflow-y-auto py-2 px-2.5 space-y-1">
-          {dates.map((date) => {
+          {visibleDates.map((date) => {
             const d = dayjs(date);
             const isToday = date === dayjs().format("YYYY-MM-DD");
             const isSelected = date === selectedDate;
-            const hasEntry = !!entries[date]?.body;
+            const entryData = entries[date];
+            const hasEntry = !!entryData?.body?.trim();
+            const moodTag = entryData?.mood;
 
             return (
               <button
                 key={date}
                 onClick={() => handleSelectDate(date)}
                 className={clsx(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 text-left group cursor-pointer",
+                  "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl transition-all duration-150 text-left group cursor-pointer border",
                   isSelected
-                    ? "bg-surface border border-rule shadow-sm text-ink"
-                    : "hover:bg-black/[0.03] border border-transparent text-ink-soft"
+                    ? "bg-surface border-rule shadow-2xs text-ink"
+                    : "hover:bg-raised/70 border-transparent text-ink-soft"
                 )}
               >
-                <div className={clsx(
-                  "w-9 h-9 rounded-xl flex flex-col items-center justify-center flex-shrink-0 text-xs font-bold leading-tight font-serif",
-                  isToday
-                    ? "bg-accent text-white shadow-xs"
-                    : isSelected
+                {/* Date Monogram badge */}
+                <div
+                  className={clsx(
+                    "w-8 h-8 rounded-lg flex flex-col items-center justify-center flex-shrink-0 text-xs font-bold leading-tight font-serif",
+                    isToday
+                      ? "bg-accent text-white"
+                      : isSelected
                       ? "bg-accent/15 text-accent border border-accent/30"
                       : "bg-surface text-ink-soft border border-rule"
-                )}>
-                  <span className="text-[9px] uppercase tracking-wider opacity-80">{d.format("MMM")}</span>
+                  )}
+                >
+                  <span className="text-[8.5px] uppercase tracking-wider opacity-80">{d.format("MMM")}</span>
                   <span className="text-xs font-bold -mt-0.5">{d.format("D")}</span>
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <div className={clsx(
-                    "text-xs font-bold truncate",
-                    isSelected ? "text-ink" : "text-ink-soft"
-                  )}>
-                    {isToday ? "Today" : d.format("dddd")}
-                  </div>
-                  <div className="text-[11px] text-ink-faint truncate mt-0.5">
-                    {hasEntry ? entries[date].body!.slice(0, 30) + (entries[date].body!.length > 30 ? "..." : "") : "No entry yet"}
-                  </div>
-                </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className={clsx("text-xs font-bold truncate", isSelected ? "text-ink" : "text-ink-soft")}>
+                      {isToday ? "Today" : d.format("ddd, D MMM")}
+                    </span>
 
-                {isSelected && <ChevronRight className="w-3.5 h-3.5 text-ink-faint flex-shrink-0" />}
+                    {/* Mood Colored Status Dot (Phase 2.4) */}
+                    {moodTag && MOOD_COLORS[moodTag] && (
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: MOOD_COLORS[moodTag] }}
+                        title={`Mood: ${moodTag}`}
+                      />
+                    )}
+                  </div>
+
+                  {/* 1-Line Preview Snippet */}
+                  <p className="text-[11px] text-ink-faint truncate font-sans">
+                    {hasEntry ? entryData.body.slice(0, 36) : "No entry recorded"}
+                  </p>
+                </div>
               </button>
             );
           })}
         </nav>
       </aside>
 
-      {/* ─── Right: Editor Canvas ────────────────────────────────────────────── */}
+      {/* ── Right: Editor Canvas & Daily Chronicle Margin (Phase 3.1) ────────────── */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <AnimatePresence mode="wait">
           <motion.div
@@ -18501,135 +18622,228 @@ export default function DiaryPage() {
             initial={{ opacity: 0, x: 8 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -8 }}
-            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
             className="flex-1 flex flex-col overflow-hidden"
           >
-            {/* Header with Date, Word count & Save Pulse */}
-            <div className="px-10 pt-6 pb-4 border-b border-rule flex items-center justify-between bg-surface/90 backdrop-blur-md select-none">
+            {/* Header */}
+            <div className="px-8 pt-5 pb-3 border-b border-rule flex items-center justify-between bg-surface/90 backdrop-blur-md select-none shrink-0">
               <div>
                 <p className="text-xs font-bold text-ink-faint uppercase tracking-wider font-mono">
                   {dayjs(selectedDate).format("dddd")}
                 </p>
-                <h2 className="text-2xl sm:text-3xl font-bold text-ink font-serif tracking-tight mt-0.5">
+                <h2 className="text-2xl font-bold text-ink font-serif tracking-tight">
                   {dayjs(selectedDate).format("MMMM D, YYYY")}
                 </h2>
               </div>
 
-              {/* Stats & Tactile Save Indicator */}
+              {/* Stats & Save Indicator */}
               <div className="flex items-center gap-3">
-                <span className="font-mono text-xs text-ink-faint px-2.5 py-1 rounded-lg bg-surface border border-rule">
+                <span className="font-mono text-xs text-ink-faint px-2 py-0.5 rounded bg-surface border border-rule">
                   {wordCount} words • ~{readTime}m read
                 </span>
 
-                <div className="h-8 flex items-center" aria-live="polite">
+                <div className="h-7 flex items-center" aria-live="polite">
                   <AnimatePresence mode="wait">
                     {savingIds[selectedDate] || isTyping ? (
-                      <motion.span key="saving" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="flex items-center gap-1.5 text-xs text-accent font-medium bg-accent/10 px-2.5 py-1 rounded-lg border border-accent/20">
-                        <span className="w-2 h-2 rounded-full bg-accent animate-ping" />
+                      <span className="flex items-center gap-1.5 text-xs text-accent font-medium bg-accent/10 px-2.5 py-0.5 rounded-lg border border-accent/20">
+                        <span className="w-1.5 h-1.5 rounded-full bg-accent animate-ping" />
                         <span>Autosaving…</span>
-                      </motion.span>
+                      </span>
                     ) : savedIds[selectedDate] ? (
-                      <motion.span key="saved" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-                        className="flex items-center gap-1.5 text-xs text-done font-semibold bg-done/10 px-2.5 py-1 rounded-lg border border-done/20">
-                        <Check className="w-3.5 h-3.5 stroke-[2.5]" /> Saved
-                      </motion.span>
+                      <span className="flex items-center gap-1.5 text-xs text-done font-semibold bg-done/10 px-2.5 py-0.5 rounded-lg border border-done/20">
+                        <Check className="w-3.5 h-3.5 stroke-[2.5]" /> Encrypted & Saved
+                      </span>
                     ) : saveErrors[selectedDate] ? (
-                      <motion.span key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="flex items-center gap-1.5 text-xs text-danger font-semibold bg-danger/10 px-2.5 py-1 rounded-lg border border-danger/20"
-                        title={saveErrors[selectedDate]}>
+                      <span className="flex items-center gap-1.5 text-xs text-danger font-semibold bg-danger/10 px-2.5 py-0.5 rounded-lg border border-danger/20">
                         <AlertCircle className="w-3.5 h-3.5" />
-                        <span>Save failed</span><button type="button" onClick={() => handleSave(selectedDate, editorText.trim(), entries[selectedDate]?.mood)} className="ml-1 underline font-medium hover:text-danger/80 cursor-pointer">Retry</button>
-                      </motion.span>
+                        <span>Save failed</span>
+                      </span>
                     ) : (
-                      <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="flex items-center gap-1.5 text-xs text-ink-faint px-2 py-1">
-                        <Pencil className="w-3.5 h-3.5 stroke-[1.8]" /> Ready
-                      </motion.span>
+                      <span className="flex items-center gap-1.5 text-xs text-ink-faint px-2 py-0.5">
+                        <Pencil className="w-3 h-3 stroke-[1.8]" /> Ready
+                      </span>
                     )}
                   </AnimatePresence>
                 </div>
               </div>
             </div>
 
-            {/* Notebook canvas wrapper */}
-            <div className="flex-1 overflow-hidden p-6 flex flex-col space-y-4">
-              {/* Daily Reflection Prompt Carousel */}
-              <div className="p-3.5 px-4.5 rounded-2xl bg-surface border border-rule shadow-xs flex items-center justify-between gap-4 select-none">
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <div className="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center text-accent flex-shrink-0">
-                    <Sparkles className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[10px] uppercase tracking-wider font-bold text-ink-faint">
-                      Daily Reflection Prompt
-                    </div>
+            {/* Main Notebook Surface with Horizontal Split for Footprint Auto-Margin */}
+            <div className="flex-1 overflow-hidden p-6 flex gap-5">
+              {/* Left Main Writing Area */}
+              <div className="flex-1 flex flex-col space-y-3.5 min-w-0">
+                {/* Reflection Prompt */}
+                <div className="p-3 px-4 rounded-xl bg-surface border border-rule shadow-2xs flex items-center justify-between gap-3 select-none shrink-0">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <Sparkles className="w-4 h-4 text-accent shrink-0" />
                     <p className="text-xs font-semibold text-ink truncate italic font-serif">
                       "{DAILY_PROMPTS[promptIdx]}"
                     </p>
                   </div>
-                </div>
-
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <button
-                    onClick={cyclePrompt}
-                    title="Shuffle prompt"
-                    className="p-1.5 rounded-lg hover:bg-raised text-ink-faint hover:text-ink transition cursor-pointer"
-                  >
-                    <Shuffle className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={insertPrompt}
-                    className="px-2.5 py-1 rounded-lg bg-surface hover:bg-raised border border-rule text-[11px] font-bold text-accent transition cursor-pointer"
-                  >
-                    Use Prompt
-                  </button>
-                </div>
-              </div>
-
-              {/* Mood selector strip */}
-              <div className="flex items-center gap-2 px-1 select-none">
-                <span className="text-xs font-bold text-ink-faint uppercase tracking-wider mr-1 flex items-center gap-1">
-                  <Smile className="w-3.5 h-3.5" /> Mood:
-                </span>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {MOODS.map((m) => (
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
-                      key={m.label}
-                      onClick={() => selectMoodPill(m.label)}
-                      className={clsx(
-                        "flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold border transition-all cursor-pointer",
-                        currentMood === m.label
-                          ? "bg-accent text-white border-accent shadow-xs"
-                          : "bg-surface text-ink-soft border-rule hover:border-rule hover:text-ink"
-                      )}
+                      onClick={cyclePrompt}
+                      title="Shuffle prompt"
+                      className="p-1 rounded text-ink-faint hover:text-ink cursor-pointer"
                     >
-                      <span>{m.emoji}</span>
-                      <span>{m.label}</span>
+                      <Shuffle className="w-3.5 h-3.5" />
                     </button>
-                  ))}
+                    <button
+                      onClick={insertPrompt}
+                      className="px-2 py-0.5 rounded bg-surface hover:bg-raised border border-rule text-[11px] font-bold text-accent cursor-pointer"
+                    >
+                      Use Prompt
+                    </button>
+                  </div>
+                </div>
+
+                {/* Mood Selector Strip */}
+                <div className="flex items-center gap-2 px-1 select-none shrink-0">
+                  <span className="text-xs font-mono font-bold text-ink-faint uppercase mr-1 flex items-center gap-1">
+                    <Smile className="w-3.5 h-3.5" /> Mood:
+                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {MOODS.map((m) => (
+                      <button
+                        key={m.label}
+                        onClick={() => selectMoodPill(m.label)}
+                        className={clsx(
+                          "flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer",
+                          currentMood === m.label
+                            ? "bg-accent text-white border-accent shadow-2xs"
+                            : "bg-surface text-ink-soft border-rule hover:border-ink-soft hover:text-ink"
+                        )}
+                      >
+                        <span>{m.emoji}</span>
+                        <span>{m.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Physical Ruled Journal Surface */}
+                <div
+                  style={{ '--mood-glow': currentMood && MOOD_GLOWS[currentMood] ? MOOD_GLOWS[currentMood] : 'transparent' } as React.CSSProperties}
+                  className="flex-1 overflow-hidden rounded-2xl bg-surface border border-rule p-6 sm:p-8 flex flex-col relative mood-glow transition-[border-color,box-shadow,background-color] duration-300"
+                >
+                  <div className="absolute top-0 bottom-0 left-12 sm:left-16 w-px bg-accent/20 pointer-events-none" />
+                  {entries[selectedDate]?.readOnly && (
+                    <div className="mb-3 px-3 py-1.5 rounded-lg bg-warn/10 border border-warn/30 text-warn text-xs font-mono flex items-center gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>This entry was encrypted with a previous PIN and is protected in read-only mode.</span>
+                    </div>
+                  )}
+                  <textarea
+                    key={selectedDate}
+                    ref={textareaRef}
+                    value={editorText}
+                    readOnly={Boolean(entries[selectedDate]?.readOnly || editorText === "[Locked with previous PIN]")}
+                    onChange={(e) => {
+                      if (entries[selectedDate]?.readOnly || editorText === "[Locked with previous PIN]") return;
+                      setEditorText(e.target.value);
+                      handleTextChange(e.target.value);
+                    }}
+                    placeholder={`Write your private thoughts for ${dayjs(selectedDate).format("MMMM D")}…`}
+                    className="w-full h-full bg-transparent outline-none resize-none text-ink font-serif text-base sm:text-lg leading-relaxed placeholder:text-ink-faint pl-10 sm:pl-12 pr-4 border-none disabled:opacity-75"
+                    autoFocus
+                  />
                 </div>
               </div>
 
-              {/* Physical Journal Textured Page */}
+              {/* ── Phase 3.1: Collapsible "Day's Footprint" Auto-Margin ──────────── */}
               <div
-                style={{ '--mood-glow': currentMood && MOOD_GLOWS[currentMood] ? MOOD_GLOWS[currentMood] : 'transparent' } as React.CSSProperties}
-                className="flex-1 overflow-hidden rounded-2xl bg-surface border border-rule p-6 sm:p-8 flex flex-col relative mood-glow transition-[border-color,box-shadow,background-color] duration-300">
-                {/* Left Margin Accent Line */}
-                <div className="absolute top-0 bottom-0 left-12 sm:left-16 w-px bg-accent/20 pointer-events-none" />
+                className={clsx(
+                  "flex-shrink-0 transition-all duration-300 flex flex-col",
+                  isFootprintCollapsed ? "w-10" : "w-72"
+                )}
+              >
+                {isFootprintCollapsed ? (
+                  <button
+                    type="button"
+                    onClick={() => { sound.click(); setIsFootprintCollapsed(false); }}
+                    className="h-full bg-surface border border-rule rounded-2xl p-2 flex flex-col items-center justify-between text-ink-faint hover:text-ink hover:border-accent transition-all cursor-pointer"
+                    title="Expand Day's Footprint"
+                  >
+                    <FileText className="w-4 h-4 text-accent" />
+                    <span className="font-mono text-[10px] uppercase tracking-wider [writing-mode:vertical-lr] rotate-180 font-bold">
+                      Day's Footprint
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <div className="h-full bg-surface border border-rule rounded-2xl p-4 shadow-2xs flex flex-col overflow-hidden">
+                    <div className="flex items-center justify-between pb-2 border-b border-rule shrink-0">
+                      <span className="font-mono text-[10.5px] uppercase tracking-wider text-ink font-bold flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-accent" /> Day's Footprint
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => { sound.click(); setIsFootprintCollapsed(true); }}
+                        className="p-1 rounded text-ink-faint hover:text-ink cursor-pointer"
+                        title="Collapse Footprint"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
 
-                <textarea
-                  key={selectedDate}
-                  ref={textareaRef}
-                  value={editorText}
-                  onChange={(e) => {
-                    setEditorText(e.target.value);
-                    handleTextChange(e.target.value);
-                  }}
-                  placeholder={`Write your private thoughts for ${dayjs(selectedDate).format("MMMM D")}…`}
-                  className="w-full h-full bg-transparent outline-none resize-none text-ink font-serif text-base sm:text-lg leading-relaxed placeholder:text-ink-faint pl-10 sm:pl-12 pr-4 border-none focus:ring-1 focus:ring-accent/25 rounded-xl transition-[border-color,box-shadow]"
-                  autoFocus
-                />
+                    {/* Aggregated Daily Activity */}
+                    <div className="flex-1 overflow-y-auto py-3 space-y-3.5 text-xs">
+                      {/* Tasks Checked Off */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px] font-mono text-ink-faint uppercase">
+                          <span className="flex items-center gap-1 font-semibold text-ink">
+                            <CheckSquare className="w-3 h-3 text-accent" /> Tasks
+                          </span>
+                          <span>{completedTasks.length} / {dayTasks.length}</span>
+                        </div>
+                        {dayTasks.length > 0 ? (
+                          <div className="space-y-1 pl-1">
+                            {dayTasks.map((t) => (
+                              <p key={t.id} className={clsx("truncate text-[11px]", t.completed ? "text-ink-faint line-through" : "text-ink")}>
+                                • {t.title}
+                              </p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-ink-faint italic pl-1">No tasks recorded for date.</p>
+                        )}
+                      </div>
+
+                      {/* Ledger Outflow */}
+                      <div className="space-y-1.5 pt-2 border-t border-rule">
+                        <div className="flex items-center justify-between text-[11px] font-mono text-ink-faint uppercase">
+                          <span className="flex items-center gap-1 font-semibold text-ink">
+                            <DollarSign className="w-3 h-3 text-accent" /> Ledger Spend
+                          </span>
+                          <span className="font-bold text-accent font-mono">${totalSpend.toFixed(2)}</span>
+                        </div>
+                        {dayExpenses.length > 0 ? (
+                          <div className="space-y-1 pl-1">
+                            {dayExpenses.slice(0, 4).map((ex) => (
+                              <p key={ex.id} className="truncate text-[11px] text-ink font-mono">
+                                • ${Number(ex.amount).toFixed(2)} <span className="font-sans text-ink-faint">({ex.category})</span>
+                              </p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-ink-faint italic pl-1">$0.00 spent on date.</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 1-Click "Insert Footprint into Entry" */}
+                    <div className="pt-2 border-t border-rule shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleInsertFootprint}
+                        className="w-full py-2 rounded-xl bg-accent text-white text-xs font-semibold hover:bg-accent/90 transition-all active:scale-[0.98] shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Insert Footprint into Entry</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>

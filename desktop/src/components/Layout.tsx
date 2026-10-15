@@ -1,10 +1,10 @@
-﻿import { useState, useEffect } from "react";
-import { Outlet, NavLink, useLocation } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Outlet, NavLink } from "react-router-dom";
 import {
   Calendar, BookOpen, CheckSquare, DollarSign, FolderKanban,
   LogOut, Volume2, VolumeX, Sun, Moon, Minus, Square, X, Sparkles
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useAuth } from "@/lib/store";
 import { sound } from "@/lib/sound";
 import { startReminderService, stopReminderService } from "@/lib/reminderService";
@@ -15,7 +15,6 @@ import { windowControls } from "@/lib/windowControls";
 
 export default function Layout() {
   const { username, avatarUrl, logout } = useAuth();
-  const location = useLocation();
   const [muted, setMuted] = useState(sound.isMuted());
   const [isOmniOpen, setIsOmniOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
@@ -144,7 +143,7 @@ export default function Layout() {
       {/* ── Main Application Body ──────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
         {/* Minimalist Stationery Sidebar */}
-        <aside className="w-[280px] flex-shrink-0 bg-surface/90 backdrop-blur-xl border-r border-rule flex flex-col justify-between z-20 relative transition-colors duration-200">
+        <aside className="w-[280px] flex-shrink-0 bg-surface border-r border-rule flex flex-col justify-between z-20 relative transition-colors duration-200">
           <div>
             {/* Brand Monogram Header */}
             <div className="px-5 pt-6 pb-4">
@@ -267,20 +266,11 @@ export default function Layout() {
           </div>
         </aside>
 
-        {/* Main Workspace with Smooth Page Deck Transitions */}
+        {/* Main Workspace */}
         <main className="flex-1 relative overflow-auto bg-ground">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={location.pathname}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-              className="h-full"
-            >
-              <Outlet />
-            </motion.div>
-          </AnimatePresence>
+          <div className="h-full page-transition">
+            <Outlet />
+          </div>
         </main>
       </div>
 
